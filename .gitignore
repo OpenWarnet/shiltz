@@ -1,0 +1,34 @@
+# Build output
+out/
+build/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+build.ninja
+.ninja_log
+compile_commands.json
+
+# vcpkg
+vcpkg_installed/
+
+# Visual Studio / VS Code
+.vs/
+.vscode/
+*.vcxproj.user
+*.suo
+
+# Compiled objects / binaries
+*.obj
+*.o
+*.exe
+*.dll
+*.lib
+*.pdb
+*.ilk
+
+# Editor / OS temp files
+*~
+*.tmp
