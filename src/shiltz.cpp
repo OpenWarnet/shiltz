@@ -4,6 +4,7 @@
 
 #include "DESCipher.h"
 #include "LoginPacket.h"
+#include "LoginHandler.h"
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -55,6 +56,15 @@ int main() {
 	// 4. Bind socket to IP and Port
 	bind(listenSocket, (sockaddr*)&serverAddr, sizeof(serverAddr));
 
+	//////////// TESTING GROUND
+
+	//uint8_t test[] = { 0xD8, 0x28, 0xF8, 0x6C, 0xFD, 0x23, 0x96, 0xFD, 0x7A, 0x9C, 0xC9, 0x69, 0xA6, 0xE2, 0x23, 0x08 };
+	//const auto testplain = cipher.DecryptECB(test);
+	//std::cout << "Test Decrypted: " << testplain.data() << "\n";
+
+	///////////
+
+
 	// 5. Start listening for incoming connections
 	listen(listenSocket, SOMAXCONN);
 	std::cout << "Listening on port 8080...\n";
@@ -67,21 +77,43 @@ int main() {
 	send(clientSocket, reinterpret_cast<const char*>(payload), sizeof(payload), 0);
 
 	// Buffer to store incoming bytes
-	uint8_t buffer[1024] = { 0 };
-	int bytesReceived = recv(clientSocket, reinterpret_cast<char*>(buffer), sizeof(buffer) - 1, 0);
 
-	if (bytesReceived > 0) {
-		LoginPacket packet;
-		packet.Deserialize(std::span(buffer, bytesReceived), key);
-		
-		std::cout << "Received (" << bytesReceived << " bytes, with " << packet.GetPayload().size() << " bytes payload)\n";
+	uint8_t buffer[1024];
+	while (true)
+	{
+		int bytesReceived = recv(
+			clientSocket,
+			reinterpret_cast<char*>(buffer),
+			sizeof(buffer),
+			0
+		);
 
-		for (uint8_t byte : packet.GetPayload()) {
-			std::cout << std::hex << std::uppercase
-				<< std::setw(2) << std::setfill('0')
-				<< static_cast<int>(byte) << " ";
+		if (bytesReceived <= 0)
+		{
+			// Client disconnected or error
+			std::cout << "Client disconnected\n";
+			break;
 		}
-		std::cout << std::dec << "\n";
+
+		try
+		{
+			LoginPacket packet;
+			packet.Deserialize(std::span(buffer, bytesReceived), key);
+
+			std::cout
+				<< "Received ("
+				<< bytesReceived
+				<< " bytes, payload "
+				<< packet.GetPayload().size()
+				<< " bytes)\n";
+
+			LoginHandler handler(clientSocket, key);
+			handler.Handle(packet);
+		}
+		catch (const std::exception& e)
+		{
+			std::cerr << "Packet error: " << e.what() << "\n";
+		}
 	}
 
 	// Cleanup
