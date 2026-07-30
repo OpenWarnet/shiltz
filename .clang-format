@@ -1,0 +1,30 @@
+
+BasedOnStyle: LLVM
+
+Language: Cpp
+
+IndentWidth: 4
+ColumnLimit: 100
+
+PointerAlignment: Left
+
+NamespaceIndentation: None
+
+AllowShortFunctionsOnASingleLine: Empty
+
+BreakBeforeBraces: Allman
+
+DerivePointerAlignment: false
+
+IncludeBlocks: Regroup
+
+SortIncludes: true
+
+SpaceBeforeParens: ControlStatements
+
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+
+Cpp11BracedListStyle: true
+
+AccessModifierOffset: -4

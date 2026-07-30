@@ -81,12 +81,7 @@ int main() {
 	uint8_t buffer[1024];
 	while (true)
 	{
-		int bytesReceived = recv(
-			clientSocket,
-			reinterpret_cast<char*>(buffer),
-			sizeof(buffer),
-			0
-		);
+		int bytesReceived = recv(clientSocket, reinterpret_cast<char*>(buffer), sizeof(buffer), 0);
 
 		if (bytesReceived <= 0)
 		{
@@ -100,12 +95,7 @@ int main() {
 			LoginPacket packet;
 			packet.Deserialize(std::span(buffer, bytesReceived), key);
 
-			std::cout
-				<< "Received ("
-				<< bytesReceived
-				<< " bytes, payload "
-				<< packet.GetPayload().size()
-				<< " bytes)\n";
+			std::cout << "Received (" << bytesReceived << " bytes, payload " << packet.GetPayload().size() << " bytes)\n";
 
 			LoginHandler handler(clientSocket, key);
 			handler.Handle(packet);
