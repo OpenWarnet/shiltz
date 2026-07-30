@@ -14,12 +14,12 @@ add_executable (
 	"LoginHandler.cpp"
 	"LoginHandler.h" 
 	"common/PayloadWriter.h" 
-	"data/Character.cpp" 
-	"data/Character.h"
-	"data/CharacterSelection.h"
-	"data/CharacterSelection.cpp" 
-	"data/ServerList.h"
-	"data/ServerList.cpp" "data/ServerSelect.h" "data/ServerSelect.cpp" "common/PayloadReader.h" "data/Login.h" "data/Login.cpp")
+	"models/Character.cpp" 
+	"models/Character.h"
+	"models/CharacterSelection.h"
+	"models/CharacterSelection.cpp" 
+	"models/ServerList.h"
+	"models/ServerList.cpp" "models/ServerSelect.h" "models/ServerSelect.cpp" "common/PayloadReader.h" "models/Login.h" "models/Login.cpp" "models/GenericCharacterPayload.cpp" "models/GenericCharacterPayload.h" "models/CreateCharacter.h" "models/SetCharacterMap.h" "models/SetCharacterMap.cpp" "models/CreateCharacter.cpp")
 
 add_executable (
 	client
