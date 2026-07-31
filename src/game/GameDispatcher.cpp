@@ -2,14 +2,14 @@
 
 #include "GameOpcodes.h"
 #include "GamePacket.h"
-#include "common/PayloadReader.h"
+#include "common/OpcodeBinder.h"
 #include "common/PayloadWriter.h"
 #include "common/TCPServer.h"
-#include "models/CharExitSucc.h"
-#include "models/CharacterDataLoad.h"
-#include "models/CrtLoad.h"
-#include "models/GameEnter.h"
-#include "models/InventoryItemList.h"
+#include "game/client/GameEnter.h"
+#include "game/server/CharExitSucc.h"
+#include "game/server/CharacterDataLoad.h"
+#include "game/server/CrtLoad.h"
+#include "game/server/InventoryItemList.h"
 
 #include <ctime>
 #include <iomanip>
@@ -17,18 +17,13 @@
 
 namespace
 {
-    void HandleCgEnter(const GameContext& ctx, const GamePacket& packet)
+    auto When(uint32_t opcode) { return OpcodeBinder<GameContext, GamePacket>(opcode); }
+}
+
+namespace
+{
+    void HandleCgEnter(const GameContext& ctx, const GameEnter& request)
     {
-        const auto& payload = packet.GetPayload();
-        std::cout << "Received CG_ENTER packet with payload size: " << payload.size() << "\n";
-
-        PayloadReader reader(payload);
-        GameEnter request;
-        if (!request.Deserialize(reader))
-        {
-            std::cout << "Failed parsing request\n";
-        }
-
         std::cout << "Session ID: " << request.session_id << "\n";
         std::cout << "Character: " << request.char_name << "\n";
         std::cout << "Username: " << request.username << "\n";
@@ -107,28 +102,13 @@ namespace
         ctx.server.SendTo(ctx.clientSocket, crtLoadPayload);
     }
 
-    void HandleCgPlayStart(const GameContext&, const GamePacket&)
+    void HandleCgPlayStart(const GameContext&)
     {
-        // Fire-and-forget signal from the client ("I've finished loading and
-        // am entering the world") -- confirmed via both the real ggg_all2
-        // server binary and the client's own send-site trace that NO packet
-        // is sent in response to this. The world-enter burst
-        // (GC_CHAR_DATA_LOAD/GC_INVENTORY_ITEM_LIST/GC_CRT_LOAD) belongs to
-        // CG_ENTER only -- resending it here made the client re-run its
-        // enter-world sequence, which fires CG_PLAY_START again, which
-        // resent the burst again, in an infinite loop until the client gave
-        // up and disconnected.
         std::cout << "Received CG_PLAY_START packet.\n";
     }
 
-    void HandleCgExit(const GameContext& ctx, const GamePacket&)
+    void HandleCgExit(const GameContext& ctx)
     {
-        // Log-out signal, empty body (confirmed both server- and
-        // client-side -- see game/handlers/cg_exit.py). The real server
-        // saves the character here (three UPDATE statements: pc/inventory/
-        // cash_inventory) before replying; we have no DB backend yet, so
-        // this just replies with GC_CHAR_EXIT_SUCC as-is, matching the real
-        // capture's CG_EXIT -> immediate GC_CHAR_EXIT_SUCC pairing.
         std::cout << "Received CG_EXIT packet.\n";
 
         PayloadWriter exitWriter;
@@ -146,10 +126,12 @@ namespace
 }
 
 GameDispatcher::GameDispatcher()
+    : m_handlers{
+          When(GameOpcode::CG_ENTER).ParseAs<GameEnter>().ThenHandle(HandleCgEnter),
+          When(GameOpcode::CG_PLAY_START).Ignore().ThenHandle(HandleCgPlayStart),
+          When(GameOpcode::CG_EXIT).Empty().ThenHandle(HandleCgExit),
+      }
 {
-    m_handlers[GameOpcode::CG_ENTER] = HandleCgEnter;
-    m_handlers[GameOpcode::CG_PLAY_START] = HandleCgPlayStart;
-    m_handlers[GameOpcode::CG_EXIT] = HandleCgExit;
 }
 
 void GameDispatcher::Dispatch(const GameContext& ctx, const GamePacket& packet) const

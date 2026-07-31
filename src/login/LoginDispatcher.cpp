@@ -2,36 +2,32 @@
 
 #include "LoginOpcodes.h"
 #include "LoginPacket.h"
-#include "common/PayloadReader.h"
+#include "common/OpcodeBinder.h"
 #include "common/PayloadWriter.h"
 #include "common/TCPServer.h"
-#include "models/Character.h"
-#include "models/CharacterSelection.h"
-#include "models/CreateCharacter.h"
-#include "models/GameConnect.h"
-#include "models/GenericCharacterPayload.h"
-#include "models/Login.h"
-#include "models/ServerList.h"
-#include "models/ServerSelect.h"
-#include "models/SetCharacterMap.h"
+#include "login/client/CreateCharacter.h"
+#include "login/client/GameConnect.h"
+#include "login/client/Login.h"
+#include "login/client/ServerSelect.h"
+#include "login/client/SetCharacterMap.h"
+#include "login/server/Character.h"
+#include "login/server/CharacterSelection.h"
+#include "login/server/GameConnectSuccess.h"
+#include "login/server/ServerList.h"
+#include "login/shared/GenericCharacterPayload.h"
 
 #include <iomanip>
 #include <iostream>
 
 namespace
 {
-    void HandleClLogin(const LoginContext& ctx, const LoginPacket& packet)
+    auto When(uint32_t opcode) { return OpcodeBinder<LoginContext, LoginPacket>(opcode); }
+}
+
+namespace
+{
+    void HandleClLogin(const LoginContext& ctx, const Login& login)
     {
-        const auto& payload = packet.GetPayload();
-        std::cout << "Received CL_LOGIN packet with payload size: " << payload.size() << "\n";
-
-        PayloadReader reader(payload);
-        Login login;
-        if (!login.Deserialize(reader))
-        {
-            std::cout << "Failed parsing server selection\n";
-        }
-
         std::cout << "Build: " << login.build << "\n";
         std::cout << "Username: " << login.username << "\n";
         std::cout << "Password: " << login.password << "\n";
@@ -48,29 +44,18 @@ namespace
         ctx.server.SendTo(ctx.clientSocket, response);
     }
 
-    void HandleClUserSystemSpecInfo(const LoginContext&, const LoginPacket&)
+    void HandleClUserSystemSpecInfo(const LoginContext&)
     {
         std::cout << "Received CL_USER_SYSTEM_SPEC_INFO packet.\n";
     }
 
-    void HandleClGameguard(const LoginContext&, const LoginPacket&)
+    void HandleClGameguard(const LoginContext&)
     {
         std::cout << "Received CL_GAMEGUARD packet.\n";
     }
 
-    void HandleClGetCharinfo(const LoginContext& ctx, const LoginPacket& packet)
+    void HandleClGetCharinfo(const LoginContext& ctx, const ServerSelect& select)
     {
-        const auto& payload = packet.GetPayload();
-        std::cout << "Received CL_GET_CHARINFO packet with payload size: " << payload.size()
-                  << "\n";
-
-        PayloadReader reader(payload);
-        ServerSelect select;
-        if (!select.Deserialize(reader))
-        {
-            std::cout << "Failed parsing server selection\n";
-        }
-
         std::cout << "Server ID: " << select.server_id << "\n";
         std::cout << "Channel ID: " << select.channel_id << "\n";
 
@@ -139,19 +124,8 @@ namespace
         ctx.server.SendTo(ctx.clientSocket, response);
     }
 
-    void HandleClDeleteCharacter(const LoginContext& ctx, const LoginPacket& packet)
+    void HandleClDeleteCharacter(const LoginContext& ctx, const GenericCharacterPayload& request)
     {
-        const auto& payload = packet.GetPayload();
-        std::cout << "Received CL_DELETE_CHARACTER packet with payload size: " << payload.size()
-                  << "\n";
-
-        PayloadReader reader(payload);
-        GenericCharacterPayload request;
-        if (!request.Deserialize(reader))
-        {
-            std::cout << "Failed parsing request\n";
-        }
-
         std::cout << "Server ID: " << request.server_id << "\n";
         std::cout << "Character: " << request.char_name << "\n";
 
@@ -167,19 +141,8 @@ namespace
         ctx.server.SendTo(ctx.clientSocket, responsePayload);
     }
 
-    void HandleClCharDeleteCancle(const LoginContext& ctx, const LoginPacket& packet)
+    void HandleClCharDeleteCancle(const LoginContext& ctx, const GenericCharacterPayload& request)
     {
-        const auto& payload = packet.GetPayload();
-        std::cout << "Received CL_CHAR_DELETE_CANCLE packet with payload size: " << payload.size()
-                  << "\n";
-
-        PayloadReader reader(payload);
-        GenericCharacterPayload request;
-        if (!request.Deserialize(reader))
-        {
-            std::cout << "Failed parsing request\n";
-        }
-
         std::cout << "Server ID: " << request.server_id << "\n";
         std::cout << "Character: " << request.char_name << "\n";
 
@@ -195,19 +158,8 @@ namespace
         ctx.server.SendTo(ctx.clientSocket, responsePayload);
     }
 
-    void HandleClCreateCharacter(const LoginContext& ctx, const LoginPacket& packet)
+    void HandleClCreateCharacter(const LoginContext& ctx, const CreateCharacter& request)
     {
-        const auto& payload = packet.GetPayload();
-        std::cout << "Received CL_CREATE_CHARACTER packet with payload size: " << payload.size()
-                  << "\n";
-
-        PayloadReader reader(payload);
-        CreateCharacter request;
-        if (!request.Deserialize(reader))
-        {
-            std::cout << "Failed parsing request\n";
-        }
-
         std::cout << "Server ID: " << request.server_id << "\n";
         std::cout << "Character: " << request.char_name << "\n";
         std::cout << "Map ID: " << request.map_id << " (" << request.loc_x << ", " << request.loc_y
@@ -235,19 +187,8 @@ namespace
         ctx.server.SendTo(ctx.clientSocket, responsePayload);
     }
 
-    void HandleClCreateMapNum(const LoginContext& ctx, const LoginPacket& packet)
+    void HandleClCreateMapNum(const LoginContext& ctx, const SetCharacterMap& request)
     {
-        const auto& payload = packet.GetPayload();
-        std::cout << "Received CL_CREATE_MAP_NUM packet with payload size: " << payload.size()
-                  << "\n";
-
-        PayloadReader reader(payload);
-        SetCharacterMap request;
-        if (!request.Deserialize(reader))
-        {
-            std::cout << "Failed parsing request\n";
-        }
-
         std::cout << "Server ID: " << request.server_id << "\n";
         std::cout << "Character: " << request.char_name << "\n";
         std::cout << "Map ID: " << request.map_id << " (" << request.loc_x << ", " << request.loc_y
@@ -265,19 +206,8 @@ namespace
         ctx.server.SendTo(ctx.clientSocket, responsePayload);
     }
 
-    void HandleClGameserverConnect(const LoginContext& ctx, const LoginPacket& packet)
+    void HandleClGameserverConnect(const LoginContext& ctx, const GameConnect& request)
     {
-        const auto& payload = packet.GetPayload();
-        std::cout << "Received CL_GAMESERVER_CONNECT packet with payload size: " << payload.size()
-                  << "\n";
-
-        PayloadReader reader(payload);
-        GameConnect request;
-        if (!request.Deserialize(reader))
-        {
-            std::cout << "Failed parsing request\n";
-        }
-
         PayloadWriter writer;
         GameConnectSuccess response{
             .server_id = request.server_id,
@@ -298,16 +228,26 @@ namespace
 }
 
 LoginDispatcher::LoginDispatcher()
+    : m_handlers{
+          When(LoginOpcode::CL_LOGIN).ParseAs<Login>().ThenHandle(HandleClLogin),
+          When(LoginOpcode::CL_USER_SYSTEM_SPEC_INFO).Ignore().ThenHandle(HandleClUserSystemSpecInfo),
+          When(LoginOpcode::CL_GAMEGUARD).Ignore().ThenHandle(HandleClGameguard),
+          When(LoginOpcode::CL_GET_CHARINFO).ParseAs<ServerSelect>().ThenHandle(HandleClGetCharinfo),
+          When(LoginOpcode::CL_DELETE_CHARACTER)
+              .ParseAs<GenericCharacterPayload>()
+              .ThenHandle(HandleClDeleteCharacter),
+          When(LoginOpcode::CL_CHAR_DELETE_CANCLE)
+              .ParseAs<GenericCharacterPayload>()
+              .ThenHandle(HandleClCharDeleteCancle),
+          When(LoginOpcode::CL_CREATE_CHARACTER)
+              .ParseAs<CreateCharacter>()
+              .ThenHandle(HandleClCreateCharacter),
+          When(LoginOpcode::CL_CREATE_MAP_NUM).ParseAs<SetCharacterMap>().ThenHandle(HandleClCreateMapNum),
+          When(LoginOpcode::CL_GAMESERVER_CONNECT)
+              .ParseAs<GameConnect>()
+              .ThenHandle(HandleClGameserverConnect),
+      }
 {
-    m_handlers[LoginOpcode::CL_LOGIN] = HandleClLogin;
-    m_handlers[LoginOpcode::CL_USER_SYSTEM_SPEC_INFO] = HandleClUserSystemSpecInfo;
-    m_handlers[LoginOpcode::CL_GAMEGUARD] = HandleClGameguard;
-    m_handlers[LoginOpcode::CL_GET_CHARINFO] = HandleClGetCharinfo;
-    m_handlers[LoginOpcode::CL_DELETE_CHARACTER] = HandleClDeleteCharacter;
-    m_handlers[LoginOpcode::CL_CHAR_DELETE_CANCLE] = HandleClCharDeleteCancle;
-    m_handlers[LoginOpcode::CL_CREATE_CHARACTER] = HandleClCreateCharacter;
-    m_handlers[LoginOpcode::CL_CREATE_MAP_NUM] = HandleClCreateMapNum;
-    m_handlers[LoginOpcode::CL_GAMESERVER_CONNECT] = HandleClGameserverConnect;
 }
 
 void LoginDispatcher::Dispatch(const LoginContext& ctx, const LoginPacket& packet) const

@@ -1,11 +1,5 @@
-#include "GameConnect.h"
-#include "common/PayloadReader.h"
+#include "GameConnectSuccess.h"
 #include "common/PayloadWriter.h"
-
-bool GameConnect::Deserialize(PayloadReader& reader)
-{
-    return reader.Read(server_id) && reader.Read(channel_id) && reader.ReadString(char_name, 16);
-}
 
 void GameConnectSuccess::Serialize(PayloadWriter& writer) const
 {
