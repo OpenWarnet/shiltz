@@ -126,23 +126,10 @@ namespace
 }
 
 GameDispatcher::GameDispatcher()
-    : m_handlers{
-          When(GameOpcode::CG_ENTER).ParseAs<GameEnter>().ThenHandle(HandleCgEnter),
-          When(GameOpcode::CG_PLAY_START).Ignore().ThenHandle(HandleCgPlayStart),
-          When(GameOpcode::CG_EXIT).Empty().ThenHandle(HandleCgExit),
+    : Dispatcher{
+          When(GameOpcode::CG_ENTER).ParseAs<GameEnter>().Then(HandleCgEnter),
+          When(GameOpcode::CG_PLAY_START).SkipParse(SkipReason::Ignored).Then(HandleCgPlayStart),
+          When(GameOpcode::CG_EXIT).SkipParse(SkipReason::Empty).Then(HandleCgExit),
       }
 {
-}
-
-void GameDispatcher::Dispatch(const GameContext& ctx, const GamePacket& packet) const
-{
-    auto it = m_handlers.find(packet.GetCode());
-    if (it == m_handlers.end())
-    {
-        std::cout << "Received unknown packet code: " << std::hex << packet.GetCode() << std::dec
-                  << "\n";
-        return;
-    }
-
-    it->second(ctx, packet);
 }

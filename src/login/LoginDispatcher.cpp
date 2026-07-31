@@ -228,36 +228,26 @@ namespace
 }
 
 LoginDispatcher::LoginDispatcher()
-    : m_handlers{
-          When(LoginOpcode::CL_LOGIN).ParseAs<Login>().ThenHandle(HandleClLogin),
-          When(LoginOpcode::CL_USER_SYSTEM_SPEC_INFO).Ignore().ThenHandle(HandleClUserSystemSpecInfo),
-          When(LoginOpcode::CL_GAMEGUARD).Ignore().ThenHandle(HandleClGameguard),
-          When(LoginOpcode::CL_GET_CHARINFO).ParseAs<ServerSelect>().ThenHandle(HandleClGetCharinfo),
+    : Dispatcher{
+          When(LoginOpcode::CL_LOGIN).ParseAs<Login>().Then(HandleClLogin),
+          When(LoginOpcode::CL_USER_SYSTEM_SPEC_INFO)
+              .SkipParse(SkipReason::Ignored)
+              .Then(HandleClUserSystemSpecInfo),
+          When(LoginOpcode::CL_GAMEGUARD).SkipParse(SkipReason::Ignored).Then(HandleClGameguard),
+          When(LoginOpcode::CL_GET_CHARINFO).ParseAs<ServerSelect>().Then(HandleClGetCharinfo),
           When(LoginOpcode::CL_DELETE_CHARACTER)
               .ParseAs<GenericCharacterPayload>()
-              .ThenHandle(HandleClDeleteCharacter),
+              .Then(HandleClDeleteCharacter),
           When(LoginOpcode::CL_CHAR_DELETE_CANCLE)
               .ParseAs<GenericCharacterPayload>()
-              .ThenHandle(HandleClCharDeleteCancle),
+              .Then(HandleClCharDeleteCancle),
           When(LoginOpcode::CL_CREATE_CHARACTER)
               .ParseAs<CreateCharacter>()
-              .ThenHandle(HandleClCreateCharacter),
-          When(LoginOpcode::CL_CREATE_MAP_NUM).ParseAs<SetCharacterMap>().ThenHandle(HandleClCreateMapNum),
+              .Then(HandleClCreateCharacter),
+          When(LoginOpcode::CL_CREATE_MAP_NUM).ParseAs<SetCharacterMap>().Then(HandleClCreateMapNum),
           When(LoginOpcode::CL_GAMESERVER_CONNECT)
               .ParseAs<GameConnect>()
-              .ThenHandle(HandleClGameserverConnect),
+              .Then(HandleClGameserverConnect),
       }
 {
-}
-
-void LoginDispatcher::Dispatch(const LoginContext& ctx, const LoginPacket& packet) const
-{
-    auto it = m_handlers.find(packet.GetCode());
-    if (it == m_handlers.end())
-    {
-        std::cout << "Received unknown packet code: " << std::hex << packet.GetCode() << "\n";
-        return;
-    }
-
-    it->second(ctx, packet);
 }

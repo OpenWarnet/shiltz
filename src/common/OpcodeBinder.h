@@ -7,6 +7,13 @@
 #include <iostream>
 #include <utility>
 
+// Why an opcode's payload isn't parsed into a message type.
+enum class SkipReason
+{
+    Empty,   // Wire body is confirmed empty.
+    Ignored, // Payload exists but is intentionally not parsed yet.
+};
+
 template <typename Context, typename Packet> class OpcodeBinder
 {
 public:
@@ -20,7 +27,7 @@ public:
         explicit Typed(uint32_t opcode) : m_opcode(opcode) {}
 
         std::pair<uint32_t, HandlerFn>
-        ThenHandle(std::function<void(const Context&, const TMessage&)> handler) const
+        Then(std::function<void(const Context&, const TMessage&)> handler) const
         {
             return {m_opcode, [handler](const Context& ctx, const Packet& packet)
                     {
@@ -45,7 +52,7 @@ public:
     public:
         explicit Untyped(uint32_t opcode) : m_opcode(opcode) {}
 
-        std::pair<uint32_t, HandlerFn> ThenHandle(std::function<void(const Context&)> handler) const
+        std::pair<uint32_t, HandlerFn> Then(std::function<void(const Context&)> handler) const
         {
             return {m_opcode, [handler](const Context& ctx, const Packet&) { handler(ctx); }};
         }
@@ -59,14 +66,7 @@ public:
         return Typed<TMessage>(m_opcode);
     }
 
-    // Payload exists but is intentionally not parsed yet.
-    Untyped Ignore() const
-    {
-        return Untyped(m_opcode);
-    }
-
-    // Wire body is confirmed empty.
-    Untyped Empty() const
+    Untyped SkipParse(SkipReason) const
     {
         return Untyped(m_opcode);
     }
