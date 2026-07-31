@@ -12,6 +12,8 @@ add_executable (
 	"GameDispatcher.h"
 	"GameDispatcher.cpp"
 	"GameOpcodes.h"
+	"handlers/Session.cpp"
+	"handlers/Session.h"
 	"GameServer.h"
 	"GameServer.cpp"
 	"protocol/client/GameEnter.h"
