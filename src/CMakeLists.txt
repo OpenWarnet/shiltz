@@ -5,15 +5,18 @@
 # Add source to this project's executable.
 add_executable (
 	login 
-	"login.cpp" 
+	"login.cpp"
 	"login.h"
-	"DESCipher.cpp"
-	"DESCipher.h" 
-	"LoginPacket.cpp" 
+	"cipher/DESCipher.cpp"
+	"cipher/DESCipher.h"
+	"LoginPacket.cpp"
 	"LoginPacket.h"
-	"LoginHandler.cpp"
-	"LoginHandler.h" 
-	"common/PayloadWriter.h" 
+	"LoginDispatcher.cpp"
+	"LoginDispatcher.h"
+	"LoginOpcodes.h"
+	"LoginServer.h"
+	"LoginServer.cpp"
+	"common/PayloadWriter.h"
 	"models/Character.cpp" 
 	"models/Character.h"
 	"models/CharacterSelection.h"
@@ -30,7 +33,9 @@ add_executable (
 	"models/CreateCharacter.h" 
 	"models/SetCharacterMap.h" 
 	"models/SetCharacterMap.cpp" 
-	"models/CreateCharacter.cpp" "GameHandler.h" "models/GameConnect.h" "models/GameConnect.cpp")
+	"models/CreateCharacter.cpp" "models/GameConnect.h" "models/GameConnect.cpp"
+	"common/TCPServer.h"
+	"common/TCPServer.cpp")
 
 add_executable (
 	game
@@ -39,10 +44,16 @@ add_executable (
 	"cipher/BlowfishCipher.cpp"
 	"cipher/BlowfishCipher.h"
 	"GamePacket.cpp"
-	"GamePacket.h" "GameHandler.h"
-	"GameHandler.cpp"
+	"GamePacket.h"
+	"GameDispatcher.h"
+	"GameDispatcher.cpp"
+	"GameOpcodes.h"
+	"GameServer.h"
+	"GameServer.cpp"
 	"common/PayloadWriter.h"
 	"common/PayloadReader.h"
+	"common/TCPServer.h"
+	"common/TCPServer.cpp"
 	"models/CharacterDataLoad.h"
 	"models/CharacterDataLoad.cpp"
 	"models/GameEnter.h"

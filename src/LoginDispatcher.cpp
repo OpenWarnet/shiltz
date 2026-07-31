@@ -1,8 +1,10 @@
-#include "LoginHandler.h"
+#include "LoginDispatcher.h"
 
+#include "LoginOpcodes.h"
 #include "LoginPacket.h"
 #include "common/PayloadReader.h"
 #include "common/PayloadWriter.h"
+#include "common/TCPServer.h"
 #include "models/Character.h"
 #include "models/CharacterSelection.h"
 #include "models/CreateCharacter.h"
@@ -16,14 +18,9 @@
 #include <iomanip>
 #include <iostream>
 
-LoginHandler::LoginHandler(SOCKET clientSocket, std::span<const uint8_t> key)
-    : m_clientSocket(clientSocket), m_key(key)
+namespace
 {
-}
-
-bool LoginHandler::Handle(LoginPacket packet)
-{
-    if (packet.GetCode() == 111000) // CL_LOGIN
+    void HandleClLogin(const LoginContext& ctx, const LoginPacket& packet)
     {
         const auto& payload = packet.GetPayload();
         std::cout << "Received CL_LOGIN packet with payload size: " << payload.size() << "\n";
@@ -45,25 +42,23 @@ bool LoginHandler::Handle(LoginPacket packet)
         auto serverData = writer.Data();
 
         // TODO: Somehow it doesn't matter what I sent, this will not change the Server Select UI.
-        LoginPacket responsePacket(221001, serverData); // LC_LOGIN_SUCCESS
-        auto response = responsePacket.Serialize(m_key);
+        LoginPacket responsePacket(LoginOpcode::LC_LOGIN_SUCCESS, serverData);
+        auto response = responsePacket.Serialize(ctx.key);
 
-        send(m_clientSocket, reinterpret_cast<const char*>(response.data()),
-             static_cast<int>(response.size()), 0);
-
-        return true;
+        ctx.server.SendTo(ctx.clientSocket, response);
     }
-    else if (packet.GetCode() == 111050) // CL_USER_SYSTEM_SPEC_INFO
+
+    void HandleClUserSystemSpecInfo(const LoginContext&, const LoginPacket&)
     {
         std::cout << "Received CL_USER_SYSTEM_SPEC_INFO packet.\n";
-        return true;
     }
-    else if (packet.GetCode() == 111020) // CL_GAMEGUARD
+
+    void HandleClGameguard(const LoginContext&, const LoginPacket&)
     {
         std::cout << "Received CL_GAMEGUARD packet.\n";
-        return true;
     }
-    else if (packet.GetCode() == 111003) // CL_GET_CHARINFO
+
+    void HandleClGetCharinfo(const LoginContext& ctx, const LoginPacket& packet)
     {
         const auto& payload = packet.GetPayload();
         std::cout << "Received CL_GET_CHARINFO packet with payload size: " << payload.size()
@@ -138,15 +133,13 @@ bool LoginHandler::Handle(LoginPacket packet)
         selection.Serialize(writer);
         auto charData = writer.Data();
 
-        LoginPacket responsePacket(221003, charData); // LC_CHARINFO_SUCCESS
-        auto response = responsePacket.Serialize(m_key);
+        LoginPacket responsePacket(LoginOpcode::LC_CHARINFO_SUCCESS, charData);
+        auto response = responsePacket.Serialize(ctx.key);
 
-        send(m_clientSocket, reinterpret_cast<const char*>(response.data()),
-             static_cast<int>(response.size()), 0);
-
-        return true;
+        ctx.server.SendTo(ctx.clientSocket, response);
     }
-    else if (packet.GetCode() == 111005) // CL_DELETE_CHARACTER
+
+    void HandleClDeleteCharacter(const LoginContext& ctx, const LoginPacket& packet)
     {
         const auto& payload = packet.GetPayload();
         std::cout << "Received CL_DELETE_CHARACTER packet with payload size: " << payload.size()
@@ -168,15 +161,13 @@ bool LoginHandler::Handle(LoginPacket packet)
         response.Serialize(writer);
         auto data = writer.Data();
 
-        LoginPacket responsePacket(221007, data); // LC_DELETECHAR_SUCCESS
-        auto responsePayload = responsePacket.Serialize(m_key);
+        LoginPacket responsePacket(LoginOpcode::LC_DELETECHAR_SUCCESS, data);
+        auto responsePayload = responsePacket.Serialize(ctx.key);
 
-        send(m_clientSocket, reinterpret_cast<const char*>(responsePayload.data()),
-             static_cast<int>(responsePayload.size()), 0);
-
-        return true;
+        ctx.server.SendTo(ctx.clientSocket, responsePayload);
     }
-    else if (packet.GetCode() == 111012) // CL_CHAR_DELETE_CANCLE
+
+    void HandleClCharDeleteCancle(const LoginContext& ctx, const LoginPacket& packet)
     {
         const auto& payload = packet.GetPayload();
         std::cout << "Received CL_CHAR_DELETE_CANCLE packet with payload size: " << payload.size()
@@ -198,15 +189,13 @@ bool LoginHandler::Handle(LoginPacket packet)
         response.Serialize(writer);
         auto data = writer.Data();
 
-        LoginPacket responsePacket(211018, data); // LC_CHAR_DELETE_CANCLE_SUCCESS
-        auto responsePayload = responsePacket.Serialize(m_key);
+        LoginPacket responsePacket(LoginOpcode::LC_CHAR_DELETE_CANCLE_SUCCESS, data);
+        auto responsePayload = responsePacket.Serialize(ctx.key);
 
-        send(m_clientSocket, reinterpret_cast<const char*>(responsePayload.data()),
-             static_cast<int>(responsePayload.size()), 0);
-
-        return true;
+        ctx.server.SendTo(ctx.clientSocket, responsePayload);
     }
-    else if (packet.GetCode() == 111004) // CL_CREATE_CHARACTER
+
+    void HandleClCreateCharacter(const LoginContext& ctx, const LoginPacket& packet)
     {
         const auto& payload = packet.GetPayload();
         std::cout << "Received CL_CREATE_CHARACTER packet with payload size: " << payload.size()
@@ -240,15 +229,13 @@ bool LoginHandler::Handle(LoginPacket packet)
         response.Serialize(writer);
         auto data = writer.Data();
 
-        LoginPacket responsePacket(221005, data); // LC_CREATECHAR_SUCCESS
-        auto responsePayload = responsePacket.Serialize(m_key);
+        LoginPacket responsePacket(LoginOpcode::LC_CREATECHAR_SUCCESS, data);
+        auto responsePayload = responsePacket.Serialize(ctx.key);
 
-        send(m_clientSocket, reinterpret_cast<const char*>(responsePayload.data()),
-             static_cast<int>(responsePayload.size()), 0);
-
-        return true;
+        ctx.server.SendTo(ctx.clientSocket, responsePayload);
     }
-    else if (packet.GetCode() == 111014) // CL_CREATE_MAP_NUM
+
+    void HandleClCreateMapNum(const LoginContext& ctx, const LoginPacket& packet)
     {
         const auto& payload = packet.GetPayload();
         std::cout << "Received CL_CREATE_MAP_NUM packet with payload size: " << payload.size()
@@ -272,15 +259,13 @@ bool LoginHandler::Handle(LoginPacket packet)
         response.Serialize(writer);
         auto data = writer.Data();
 
-        LoginPacket responsePacket(211022, data); // LC_CREATE_MAP_NUM_SUCCESS
-        auto responsePayload = responsePacket.Serialize(m_key);
+        LoginPacket responsePacket(LoginOpcode::LC_CREATE_MAP_NUM_SUCCESS, data);
+        auto responsePayload = responsePacket.Serialize(ctx.key);
 
-        send(m_clientSocket, reinterpret_cast<const char*>(responsePayload.data()),
-             static_cast<int>(responsePayload.size()), 0);
-
-        return true;
+        ctx.server.SendTo(ctx.clientSocket, responsePayload);
     }
-    else if (packet.GetCode() == 111006) // CL_GAMESERVER_CONNECT
+
+    void HandleClGameserverConnect(const LoginContext& ctx, const LoginPacket& packet)
     {
         const auto& payload = packet.GetPayload();
         std::cout << "Received CL_GAMESERVER_CONNECT packet with payload size: " << payload.size()
@@ -305,17 +290,34 @@ bool LoginHandler::Handle(LoginPacket packet)
         response.Serialize(writer);
         auto data = writer.Data();
 
-        LoginPacket responsePacket(221009, data); // LC_GSERV_CONNECT_SUCCESS
-        auto responsePayload = responsePacket.Serialize(m_key);
+        LoginPacket responsePacket(LoginOpcode::LC_GSERV_CONNECT_SUCCESS, data);
+        auto responsePayload = responsePacket.Serialize(ctx.key);
 
-        send(m_clientSocket, reinterpret_cast<const char*>(responsePayload.data()),
-             static_cast<int>(responsePayload.size()), 0);
-
-        return true;
+        ctx.server.SendTo(ctx.clientSocket, responsePayload);
     }
-    else
+}
+
+LoginDispatcher::LoginDispatcher()
+{
+    m_handlers[LoginOpcode::CL_LOGIN] = HandleClLogin;
+    m_handlers[LoginOpcode::CL_USER_SYSTEM_SPEC_INFO] = HandleClUserSystemSpecInfo;
+    m_handlers[LoginOpcode::CL_GAMEGUARD] = HandleClGameguard;
+    m_handlers[LoginOpcode::CL_GET_CHARINFO] = HandleClGetCharinfo;
+    m_handlers[LoginOpcode::CL_DELETE_CHARACTER] = HandleClDeleteCharacter;
+    m_handlers[LoginOpcode::CL_CHAR_DELETE_CANCLE] = HandleClCharDeleteCancle;
+    m_handlers[LoginOpcode::CL_CREATE_CHARACTER] = HandleClCreateCharacter;
+    m_handlers[LoginOpcode::CL_CREATE_MAP_NUM] = HandleClCreateMapNum;
+    m_handlers[LoginOpcode::CL_GAMESERVER_CONNECT] = HandleClGameserverConnect;
+}
+
+void LoginDispatcher::Dispatch(const LoginContext& ctx, const LoginPacket& packet) const
+{
+    auto it = m_handlers.find(packet.GetCode());
+    if (it == m_handlers.end())
     {
         std::cout << "Received unknown packet code: " << std::hex << packet.GetCode() << "\n";
+        return;
     }
-    return false;
+
+    it->second(ctx, packet);
 }

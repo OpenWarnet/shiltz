@@ -1,9 +1,10 @@
-﻿#include "DESCipher.h"
-#include "LoginHandler.h"
-#include "LoginPacket.h"
+#include "LoginServer.h"
+#include "cipher/DESCipher.h"
 
+#include <array>
 #include <iomanip>
 #include <iostream>
+#include <string_view>
 #include <winsock2.h>
 
 #pragma comment(lib, "ws2_32.lib")
@@ -55,116 +56,8 @@ int main()
     std::cout << "Key: " << std::string_view(reinterpret_cast<const char*>(key.data()), key.size())
               << "\n";
 
-    WSADATA wsaData;
-    // 1. Initialize Winsock
-    WSAStartup(MAKEWORD(2, 2), &wsaData);
-
-    // 2. Create the listening socket
-    SOCKET listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-
-    // 3. Define the server address (Listening on port 8080)
-    sockaddr_in serverAddr{};
-    serverAddr.sin_family = AF_INET;
-    serverAddr.sin_port = htons(8080);
-    serverAddr.sin_addr.s_addr = INADDR_ANY;
-
-    // 4. Bind socket to IP and Port
-    if (bind(listenSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR)
-    {
-        std::cout << "bind() failed: " << WSAGetLastError()
-                   << " (port already in use by another process/instance?)\n";
-        return 1;
-    }
-
-    //////////// TESTING GROUND
-
-    // uint8_t test[] = { 0xD8, 0x28, 0xF8, 0x6C, 0xFD, 0x23, 0x96, 0xFD, 0x7A, 0x9C, 0xC9, 0x69,
-    // 0xA6, 0xE2, 0x23, 0x08 }; const auto testplain = cipher.DecryptECB(test); std::cout << "Test
-    // Decrypted: " << testplain.data() << "\n";
-
-    ///////////
-
-    // 5. Start listening for incoming connections
-    if (listen(listenSocket, SOMAXCONN) == SOCKET_ERROR)
-    {
-        std::cout << "listen() failed: " << WSAGetLastError() << "\n";
-        return 1;
-    }
-    std::cout << "Login Listening on port 8080...\n";
-
-    // 6. Accept a client connection (blocks until a client connects)
-    // Accept client connection
-    SOCKET clientSocket = accept(listenSocket, NULL, NULL);
-    if (clientSocket == INVALID_SOCKET)
-    {
-        std::cout << "accept() failed: " << WSAGetLastError() << "\n";
-        return 1;
-    }
-    std::cout << "Client connected!\n";
-
-    int sent = send(clientSocket, reinterpret_cast<const char*>(payload), sizeof(payload), 0);
-    if (sent == SOCKET_ERROR)
-    {
-        // If the peer already closed the connection before we even called send()
-        // (e.g. a bare TCP health-check/port-probe that connects then hangs up
-        // immediately, rather than a client that speaks the login protocol),
-        // this is where it shows up -- WSAECONNRESET/WSAECONNABORTED here means
-        // the "Client disconnected" that follows has nothing to do with the
-        // DES/nonce handshake at all.
-        std::cout << "send() of step-0 nonce failed: " << WSAGetLastError() << "\n";
-    }
-    else
-    {
-        std::cout << "Sent step-0 nonce frame (" << sent << "/" << sizeof(payload) << " bytes)\n";
-    }
-
-    // Buffer to store incoming bytes
-
-    uint8_t buffer[1024];
-    while (true)
-    {
-        int bytesReceived = recv(clientSocket, reinterpret_cast<char*>(buffer), sizeof(buffer), 0);
-
-        if (bytesReceived == 0)
-        {
-            // Graceful close: the peer sent FIN without ever writing data.
-            // If this is the very first iteration (no "Received (...)" line
-            // logged yet), the peer closed right after/without reading our
-            // step-0 nonce frame -- either it isn't the real login client
-            // (a bare TCP probe/health-check would do exactly this), or it
-            // IS the real client and rejected the nonce (build/DES-table
-            // mismatch, or the parity self-check on the decrypted nonce
-            // failed) before ever attempting CL_LOGIN.
-            std::cout << "Client disconnected (graceful close, 0 bytes)\n";
-            break;
-        }
-        else if (bytesReceived < 0)
-        {
-            std::cout << "recv() failed: " << WSAGetLastError() << "\n";
-            break;
-        }
-
-        try
-        {
-            LoginPacket packet;
-            packet.Deserialize(std::span(buffer, bytesReceived), key);
-
-            std::cout << "Received (" << bytesReceived << " bytes, payload "
-                      << packet.GetPayload().size() << " bytes)\n";
-
-            LoginHandler handler(clientSocket, key);
-            handler.Handle(packet);
-        }
-        catch (const std::exception& e)
-        {
-            std::cerr << "Packet error: " << e.what() << "\n";
-        }
-    }
-
-    // Cleanup
-    closesocket(clientSocket);
-    closesocket(listenSocket);
-    WSACleanup();
+    LoginServer server(8080, key, payload);
+    server.Run();
 
     return 0;
 }

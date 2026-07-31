@@ -1,8 +1,10 @@
-#include "GameHandler.h"
+#include "GameDispatcher.h"
 
+#include "GameOpcodes.h"
 #include "GamePacket.h"
 #include "common/PayloadReader.h"
 #include "common/PayloadWriter.h"
+#include "common/TCPServer.h"
 #include "models/CharExitSucc.h"
 #include "models/CharacterDataLoad.h"
 #include "models/CrtLoad.h"
@@ -13,14 +15,9 @@
 #include <iomanip>
 #include <iostream>
 
-GameHandler::GameHandler(SOCKET clientSocket, std::span<const uint8_t> key)
-    : m_clientSocket(clientSocket), m_key(key)
+namespace
 {
-}
-
-bool GameHandler::Handle(GamePacket packet)
-{
-    if (packet.GetCode() == 411005) // CG_ENTER
+    void HandleCgEnter(const GameContext& ctx, const GamePacket& packet)
     {
         const auto& payload = packet.GetPayload();
         std::cout << "Received CG_ENTER packet with payload size: " << payload.size() << "\n";
@@ -64,11 +61,10 @@ bool GameHandler::Handle(GamePacket packet)
         response.Serialize(writer);
         auto data = writer.Data();
 
-        GamePacket responsePacket(511001, data); // GC_CHAR_DATA_LOAD
-        auto responsePayload = responsePacket.Serialize(m_key);
+        GamePacket responsePacket(GameOpcode::GC_CHAR_DATA_LOAD, data); // GC_CHAR_DATA_LOAD
+        auto responsePayload = responsePacket.Serialize(ctx.key);
 
-        send(m_clientSocket, reinterpret_cast<const char*>(responsePayload.data()),
-             static_cast<int>(responsePayload.size()), 0);
+        ctx.server.SendTo(ctx.clientSocket, responsePayload);
 
         PayloadWriter inventoryWriter;
         InventoryItemList inventoryResponse{.total_count = 0};
@@ -93,11 +89,10 @@ bool GameHandler::Handle(GamePacket packet)
         inventoryResponse.Serialize(inventoryWriter);
         auto inventoryData = inventoryWriter.Data();
 
-        GamePacket inventoryPacket(511591, inventoryData); // GC_INVENTORY_ITEM_LIST
-        auto inventoryPayload = inventoryPacket.Serialize(m_key);
+        GamePacket inventoryPacket(GameOpcode::GC_INVENTORY_ITEM_LIST, inventoryData); // GC_INVENTORY_ITEM_LIST
+        auto inventoryPayload = inventoryPacket.Serialize(ctx.key);
 
-        send(m_clientSocket, reinterpret_cast<const char*>(inventoryPayload.data()),
-             static_cast<int>(inventoryPayload.size()), 0);
+        ctx.server.SendTo(ctx.clientSocket, inventoryPayload);
 
         PayloadWriter crtLoadWriter;
         CrtLoad crtLoadResponse{
@@ -106,15 +101,13 @@ bool GameHandler::Handle(GamePacket packet)
         crtLoadResponse.Serialize(crtLoadWriter);
         auto crtLoadData = crtLoadWriter.Data();
 
-        GamePacket crtLoadPacket(511029, crtLoadData); // GC_CRT_LOAD
-        auto crtLoadPayload = crtLoadPacket.Serialize(m_key);
+        GamePacket crtLoadPacket(GameOpcode::GC_CRT_LOAD, crtLoadData); // GC_CRT_LOAD
+        auto crtLoadPayload = crtLoadPacket.Serialize(ctx.key);
 
-        send(m_clientSocket, reinterpret_cast<const char*>(crtLoadPayload.data()),
-             static_cast<int>(crtLoadPayload.size()), 0);
-
-        return true;
+        ctx.server.SendTo(ctx.clientSocket, crtLoadPayload);
     }
-    else if (packet.GetCode() == 412039) // CG_PLAY_START
+
+    void HandleCgPlayStart(const GameContext&, const GamePacket&)
     {
         // Fire-and-forget signal from the client ("I've finished loading and
         // am entering the world") -- confirmed via both the real ggg_all2
@@ -126,9 +119,9 @@ bool GameHandler::Handle(GamePacket packet)
         // resent the burst again, in an infinite loop until the client gave
         // up and disconnected.
         std::cout << "Received CG_PLAY_START packet.\n";
-        return true;
     }
-    else if (packet.GetCode() == 411007) // CG_EXIT
+
+    void HandleCgExit(const GameContext& ctx, const GamePacket&)
     {
         // Log-out signal, empty body (confirmed both server- and
         // client-side -- see game/handlers/cg_exit.py). The real server
@@ -145,18 +138,29 @@ bool GameHandler::Handle(GamePacket packet)
         exitResponse.Serialize(exitWriter);
         auto exitData = exitWriter.Data();
 
-        GamePacket exitPacket(522010, exitData); // GC_CHAR_EXIT_SUCC
-        auto exitPayload = exitPacket.Serialize(m_key);
+        GamePacket exitPacket(GameOpcode::GC_CHAR_EXIT_SUCC, exitData); // GC_CHAR_EXIT_SUCC
+        auto exitPayload = exitPacket.Serialize(ctx.key);
 
-        send(m_clientSocket, reinterpret_cast<const char*>(exitPayload.data()),
-             static_cast<int>(exitPayload.size()), 0);
-
-        return true;
+        ctx.server.SendTo(ctx.clientSocket, exitPayload);
     }
-    else
+}
+
+GameDispatcher::GameDispatcher()
+{
+    m_handlers[GameOpcode::CG_ENTER] = HandleCgEnter;
+    m_handlers[GameOpcode::CG_PLAY_START] = HandleCgPlayStart;
+    m_handlers[GameOpcode::CG_EXIT] = HandleCgExit;
+}
+
+void GameDispatcher::Dispatch(const GameContext& ctx, const GamePacket& packet) const
+{
+    auto it = m_handlers.find(packet.GetCode());
+    if (it == m_handlers.end())
     {
         std::cout << "Received unknown packet code: " << std::hex << packet.GetCode() << std::dec
                   << "\n";
+        return;
     }
-    return false;
+
+    it->second(ctx, packet);
 }
