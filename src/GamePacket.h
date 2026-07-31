@@ -3,14 +3,17 @@
 #include <vector>
 #include <span>
 
-class LoginPacket {
+class BlowfishCipher;
+
+class GamePacket {
 private:
     uint32_t m_code = 0;
     std::vector<uint8_t> m_payload;
 
 public:
-    LoginPacket() = default;
-    LoginPacket(uint32_t code, std::vector<uint8_t> payload) : m_code(code), m_payload(std::move(payload)) {};
+    GamePacket() = default;
+    GamePacket(uint32_t code, std::vector<uint8_t> payload)
+        : m_code(code), m_payload(std::move(payload)) {};
 
     [[nodiscard]] const std::vector<uint8_t>& GetPayload() const { return m_payload; }
     [[nodiscard]] uint32_t GetCode() const { return m_code; }

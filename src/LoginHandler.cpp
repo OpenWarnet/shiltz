@@ -1,12 +1,12 @@
 #include "LoginHandler.h"
 
-#include "DESCipher.h"
 #include "LoginPacket.h"
 #include "common/PayloadReader.h"
 #include "common/PayloadWriter.h"
 #include "models/Character.h"
 #include "models/CharacterSelection.h"
 #include "models/CreateCharacter.h"
+#include "models/GameConnect.h"
 #include "models/GenericCharacterPayload.h"
 #include "models/Login.h"
 #include "models/ServerList.h"
@@ -273,6 +273,39 @@ bool LoginHandler::Handle(LoginPacket packet)
         auto data = writer.Data();
 
         LoginPacket responsePacket(211022, data); // LC_CREATE_MAP_NUM_SUCCESS
+        auto responsePayload = responsePacket.Serialize(m_key);
+
+        send(m_clientSocket, reinterpret_cast<const char*>(responsePayload.data()),
+             static_cast<int>(responsePayload.size()), 0);
+
+        return true;
+    }
+    else if (packet.GetCode() == 111006) // CL_GAMESERVER_CONNECT
+    {
+        const auto& payload = packet.GetPayload();
+        std::cout << "Received CL_GAMESERVER_CONNECT packet with payload size: " << payload.size()
+                  << "\n";
+
+        PayloadReader reader(payload);
+        GameConnect request;
+        if (!request.Deserialize(reader))
+        {
+            std::cout << "Failed parsing request\n";
+        }
+
+        PayloadWriter writer;
+        GameConnectSuccess response{
+            .server_id = request.server_id,
+            .char_name = request.char_name,
+            .game_server_ip = "45.58.9.172",
+            .game_server_port = 1818,
+            .session_id = 479309586,
+            .status = 1,
+        };
+        response.Serialize(writer);
+        auto data = writer.Data();
+
+        LoginPacket responsePacket(221009, data); // LC_GSERV_CONNECT_SUCCESS
         auto responsePayload = responsePacket.Serialize(m_key);
 
         send(m_clientSocket, reinterpret_cast<const char*>(responsePayload.data()),

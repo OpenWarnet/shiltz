@@ -4,15 +4,15 @@
 #include <winsock2.h>
 #include <span>
 
-class LoginPacket;
+class GamePacket;
 
-class LoginHandler {
+class GameHandler {
 private:
 	SOCKET m_clientSocket;
     std::span<const uint8_t> m_key;
 
 public:
-    LoginHandler(SOCKET clientSocket, std::span<const uint8_t> key);
+    GameHandler(SOCKET clientSocket, std::span<const uint8_t> key);
 
-    bool Handle(LoginPacket packet);
+    bool Handle(GamePacket packet);
 };
