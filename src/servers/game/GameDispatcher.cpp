@@ -5,11 +5,11 @@
 #include "common/OpcodeBinder.h"
 #include "common/PayloadWriter.h"
 #include "common/TCPServer.h"
-#include "game/client/GameEnter.h"
-#include "game/server/CharExitSucc.h"
-#include "game/server/CharacterDataLoad.h"
-#include "game/server/CrtLoad.h"
-#include "game/server/InventoryItemList.h"
+#include "protocol/client/GameEnter.h"
+#include "protocol/server/CharExitSucc.h"
+#include "protocol/server/CharacterDataLoad.h"
+#include "protocol/server/CrtLoad.h"
+#include "protocol/server/InventoryItemList.h"
 
 #include <ctime>
 #include <iomanip>

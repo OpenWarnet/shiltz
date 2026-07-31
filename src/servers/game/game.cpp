@@ -1,4 +1,4 @@
-#include "game/GameServer.h"
+#include "GameServer.h"
 
 #include <array>
 #include <winsock2.h>

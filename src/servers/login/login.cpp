@@ -1,5 +1,5 @@
 #include "cipher/DESCipher.h"
-#include "login/LoginServer.h"
+#include "LoginServer.h"
 
 #include <array>
 #include <iomanip>
