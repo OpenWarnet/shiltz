@@ -1,7 +1,10 @@
 #include "cipher/DESCipher.h"
 #include "LoginServer.h"
+#include "storage/IDatabase.h"
+#include "storage/MigrationRunner.h"
 
 #include <array>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <string_view>
@@ -56,7 +59,14 @@ int main()
     std::cout << "Key: " << std::string_view(reinterpret_cast<const char*>(key.data()), key.size())
               << "\n";
 
-    LoginServer server(8080, key, payload);
+    const std::filesystem::path sourceDir(SHILTZ_SOURCE_DIR);
+    const auto dbPath = sourceDir / "db" / "login.sqlite3";
+    const auto migrationsDir = sourceDir / "db" / "migrations" / "sqlite";
+
+    auto db = OpenDatabase("sqlite:" + dbPath.string());
+    RunMigrations(*db, migrationsDir);
+
+    LoginServer server(8080, key, payload, *db);
     server.Run();
 
     return 0;

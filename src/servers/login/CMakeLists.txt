@@ -24,6 +24,10 @@ add_executable (
 	"protocol/server/Character.h"
 	"protocol/server/CharacterSelection.h"
 	"protocol/server/CharacterSelection.cpp"
+	"protocol/server/GameConnectSuccess.h"
+	"protocol/server/GameConnectSuccess.cpp"
+	"protocol/server/LoginFail.h"
+	"protocol/server/LoginFail.cpp"
 	"protocol/server/ServerList.h"
 	"protocol/server/ServerList.cpp"
 	"protocol/client/ServerSelect.h"
@@ -38,21 +42,28 @@ add_executable (
 	"protocol/client/CreateCharacter.cpp"
 	"protocol/client/GameConnect.h"
 	"protocol/client/GameConnect.cpp"
-	"protocol/server/GameConnectSuccess.h"
-	"protocol/server/GameConnectSuccess.cpp"
 	"${CMAKE_SOURCE_DIR}/src/common/Dispatcher.h"
 	"${CMAKE_SOURCE_DIR}/src/common/PayloadWriter.h"
 	"${CMAKE_SOURCE_DIR}/src/common/PayloadReader.h"
 	"${CMAKE_SOURCE_DIR}/src/common/TCPServer.h"
-	"${CMAKE_SOURCE_DIR}/src/common/TCPServer.cpp")
+	"${CMAKE_SOURCE_DIR}/src/common/TCPServer.cpp"
+	"${CMAKE_SOURCE_DIR}/src/storage/IDatabase.h"
+	"${CMAKE_SOURCE_DIR}/src/storage/Database.cpp"
+	"${CMAKE_SOURCE_DIR}/src/storage/SQLiteDatabase.h"
+	"${CMAKE_SOURCE_DIR}/src/storage/SQLiteDatabase.cpp"
+	"${CMAKE_SOURCE_DIR}/src/storage/MigrationRunner.h"
+	"${CMAKE_SOURCE_DIR}/src/storage/MigrationRunner.cpp")
 
 target_include_directories(login PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/src
 )
 
+target_compile_definitions(login PRIVATE SHILTZ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
 find_package(cryptopp CONFIG REQUIRED)
-target_link_libraries(login PRIVATE cryptopp::cryptopp)
+find_package(unofficial-sqlite3 CONFIG REQUIRED)
+target_link_libraries(login PRIVATE cryptopp::cryptopp unofficial::sqlite3::sqlite3)
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET login PROPERTY CXX_STANDARD 20)

@@ -32,3 +32,9 @@ vcpkg_installed/
 # Editor / OS temp files
 *~
 *.tmp
+
+# Local dev database (schema lives in db/migrations, this is just runtime data)
+db/*.sqlite3
+db/*.sqlite3-journal
+db/*.sqlite3-wal
+db/*.sqlite3-shm

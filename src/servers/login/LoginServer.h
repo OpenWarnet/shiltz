@@ -2,6 +2,7 @@
 
 #include "LoginDispatcher.h"
 #include "common/TCPServer.h"
+#include "storage/IDatabase.h"
 
 #include <cstdint>
 #include <span>
@@ -9,7 +10,8 @@
 class LoginServer : public TCPServer
 {
 public:
-    LoginServer(uint16_t port, std::span<const uint8_t> key, std::span<const uint8_t> noncePayload);
+    LoginServer(uint16_t port, std::span<const uint8_t> key, std::span<const uint8_t> noncePayload,
+                IDatabase& db);
 
 protected:
     void OnClientConnected(SOCKET clientSocket) override;
@@ -19,4 +21,5 @@ private:
     LoginDispatcher m_dispatcher;
     std::span<const uint8_t> m_key;
     std::span<const uint8_t> m_noncePayload;
+    IDatabase& m_db;
 };
