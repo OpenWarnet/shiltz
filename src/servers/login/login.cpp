@@ -1,5 +1,6 @@
 #include "cipher/DESCipher.h"
 #include "LoginServer.h"
+#include "common/PacketCapture.h"
 #include "storage/IDatabase.h"
 #include "storage/MigrationRunner.h"
 
@@ -65,6 +66,8 @@ int main()
 
     auto db = OpenDatabase("sqlite:" + dbPath.string());
     RunMigrations(*db, migrationsDir);
+
+    PacketCapture::Init("login");
 
     LoginServer server(8080, key, payload, *db);
     server.Run();

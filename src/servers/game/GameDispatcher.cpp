@@ -13,9 +13,12 @@ namespace
 
 GameDispatcher::GameDispatcher()
     : Dispatcher{
-          When(GameOpcode::CG_ENTER).ParseAs<GameEnter>().Then(HandleCgEnter),
-          When(GameOpcode::CG_PLAY_START).SkipParse(SkipReason::Ignored).Then(HandleCgPlayStart),
-          When(GameOpcode::CG_EXIT).SkipParse(SkipReason::Empty).Then(HandleCgExit),
+          &GameOpcode::ToString,
+          {
+              When(GameOpcode::CG_ENTER).ParseAs<GameEnter>().Then(HandleCgEnter),
+              When(GameOpcode::CG_PLAY_START).SkipParse(SkipReason::Ignored).Then(HandleCgPlayStart),
+              When(GameOpcode::CG_EXIT).SkipParse(SkipReason::Empty).Then(HandleCgExit),
+          },
       }
 {
 }

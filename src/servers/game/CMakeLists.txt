@@ -12,6 +12,7 @@ add_executable (
 	"GameDispatcher.h"
 	"GameDispatcher.cpp"
 	"GameOpcodes.h"
+	"GameOpcodes.cpp"
 	"handlers/Session.cpp"
 	"handlers/Session.h"
 	"GameServer.h"
@@ -30,7 +31,10 @@ add_executable (
 	"${CMAKE_SOURCE_DIR}/src/common/PayloadWriter.h"
 	"${CMAKE_SOURCE_DIR}/src/common/PayloadReader.h"
 	"${CMAKE_SOURCE_DIR}/src/common/TCPServer.h"
-	"${CMAKE_SOURCE_DIR}/src/common/TCPServer.cpp")
+	"${CMAKE_SOURCE_DIR}/src/common/TCPServer.cpp"
+	"${CMAKE_SOURCE_DIR}/src/common/HexDump.h"
+	"${CMAKE_SOURCE_DIR}/src/common/PacketCapture.h"
+	"${CMAKE_SOURCE_DIR}/src/common/PacketCapture.cpp")
 
 target_include_directories(game PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}

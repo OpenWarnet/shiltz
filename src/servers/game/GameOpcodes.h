@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string_view>
 
 namespace GameOpcode
 {
@@ -14,4 +15,8 @@ namespace GameOpcode
     inline constexpr uint32_t GC_INVENTORY_ITEM_LIST = 511591;
     inline constexpr uint32_t GC_CRT_LOAD = 511029;
     inline constexpr uint32_t GC_CHAR_EXIT_SUCC = 522010;
+
+    // Resolves an opcode to its constant's name, or "UNKNOWN" if not one of
+    // the constants above. Used to make packet capture logs readable.
+    std::string_view ToString(uint32_t code);
 }

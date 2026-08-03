@@ -20,25 +20,30 @@ namespace
 
 LoginDispatcher::LoginDispatcher()
     : Dispatcher{
-          When(LoginOpcode::CL_LOGIN).ParseAs<Login>().Then(HandleClLogin),
-          When(LoginOpcode::CL_USER_SYSTEM_SPEC_INFO)
-              .SkipParse(SkipReason::Ignored)
-              .Then(HandleClUserSystemSpecInfo),
-          When(LoginOpcode::CL_GAMEGUARD).SkipParse(SkipReason::Ignored).Then(HandleClGameguard),
-          When(LoginOpcode::CL_GET_CHARINFO).ParseAs<ServerSelect>().Then(HandleClGetCharinfo),
-          When(LoginOpcode::CL_DELETE_CHARACTER)
-              .ParseAs<GenericCharacterPayload>()
-              .Then(HandleClDeleteCharacter),
-          When(LoginOpcode::CL_CHAR_DELETE_CANCLE)
-              .ParseAs<GenericCharacterPayload>()
-              .Then(HandleClCharDeleteCancle),
-          When(LoginOpcode::CL_CREATE_CHARACTER)
-              .ParseAs<CreateCharacter>()
-              .Then(HandleClCreateCharacter),
-          When(LoginOpcode::CL_CREATE_MAP_NUM).ParseAs<SetCharacterMap>().Then(HandleClCreateMapNum),
-          When(LoginOpcode::CL_GAMESERVER_CONNECT)
-              .ParseAs<GameConnect>()
-              .Then(HandleClGameserverConnect),
+          &LoginOpcode::ToString,
+          {
+              When(LoginOpcode::CL_LOGIN).ParseAs<Login>().Then(HandleClLogin),
+              When(LoginOpcode::CL_USER_SYSTEM_SPEC_INFO)
+                  .SkipParse(SkipReason::Ignored)
+                  .Then(HandleClUserSystemSpecInfo),
+              When(LoginOpcode::CL_GAMEGUARD).SkipParse(SkipReason::Ignored).Then(HandleClGameguard),
+              When(LoginOpcode::CL_GET_CHARINFO).ParseAs<ServerSelect>().Then(HandleClGetCharinfo),
+              When(LoginOpcode::CL_DELETE_CHARACTER)
+                  .ParseAs<GenericCharacterPayload>()
+                  .Then(HandleClDeleteCharacter),
+              When(LoginOpcode::CL_CHAR_DELETE_CANCLE)
+                  .ParseAs<GenericCharacterPayload>()
+                  .Then(HandleClCharDeleteCancle),
+              When(LoginOpcode::CL_CREATE_CHARACTER)
+                  .ParseAs<CreateCharacter>()
+                  .Then(HandleClCreateCharacter),
+              When(LoginOpcode::CL_CREATE_MAP_NUM)
+                  .ParseAs<SetCharacterMap>()
+                  .Then(HandleClCreateMapNum),
+              When(LoginOpcode::CL_GAMESERVER_CONNECT)
+                  .ParseAs<GameConnect>()
+                  .Then(HandleClGameserverConnect),
+          },
       }
 {
 }

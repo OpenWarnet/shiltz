@@ -1,5 +1,7 @@
 #include "LoginPacket.h"
+#include "LoginOpcodes.h"
 #include "cipher/DESCipher.h"
+#include "common/PacketCapture.h"
 #include <winsock2.h>
 #include <cstring>
 #include <iostream>
@@ -54,6 +56,9 @@ std::vector<uint8_t> LoginPacket::Serialize(std::span<const uint8_t> key) const 
 	std::vector<uint8_t> body(bodyLength);
     std::memcpy(body.data(), &m_code, sizeof(uint32_t));
     std::memcpy(body.data() + sizeof(uint32_t), m_payload.data(), m_payload.size());
+
+    PacketCapture::LogHandled(PacketCapture::Direction::Outbound, INVALID_SOCKET, m_code,
+                               LoginOpcode::ToString(m_code), m_payload);
 
     if (!key.empty()) {
         for (size_t i = 0; i < body.size(); ++i) {

@@ -1,5 +1,7 @@
 #include "GamePacket.h"
+#include "GameOpcodes.h"
 #include "cipher/BlowfishCipher.h"
+#include "common/PacketCapture.h"
 
 #include <cstring>
 #include <iomanip>
@@ -54,6 +56,9 @@ std::vector<uint8_t> GamePacket::Serialize(std::span<const uint8_t> key) const
               << ", Payload size = " << m_payload.size() << ", Body length = " << bodyLength
               << "\n";
     uint32_t totalLength = sizeof(uint32_t) + bodyLength;
+
+    PacketCapture::LogHandled(PacketCapture::Direction::Outbound, INVALID_SOCKET, m_code,
+                               GameOpcode::ToString(m_code), m_payload);
 
     // No Encryption from Server -> Client
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string_view>
 
 namespace LoginOpcode
 {
@@ -24,4 +25,8 @@ namespace LoginOpcode
     inline constexpr uint32_t LC_CREATECHAR_SUCCESS = 221005;
     inline constexpr uint32_t LC_CREATE_MAP_NUM_SUCCESS = 211022;
     inline constexpr uint32_t LC_GSERV_CONNECT_SUCCESS = 221009;
-    }
+
+    // Resolves an opcode to its constant's name, or "UNKNOWN" if not one of
+    // the constants above. Used to make packet capture logs readable.
+    std::string_view ToString(uint32_t code);
+}
