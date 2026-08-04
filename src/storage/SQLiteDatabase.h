@@ -15,6 +15,7 @@ public:
 
     void Exec(const std::string& sql) override;
     std::unique_ptr<IStatement> Prepare(const std::string& sql) override;
+    int64_t LastInsertRowId() override;
 
 private:
     sqlite3* m_db = nullptr;

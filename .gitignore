@@ -41,3 +41,7 @@ db/*.sqlite3-shm
 
 # Packet capture logs (dev-only, may contain player-entered data)
 logs/
+
+# Local Claude Code guidance (not shared with the team)
+CLAUDE.md
+.claude/

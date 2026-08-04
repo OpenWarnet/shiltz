@@ -7,8 +7,8 @@ struct GenericCharacterPayload;
 struct CreateCharacter;
 struct SetCharacterMap;
 
-void HandleClGetCharinfo(const LoginContext& ctx, const ServerSelect& select);
-void HandleClDeleteCharacter(const LoginContext& ctx, const GenericCharacterPayload& request);
-void HandleClCharDeleteCancle(const LoginContext& ctx, const GenericCharacterPayload& request);
-void HandleClCreateCharacter(const LoginContext& ctx, const CreateCharacter& request);
-void HandleClCreateMapNum(const LoginContext& ctx, const SetCharacterMap& request);
+void HandleGetCharacterList(const LoginContext& ctx, const ServerSelect& select);
+void HandleDeleteCharacter(const LoginContext& ctx, const GenericCharacterPayload& request);
+void HandleCancelDeleteCharacter(const LoginContext& ctx, const GenericCharacterPayload& request);
+void HandleCreateCharacter(const LoginContext& ctx, const CreateCharacter& request);
+void HandleUpdateCharacterLocation(const LoginContext& ctx, const SetCharacterMap& request);

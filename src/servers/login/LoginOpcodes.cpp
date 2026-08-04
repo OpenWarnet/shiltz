@@ -32,12 +32,20 @@ namespace LoginOpcode
             return "LC_CHARINFO_SUCCESS";
         case LC_DELETECHAR_SUCCESS:
             return "LC_DELETECHAR_SUCCESS";
+        case LC_DELETECHAR_FAIL:
+            return "LC_DELETECHAR_FAIL";
         case LC_CHAR_DELETE_CANCLE_SUCCESS:
             return "LC_CHAR_DELETE_CANCLE_SUCCESS";
+        case LC_CHAR_DELETE_CANCLE_FAIL:
+            return "LC_CHAR_DELETE_CANCLE_FAIL";
         case LC_CREATECHAR_SUCCESS:
             return "LC_CREATECHAR_SUCCESS";
+        case LC_CREATECHAR_FAIL:
+            return "LC_CREATECHAR_FAIL";
         case LC_CREATE_MAP_NUM_SUCCESS:
             return "LC_CREATE_MAP_NUM_SUCCESS";
+        case LC_CREATE_MAP_NUM_FAIL:
+            return "LC_CREATE_MAP_NUM_FAIL";
         case LC_GSERV_CONNECT_SUCCESS:
             return "LC_GSERV_CONNECT_SUCCESS";
         default:

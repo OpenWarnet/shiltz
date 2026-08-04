@@ -4,6 +4,6 @@
 
 struct Login;
 
-void HandleClLogin(const LoginContext& ctx, const Login& login);
-void HandleClUserSystemSpecInfo(const LoginContext& ctx);
-void HandleClGameguard(const LoginContext& ctx);
+void HandleLogin(const LoginContext& ctx, const Login& login);
+void HandleUserSystemSpecInfo(const LoginContext& ctx);
+void HandleGameguard(const LoginContext& ctx);

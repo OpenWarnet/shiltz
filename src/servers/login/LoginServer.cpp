@@ -31,5 +31,5 @@ void LoginServer::OnFrame(SOCKET clientSocket, std::span<const uint8_t> frame)
     std::cout << "Received (" << frame.size() << " bytes, payload " << packet.GetPayload().size()
               << " bytes)\n";
 
-    m_dispatcher.Dispatch(LoginContext{*this, clientSocket, m_key, m_db}, packet);
+    m_dispatcher.Dispatch(LoginContext{*this, clientSocket, m_key, m_db, m_sessions}, packet);
 }

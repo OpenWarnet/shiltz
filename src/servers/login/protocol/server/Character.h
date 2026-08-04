@@ -29,8 +29,8 @@ struct CharacterAppearance
     uint32_t shield = 0;
     uint32_t shieldRefine = 0;
 
-    uint32_t accessories = 0;
-    uint32_t accessoriesRefine = 0;
+    uint32_t accessory = 0;
+    uint32_t accessoryRefine = 0;
 
     uint32_t pet = 0;
     uint32_t petLevel = 0;

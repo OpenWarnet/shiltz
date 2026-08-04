@@ -1,6 +1,7 @@
 #pragma once
 
 #include "LoginDispatcher.h"
+#include "LoginSessionStore.h"
 #include "common/TCPServer.h"
 #include "storage/IDatabase.h"
 
@@ -22,4 +23,5 @@ private:
     std::span<const uint8_t> m_key;
     std::span<const uint8_t> m_noncePayload;
     IDatabase& m_db;
+    LoginSessionStore m_sessions;
 };

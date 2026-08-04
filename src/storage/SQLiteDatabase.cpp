@@ -107,3 +107,8 @@ std::unique_ptr<IStatement> SQLiteDatabase::Prepare(const std::string& sql)
 
     return std::make_unique<SQLiteStatement>(stmt);
 }
+
+int64_t SQLiteDatabase::LastInsertRowId()
+{
+    return sqlite3_last_insert_rowid(m_db);
+}

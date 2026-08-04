@@ -38,6 +38,9 @@ public:
     virtual void Exec(const std::string& sql) = 0;
 
     virtual std::unique_ptr<IStatement> Prepare(const std::string& sql) = 0;
+
+    // Rowid assigned by the most recent successful INSERT on this connection.
+    virtual int64_t LastInsertRowId() = 0;
 };
 
 // Picks a backend from the connection string's scheme, e.g. "sqlite:db/login.sqlite3".

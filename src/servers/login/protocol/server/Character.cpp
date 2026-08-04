@@ -26,8 +26,8 @@ void CharacterAppearance::Serialize(PayloadWriter& writer) const
     writer.Write(shield);
     writer.Write(shieldRefine);
 
-    writer.Write(accessories);
-    writer.Write(accessoriesRefine);
+    writer.Write(accessory);
+    writer.Write(accessoryRefine);
 
     writer.Write(pet);
     writer.Write(petLevel);

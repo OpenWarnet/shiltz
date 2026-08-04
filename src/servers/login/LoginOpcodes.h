@@ -21,9 +21,13 @@ namespace LoginOpcode
     inline constexpr uint32_t LC_LOGIN_FAIL = 231002;
     inline constexpr uint32_t LC_CHARINFO_SUCCESS = 221003;
     inline constexpr uint32_t LC_DELETECHAR_SUCCESS = 221007;
+    inline constexpr uint32_t LC_DELETECHAR_FAIL = 231008;
     inline constexpr uint32_t LC_CHAR_DELETE_CANCLE_SUCCESS = 211018;
+    inline constexpr uint32_t LC_CHAR_DELETE_CANCLE_FAIL = 211019;
     inline constexpr uint32_t LC_CREATECHAR_SUCCESS = 221005;
+    inline constexpr uint32_t LC_CREATECHAR_FAIL = 231006;
     inline constexpr uint32_t LC_CREATE_MAP_NUM_SUCCESS = 211022;
+    inline constexpr uint32_t LC_CREATE_MAP_NUM_FAIL = 211023;
     inline constexpr uint32_t LC_GSERV_CONNECT_SUCCESS = 221009;
 
     // Resolves an opcode to its constant's name, or "UNKNOWN" if not one of
