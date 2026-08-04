@@ -61,9 +61,6 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
         return;
     }
 
-    ctx.sessions.Set(ctx.clientSocket, GameSession{.sessionId = static_cast<int64_t>(request.session_id),
-                                                    .accountId = accountId});
-
     // GameEnter carries no server_id, so this game server instance's own
     // characters are found by (account_id, name) alone.
     auto findCharacter = ctx.db.Prepare(
@@ -88,6 +85,11 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
     }
 
     const auto characterId = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(0)));
+
+    ctx.sessions.Set(ctx.clientSocket, GameSession{.sessionId = static_cast<int64_t>(request.session_id),
+                                                    .accountId = accountId,
+                                                    .characterId = characterId});
+
     const auto level = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(1)));
     const auto jobId = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(2)));
     const auto gender = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(3)));
@@ -140,23 +142,67 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
 
     PayloadWriter inventoryWriter;
     InventoryItemList inventoryResponse{.total_count = 0};
-    inventoryResponse.slots[0] = {.item_id = 31163, .qty_or_refine = 3};
-    inventoryResponse.slots[1] = {.item_id = 1004, .qty_or_refine = 3};
-    inventoryResponse.slots[2] = {.item_id = 1005, .qty_or_refine = 6};
-    inventoryResponse.slots[3] = {.item_id = 1006, .qty_or_refine = 12};
-    inventoryResponse.slots[4] = {.item_id = 1007, .qty_or_refine = 3};
-    inventoryResponse.slots[5] = {.item_id = 30547, .qty_or_refine = 6};
-    inventoryResponse.slots[6] = {.item_id = 26431, .qty_or_refine = 3};
 
-    inventoryResponse.slots[13] = {.item_id = 200, .qty_or_refine = 5};
-    inventoryResponse.slots[14] = {
-        .item_id = 112, .qty_or_refine = 0};
-    inventoryResponse.slots[15] = {
-        .item_id = 109, .qty_or_refine = 7};
-    inventoryResponse.slots[16] = {
-        .item_id = 434, .qty_or_refine = 0};
-    inventoryResponse.slots[17] = {
-        .item_id = 25806, .qty_or_refine = 0};
+    auto findEquipment =
+        ctx.db.Prepare("SELECT slot, item_id, refine_level FROM equipment_slot WHERE character_id = ?");
+    findEquipment->Bind(0, characterId);
+
+    while (findEquipment->Step())
+    {
+        const int64_t slot = std::get<int64_t>(findEquipment->Column(0));
+        if (slot < 0 || static_cast<std::size_t>(slot) >= InventoryItemList::kBagStartSlot)
+        {
+            std::cout << "Ignoring equipment_slot row with out-of-range slot " << slot << "\n";
+            continue;
+        }
+
+        const SqlValue itemIdColumn = findEquipment->Column(1);
+        if (!std::holds_alternative<int64_t>(itemIdColumn))
+            continue; // NULL item_id -- empty slot, leave the wire slot zeroed
+
+        const SqlValue refineLevelColumn = findEquipment->Column(2);
+        const auto refineLevel = std::holds_alternative<int64_t>(refineLevelColumn)
+                                      ? static_cast<std::uint32_t>(std::get<int64_t>(refineLevelColumn))
+                                      : 0;
+
+        inventoryResponse.slots[static_cast<std::size_t>(slot)] = {
+            .item_id = static_cast<std::uint32_t>(std::get<int64_t>(itemIdColumn)),
+            .qty_or_refine = refineLevel,
+        };
+    }
+
+    auto findInventory = ctx.db.Prepare(
+        "SELECT slot_index, item_id, quantity, refine_level FROM inventory_slot WHERE character_id = ?");
+    findInventory->Bind(0, characterId);
+
+    while (findInventory->Step())
+    {
+        const int64_t slotIndex = std::get<int64_t>(findInventory->Column(0));
+        const int64_t wireSlot = static_cast<int64_t>(InventoryItemList::kBagStartSlot) + slotIndex;
+        if (slotIndex < 0 || static_cast<std::size_t>(wireSlot) >= InventoryItemList::kTotalSlots)
+        {
+            std::cout << "Ignoring inventory_slot row with out-of-range slot_index " << slotIndex << "\n";
+            continue;
+        }
+
+        // If the item has a refine_level, that's what it is -- used as-is
+        // (equippable items' "+N" display). Otherwise it's a stackable
+        // item: refine=N-1 displays as "N pcs" (see InventoryItemList.h),
+        // so db quantity needs the -1 transform.
+        const SqlValue quantityColumn = findInventory->Column(2);
+        const SqlValue refineLevelColumn = findInventory->Column(3);
+
+        std::uint32_t qtyOrRefine = 0;
+        if (std::holds_alternative<int64_t>(refineLevelColumn))
+            qtyOrRefine = static_cast<std::uint32_t>(std::get<int64_t>(refineLevelColumn));
+        else if (std::holds_alternative<int64_t>(quantityColumn) && std::get<int64_t>(quantityColumn) > 0)
+            qtyOrRefine = static_cast<std::uint32_t>(std::get<int64_t>(quantityColumn) - 1);
+
+        inventoryResponse.slots[static_cast<std::size_t>(wireSlot)] = {
+            .item_id = static_cast<std::uint32_t>(std::get<int64_t>(findInventory->Column(1))),
+            .qty_or_refine = qtyOrRefine,
+        };
+    }
 
     inventoryResponse.Serialize(inventoryWriter);
     auto inventoryData = inventoryWriter.Data();

@@ -5,8 +5,12 @@
 #include "common/OpcodeBinder.h"
 #include "handlers/Session.h"
 #include "handlers/Movement.h"
+#include "handlers/Inventory.h"
 #include "protocol/client/GameEnter.h"
 #include "protocol/client/CharMove.h"
+#include "protocol/client/ItemPickup.h"
+#include "protocol/client/ItemMove.h"
+#include "protocol/client/ItemDrop.h"
 
 namespace
 {
@@ -21,6 +25,9 @@ GameDispatcher::GameDispatcher()
               When(GameOpcode::CG_PLAY_START).SkipParse(SkipReason::Ignored).Then(HandleCgPlayStart),
               When(GameOpcode::CG_EXIT).SkipParse(SkipReason::Empty).Then(HandleCgExit),
               When(GameOpcode::CG_MOVE).ParseAs<CharMove>().Then(HandleMovement),
+              When(GameOpcode::CG_ITEM_PICKUP).ParseAs<ItemPickup>().Then(HandleItemPickup),
+              When(GameOpcode::CG_ITEM_MOVE).ParseAs<ItemMove>().Then(HandleItemMove),
+              When(GameOpcode::CG_ITEM_DROP).ParseAs<ItemDrop>().Then(HandleItemDrop),
           },
       }
 {

@@ -6,6 +6,8 @@
 #include "common/TCPServer.h"
 #include "protocol/client/CharMove.h"
 #include "protocol/server/ItemMapNew.h"
+#include "world/Item.h"
+#include "world/World.h"
 
 #include <iostream>
 #include <random>
@@ -20,11 +22,23 @@ void HandleMovement(const GameContext& ctx, const CharMove& request)
     std::uniform_int_distribution<uint32_t> distrib(1, 1000);
     uint32_t random_val = distrib(gen);
 
+    // TODO: CharMove carries no item_id -- kept as the prior hardcoded
+    // placeholder pending a real item-spawn source.
+    constexpr std::uint32_t kItemId = 1;
+
+    ctx.world.GetMap().AddItem(Item{
+        .id = random_val,
+        .item_id = kItemId,
+        .x = request.x,
+        .y = request.y,
+        .quantity = 1,
+    });
+
     ItemMapNew response{
         .id = random_val,
         .x = request.x,
         .y = request.y,
-        .item_id = 1,
+        .item_id = kItemId,
         .owner_id = request.user_id,
     };
     response.Serialize(writer);

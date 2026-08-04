@@ -10,6 +10,7 @@ class TCPServer;
 class GamePacket;
 class IDatabase;
 class GameSessionStore;
+class World;
 
 struct GameContext
 {
@@ -18,6 +19,7 @@ struct GameContext
     std::span<const uint8_t> key;
     IDatabase& db;
     GameSessionStore& sessions;
+    World& world;
 };
 
 class GameDispatcher : public Dispatcher<GameContext, GamePacket>
