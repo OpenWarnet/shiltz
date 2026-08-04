@@ -14,6 +14,8 @@ namespace GameOpcode
             return "CG_EXIT";
         case GC_CHAR_DATA_LOAD:
             return "GC_CHAR_DATA_LOAD";
+        case GC_ENTER_FAIL:
+            return "GC_ENTER_FAIL";
         case GC_INVENTORY_ITEM_LIST:
             return "GC_INVENTORY_ITEM_LIST";
         case GC_CRT_LOAD:

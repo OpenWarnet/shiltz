@@ -2,47 +2,133 @@
 
 #include "GameOpcodes.h"
 #include "GamePacket.h"
+#include "GameSessionStore.h"
 #include "common/PayloadWriter.h"
 #include "common/TCPServer.h"
 #include "protocol/client/GameEnter.h"
 #include "protocol/server/CharExitSucc.h"
 #include "protocol/server/CharacterDataLoad.h"
 #include "protocol/server/CrtLoad.h"
+#include "protocol/server/EnterFail.h"
 #include "protocol/server/InventoryItemList.h"
+#include "storage/IDatabase.h"
 
 #include <ctime>
 #include <iostream>
 
-void HandleCgEnter(const GameContext& ctx, const GameEnter& request)
+void HandleEnter(const GameContext& ctx, const GameEnter& request)
 {
     std::cout << "Session ID: " << request.session_id << "\n";
     std::cout << "Character: " << request.char_name << "\n";
     std::cout << "Username: " << request.username << "\n";
     // Password intentionally not logged.
 
+    auto sendFail = [&]
+    {
+        PayloadWriter failWriter;
+        EnterFail{}.Serialize(failWriter);
+        auto failData = failWriter.Data();
+
+        GamePacket failPacket(GameOpcode::GC_ENTER_FAIL, failData);
+        auto failPayload = failPacket.Serialize(ctx.key);
+
+        ctx.server.SendTo(ctx.clientSocket, failPayload);
+    };
+
+    auto findSession = ctx.db.Prepare("SELECT account_id FROM session WHERE id = ?");
+    findSession->Bind(0, static_cast<int64_t>(request.session_id));
+
+    if (!findSession->Step())
+    {
+        std::cout << "Rejecting CG_ENTER: unknown session " << request.session_id << "\n";
+        sendFail();
+        return;
+    }
+
+    const int64_t accountId = std::get<int64_t>(findSession->Column(0));
+
+    // The session only proves "some account logged in and got handed this
+    // session_id" -- cross-check it actually belongs to the account the
+    // client claims to be, rather than trusting session_id alone.
+    auto findAccount = ctx.db.Prepare("SELECT username FROM accounts WHERE id = ?");
+    findAccount->Bind(0, accountId);
+
+    if (!findAccount->Step() || std::get<std::string>(findAccount->Column(0)) != request.username)
+    {
+        std::cout << "Rejecting CG_ENTER: username '" << request.username
+                  << "' does not match session's account\n";
+        sendFail();
+        return;
+    }
+
+    ctx.sessions.Set(ctx.clientSocket, GameSession{.sessionId = static_cast<int64_t>(request.session_id),
+                                                    .accountId = accountId});
+
+    // GameEnter carries no server_id, so this game server instance's own
+    // characters are found by (account_id, name) alone.
+    auto findCharacter = ctx.db.Prepare(
+        "SELECT character.id, character.level, character.job_id, character.gender, "
+        "       character.hairstyle_id, character.face_id, "
+        "       character.stats_str, character.stats_int, character.stats_dex, "
+        "       character.stats_con, character.stats_men, character.stats_sen, "
+        "       character_position.map_id, character_position.location_x, "
+        "       character_position.location_y "
+        "FROM character "
+        "JOIN character_position ON character_position.character_id = character.id "
+        "WHERE character.account_id = ? AND character.name = ?");
+    findCharacter->Bind(0, accountId);
+    findCharacter->Bind(1, request.char_name);
+
+    if (!findCharacter->Step())
+    {
+        std::cout << "Rejecting CG_ENTER: no character '" << request.char_name
+                  << "' for this account\n";
+        sendFail();
+        return;
+    }
+
+    const auto characterId = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(0)));
+    const auto level = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(1)));
+    const auto jobId = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(2)));
+    const auto gender = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(3)));
+    const auto hairstyleId = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(4)));
+    const auto faceId = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(5)));
+    const auto statsStr = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(6)));
+    const auto statsInt = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(7)));
+    const auto statsDex = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(8)));
+    const auto statsCon = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(9)));
+    const auto statsMen = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(10)));
+    const auto statsSen = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(11)));
+    const auto mapId = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(12)));
+    const auto locX = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(13)));
+    const auto locY = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(14)));
+
     PayloadWriter writer;
     CharacterDataLoad response{
-        .self_entity_id = 1,
-        .eps_user_flag = 1,
-        .map_id = 124,
-        .loc_x = 168,
-        .loc_y = 200,
-        .level = 271,
-        .job_id = 1,
-        .gender = 1,
-        .current_exp = 100,
-        .cegel = 9123456,
-        .fame = 2556,
-        .stat_attack = 900,
-        .stat_magic = 1,
-        .stat_defence = 123,
-        .stat_eva = 8,
-        .stat_hit = 3,
-        .current_hp = 1000,
-        .current_ap = 500,
-        .hair_type = 4,
+        .self_entity_id = characterId,
+        .eps_user_flag = 1, // TODO: no DB column -- kept as the prior hardcoded placeholder
+        .map_id = mapId,
+        .loc_x = locX,
+        .loc_y = locY,
+        .level = level,
+        .job_id = jobId,
+        .gender = gender,
+        .current_exp = 100, // TODO: no DB column -- kept as the prior hardcoded placeholder
+        .cegel = 9123456,   // TODO: no DB column -- kept as the prior hardcoded placeholder
+        .fame = 2556,       // TODO: no DB column -- kept as the prior hardcoded placeholder
+        .stats_str = statsStr,
+        .stats_int = statsInt,
+        .stats_dex = statsDex,
+        .stats_con = statsCon,
+        .stats_men = statsMen,
+        .stats_sen = statsSen,
+        .current_hp = 1000, // TODO: no DB column -- kept as the prior hardcoded placeholder
+        .current_ap = 500,  // TODO: no DB column -- kept as the prior hardcoded placeholder
+        .hair_type = hairstyleId,
+        .char_name = request.char_name,
         .record_array_a = {},
         .server_timestamp = static_cast<std::uint32_t>(std::time(nullptr)),
+        .face_type = faceId,
     };
     response.Serialize(writer);
     auto data = writer.Data();

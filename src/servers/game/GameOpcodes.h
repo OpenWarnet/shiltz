@@ -13,6 +13,7 @@ namespace GameOpcode
 
     // Server -> Client
     inline constexpr uint32_t GC_CHAR_DATA_LOAD = 511001;
+    inline constexpr uint32_t GC_ENTER_FAIL = 532050;
     inline constexpr uint32_t GC_CRT_LOAD = 511029;
     inline constexpr uint32_t GC_ITEM_MAP_NEW = 511035;
     inline constexpr uint32_t GC_INVENTORY_ITEM_LIST = 511591;

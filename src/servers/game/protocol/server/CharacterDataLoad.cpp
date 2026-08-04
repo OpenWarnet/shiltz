@@ -53,12 +53,12 @@ void CharacterDataLoad::Serialize(PayloadWriter& writer) const
     writer.Write(cegel);
     writer.Write(fame);
 
-    writer.Write(stat_attack);
-    writer.Write(stat_magic);
-    writer.Write(stat_defence);
-    writer.Write(stat_eva);
-    writer.Write(stat_hit);
-    writer.Write(stat_move);
+    writer.Write(stats_str);
+    writer.Write(stats_int);
+    writer.Write(stats_dex);
+    writer.Write(stats_con);
+    writer.Write(stats_men);
+    writer.Write(stats_sen);
 
     writer.Write(current_hp);
     writer.Write(current_ap);
