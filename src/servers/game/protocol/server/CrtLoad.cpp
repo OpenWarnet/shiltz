@@ -7,14 +7,10 @@ void CrtLoadRecord::Serialize(PayloadWriter& writer) const
     writer.Write(id);
     writer.Write(x);
     writer.Write(y);
-    writer.Write(type);
-    writer.Write(spawn_count);
+    writer.Write(monster_id);
+    writer.Write(direction);
     writer.Write(hp);
-    writer.Write(f4);
-    writer.Write(pos1);
-    writer.Write(pos2);
-    writer.Write(pos3);
-    writer.Write(appearance_raw);
+    writer.Write(reserved);
 }
 
 void CrtLoad::Serialize(PayloadWriter& writer) const

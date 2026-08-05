@@ -63,16 +63,16 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
 
     // GameEnter carries no server_id, so this game server instance's own
     // characters are found by (account_id, name) alone.
-    auto findCharacter = ctx.db.Prepare(
-        "SELECT character.id, character.level, character.job_id, character.gender, "
-        "       character.hairstyle_id, character.face_id, "
-        "       character.stats_str, character.stats_int, character.stats_dex, "
-        "       character.stats_con, character.stats_men, character.stats_sen, "
-        "       character_position.map_id, character_position.location_x, "
-        "       character_position.location_y "
-        "FROM character "
-        "JOIN character_position ON character_position.character_id = character.id "
-        "WHERE character.account_id = ? AND character.name = ?");
+    auto findCharacter =
+        ctx.db.Prepare("SELECT character.id, character.level, character.job_id, character.gender, "
+                       "       character.hairstyle_id, character.face_id, "
+                       "       character.stats_str, character.stats_int, character.stats_dex, "
+                       "       character.stats_con, character.stats_men, character.stats_sen, "
+                       "       character_position.map_id, character_position.location_x, "
+                       "       character_position.location_y "
+                       "FROM character "
+                       "JOIN character_position ON character_position.character_id = character.id "
+                       "WHERE character.account_id = ? AND character.name = ?");
     findCharacter->Bind(0, accountId);
     findCharacter->Bind(1, request.char_name);
 
@@ -84,16 +84,19 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
         return;
     }
 
-    const auto characterId = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(0)));
+    const auto characterId =
+        static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(0)));
 
-    ctx.sessions.Set(ctx.clientSocket, GameSession{.sessionId = static_cast<int64_t>(request.session_id),
-                                                    .accountId = accountId,
-                                                    .characterId = characterId});
+    ctx.sessions.Set(ctx.clientSocket,
+                     GameSession{.sessionId = static_cast<int64_t>(request.session_id),
+                                 .accountId = accountId,
+                                 .characterId = characterId});
 
     const auto level = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(1)));
     const auto jobId = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(2)));
     const auto gender = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(3)));
-    const auto hairstyleId = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(4)));
+    const auto hairstyleId =
+        static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(4)));
     const auto faceId = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(5)));
     const auto statsStr = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(6)));
     const auto statsInt = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(7)));
@@ -143,8 +146,8 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
     PayloadWriter inventoryWriter;
     InventoryItemList inventoryResponse{.total_count = 0};
 
-    auto findEquipment =
-        ctx.db.Prepare("SELECT slot, item_id, refine_level FROM equipment_slot WHERE character_id = ?");
+    auto findEquipment = ctx.db.Prepare(
+        "SELECT slot, item_id, refine_level FROM equipment_slot WHERE character_id = ?");
     findEquipment->Bind(0, characterId);
 
     while (findEquipment->Step())
@@ -161,9 +164,10 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
             continue; // NULL item_id -- empty slot, leave the wire slot zeroed
 
         const SqlValue refineLevelColumn = findEquipment->Column(2);
-        const auto refineLevel = std::holds_alternative<int64_t>(refineLevelColumn)
-                                      ? static_cast<std::uint32_t>(std::get<int64_t>(refineLevelColumn))
-                                      : 0;
+        const auto refineLevel =
+            std::holds_alternative<int64_t>(refineLevelColumn)
+                ? static_cast<std::uint32_t>(std::get<int64_t>(refineLevelColumn))
+                : 0;
 
         inventoryResponse.slots[static_cast<std::size_t>(slot)] = {
             .item_id = static_cast<std::uint32_t>(std::get<int64_t>(itemIdColumn)),
@@ -171,8 +175,8 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
         };
     }
 
-    auto findInventory = ctx.db.Prepare(
-        "SELECT slot_index, item_id, quantity, refine_level FROM inventory_slot WHERE character_id = ?");
+    auto findInventory = ctx.db.Prepare("SELECT slot_index, item_id, quantity, refine_level FROM "
+                                        "inventory_slot WHERE character_id = ?");
     findInventory->Bind(0, characterId);
 
     while (findInventory->Step())
@@ -181,7 +185,8 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
         const int64_t wireSlot = static_cast<int64_t>(InventoryItemList::kBagStartSlot) + slotIndex;
         if (slotIndex < 0 || static_cast<std::size_t>(wireSlot) >= InventoryItemList::kTotalSlots)
         {
-            std::cout << "Ignoring inventory_slot row with out-of-range slot_index " << slotIndex << "\n";
+            std::cout << "Ignoring inventory_slot row with out-of-range slot_index " << slotIndex
+                      << "\n";
             continue;
         }
 
@@ -195,7 +200,8 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
         std::uint32_t qtyOrRefine = 0;
         if (std::holds_alternative<int64_t>(refineLevelColumn))
             qtyOrRefine = static_cast<std::uint32_t>(std::get<int64_t>(refineLevelColumn));
-        else if (std::holds_alternative<int64_t>(quantityColumn) && std::get<int64_t>(quantityColumn) > 0)
+        else if (std::holds_alternative<int64_t>(quantityColumn) &&
+                 std::get<int64_t>(quantityColumn) > 0)
             qtyOrRefine = static_cast<std::uint32_t>(std::get<int64_t>(quantityColumn) - 1);
 
         inventoryResponse.slots[static_cast<std::size_t>(wireSlot)] = {
@@ -207,14 +213,65 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
     inventoryResponse.Serialize(inventoryWriter);
     auto inventoryData = inventoryWriter.Data();
 
-    GamePacket inventoryPacket(GameOpcode::GC_INVENTORY_ITEM_LIST, inventoryData); // GC_INVENTORY_ITEM_LIST
+    GamePacket inventoryPacket(GameOpcode::GC_INVENTORY_ITEM_LIST,
+                               inventoryData); // GC_INVENTORY_ITEM_LIST
     auto inventoryPayload = inventoryPacket.Serialize(ctx.key);
 
     ctx.server.SendTo(ctx.clientSocket, inventoryPayload);
 
     PayloadWriter crtLoadWriter;
     CrtLoad crtLoadResponse{
-        .records = {},
+        .records =
+            {
+                CrtLoadRecord{.id = 20828,
+                              .x = 200,
+                              .y = 200,
+                              .monster_id = 5643,
+                              .direction = 3,
+                              .hp = 108000},
+                CrtLoadRecord{.id = 20827,
+                              .x = 200,
+                              .y = 210,
+                              .monster_id = 5631,
+                              .direction = 4,
+                              .hp = 108000},
+                CrtLoadRecord{.id = 20826,
+                              .x = 200,
+                              .y = 220,
+                              .monster_id = 5630,
+                              .direction = 4,
+                              .hp = 108000},
+                CrtLoadRecord{.id = 20825,
+                              .x = 200,
+                              .y = 230,
+                              .monster_id = 983,
+                              .direction = 2,
+                              .hp = 108000},
+                CrtLoadRecord{.id = 20824,
+                              .x = 200,
+                              .y = 240,
+                              .monster_id = 980,
+                              .direction = 7,
+                              .hp = 108000},
+                CrtLoadRecord{.id = 20822,
+                              .x = 200,
+                              .y = 250,
+                              .monster_id = 843,
+                              .direction = 2,
+                              .hp = 108000},
+                CrtLoadRecord{.id = 20811,
+                              .x = 200,
+                              .y = 260,
+                              .monster_id = 618,
+                              .direction = 5,
+                              .hp = 108000},
+                CrtLoadRecord{.id = 20807,
+                              .x = 200,
+                              .y = 190,
+                              .monster_id = 584,
+                              .direction = 7,
+                              .hp = 108000},
+            },
     };
     crtLoadResponse.Serialize(crtLoadWriter);
     auto crtLoadData = crtLoadWriter.Data();

@@ -6,27 +6,18 @@
 
 class PayloadWriter;
 
-// A single GC_CRT_LOAD entity/creature record -- 112 bytes on the wire.
-// Field layout confirmed against a real capture in OpenShiltz's
-// game/handlers/gc_crt_load.py (16 real frames, `4 + count*112 ==
-// body length` held exactly for every one). `id`/`type` are directly
-// debug-string-confirmed there ("<GC_CRT_LOAD> Invalid Monster type=%ld,
-// id=%ld"); `hp`/`f4`/`pos1..3` and `appearance_raw`'s internal layout carry
-// lower confidence -- see that file's docstring for exactly what's
-// confirmed vs. inferred.
+// A single GC_CRT_LOAD entity/creature record (one "slot") -- 112 bytes on
+// the wire: id, x, y, monster_id, direction, hp, followed by 21 reserved
+// uint32 fields that are always zero.
 struct CrtLoadRecord
 {
     std::uint32_t id = 0;
     std::uint32_t x = 0;
     std::uint32_t y = 0;
-    std::uint32_t type = 0;
-    std::uint32_t spawn_count = 0;
+    std::uint32_t monster_id = 0;
+    std::uint32_t direction = 0;
     std::uint64_t hp = 0;
-    std::uint32_t f4 = 0;
-    std::uint32_t pos1 = 0;
-    std::uint32_t pos2 = 0;
-    std::uint32_t pos3 = 0;
-    std::array<std::uint8_t, 68> appearance_raw{};
+    std::array<std::uint32_t, 21> reserved{};
 
     void Serialize(PayloadWriter& writer) const;
 };
