@@ -110,8 +110,17 @@ void ScrTable::Parse(std::string_view text, LineFn&& onLine)
             // ends right after a '|' drops that empty final cell, while an
             // empty cell in the middle (e.g. `3||355`) is kept as "".
             tokens.resize(lastNonEmptyLen);
-            onLine(lineIndex, static_cast<const std::vector<std::string_view>&>(tokens));
-            ++lineIndex;
+
+            // A line that trims down to nothing but empty cells (e.g. a
+            // stray "|" with no data on either side -- seen in the wild in
+            // item21.scr) is equivalent to blank: skip it the same way,
+            // rather than handing every BuildRecord() a zero-token row none
+            // of them guard against (row[0] is assumed to exist).
+            if (!tokens.empty())
+            {
+                onLine(lineIndex, static_cast<const std::vector<std::string_view>&>(tokens));
+                ++lineIndex;
+            }
         }
         // else: a blank line -- dropped, doesn't consume a line index.
 

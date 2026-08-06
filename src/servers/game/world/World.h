@@ -1,13 +1,21 @@
 #pragma once
 
 #include "Map.h"
+#include "parser/ItemScr.h"
+#include "parser/MonsterScr.h"
+#include "parser/SellerScr.h"
 
-// Owns the game server's simulation state -- for now just a single Map.
-// Lifetime is tied to the GameServer process itself (Start()/Shutdown()
-// called once each, from GameServer's constructor/destructor), NOT to any
-// individual connection or login session -- contrast with GameSessionStore,
-// which is per-connection state that comes and goes as clients connect and
-// disconnect. The world persists across all of that.
+#include <cstdint>
+#include <unordered_map>
+
+// Owns the game server's simulation state -- for now just a single Map,
+// plus the monster.scr template table every Creature::monster_id joins
+// against. Lifetime is tied to the GameServer process itself
+// (Start()/Shutdown() called once each, from GameServer's
+// constructor/destructor), NOT to any individual connection or login
+// session -- contrast with GameSessionStore, which is per-connection state
+// that comes and goes as clients connect and disconnect. The world
+// persists across all of that.
 class World
 {
 public:
@@ -17,6 +25,33 @@ public:
     Map& GetMap();
     const Map& GetMap() const;
 
+    // Hands out the next Creature::instance_id, unique across every
+    // creature spawned in this World (not per-map -- there's only one
+    // World). Starts at 10000, a number clear of anything the .scr data
+    // itself uses, and just increments; good enough until creatures can
+    // despawn and ids need to be reclaimed.
+    std::uint32_t AllocateCreatureInstanceId();
+
+    // Looks up a monster.scr row by MonsterRecord::id -- the same
+    // id-space as Creature::monster_id. Returns nullptr if this World
+    // hasn't loaded that id (e.g. a spawn file referencing an id that
+    // isn't actually in monster.scr).
+    const MonsterRecord* FindMonsterRecord(std::int64_t monsterId) const;
+
+    // Looks up a seller.scr row by SellerRecord::shop_id -- the same
+    // id-space as MonsterRecord::seller_id. Returns nullptr if this World
+    // hasn't loaded that shop id.
+    const SellerRecord* FindSellerRecord(std::int64_t shopId) const;
+
+    // Looks up an itemNN.scr row by ItemRecord::id -- the same id-space as
+    // inventory_slot.item_id. Returns nullptr if this World hasn't loaded
+    // that item id.
+    const ItemRecord* FindItemRecord(std::int64_t itemId) const;
+
 private:
     Map m_map;
+    std::uint32_t m_nextCreatureInstanceId = 10000;
+    std::unordered_map<std::int64_t, MonsterRecord> m_monsterRecords;
+    std::unordered_map<std::int64_t, SellerRecord> m_sellerRecords;
+    std::unordered_map<std::int64_t, ItemRecord> m_itemRecords;
 };

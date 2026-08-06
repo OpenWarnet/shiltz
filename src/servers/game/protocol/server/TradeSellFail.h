@@ -1,0 +1,14 @@
+#pragma once
+
+#include <cstdint>
+
+class PayloadWriter;
+
+// GC_TRADE_SELL_FAIL (wire code 531055, s2c) -- rejects CG_ITEM_TRADE_SELL.
+// Static 4-byte body: a single reason code, no padding.
+struct TradeSellFail
+{
+    std::uint32_t reason = 1;
+
+    void Serialize(PayloadWriter& writer) const;
+};

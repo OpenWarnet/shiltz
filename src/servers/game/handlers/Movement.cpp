@@ -2,50 +2,106 @@
 
 #include "GameOpcodes.h"
 #include "GamePacket.h"
+#include "GameSessionStore.h"
 #include "common/PayloadWriter.h"
 #include "common/TCPServer.h"
 #include "protocol/client/CharMove.h"
-#include "protocol/server/ItemMapNew.h"
-#include "world/Item.h"
+#include "protocol/server/CrtLoad.h"
+#include "protocol/server/ViewRemoveAll.h"
 #include "world/World.h"
 
+#include <algorithm>
 #include <iostream>
-#include <random>
-#include <cstdint>
+
+namespace
+{
+    bool Contains(const std::vector<std::pair<std::int32_t, std::int32_t>>& zones,
+                  const std::pair<std::int32_t, std::int32_t>& zone)
+    {
+        return std::find(zones.begin(), zones.end(), zone) != zones.end();
+    }
+} // namespace
 
 void HandleMovement(const GameContext& ctx, const CharMove& request)
 {
-    PayloadWriter writer;
+    auto session = ctx.sessions.Get(ctx.clientSocket);
+    if (!session)
+    {
+        std::cout << "Rejecting CG_MOVE: socket has no resolved character (never entered)\n";
+        return;
+    }
 
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<uint32_t> distrib(1, 1000);
-    uint32_t random_val = distrib(gen);
+    const auto newZones = ctx.world.GetMap().ZonesAround(static_cast<std::int32_t>(request.x),
+                                                          static_cast<std::int32_t>(request.y));
+    const auto& oldZones = session->player.known_zones;
 
-    // TODO: CharMove carries no item_id -- kept as the prior hardcoded
-    // placeholder pending a real item-spawn source.
-    constexpr std::uint32_t kItemId = 1;
+    // Zones newly in view -- load their creatures.
+    CrtLoad crtLoadResponse;
+    for (const auto& zone : newZones)
+    {
+        if (Contains(oldZones, zone))
+            continue;
 
-    ctx.world.GetMap().AddItem(Item{
-        .id = random_val,
-        .item_id = kItemId,
-        .x = request.x,
-        .y = request.y,
-        .quantity = 1,
-    });
+        for (const auto& creature : ctx.world.GetMap().CreaturesInZone(zone.first, zone.second))
+        {
+            const MonsterRecord* monsterRecord = ctx.world.FindMonsterRecord(creature.monster_id);
 
-    ItemMapNew response{
-        .id = random_val,
-        .x = request.x,
-        .y = request.y,
-        .item_id = kItemId,
-        .owner_id = request.user_id,
-    };
-    response.Serialize(writer);
-    auto data = writer.Data();
+            std::cout << "Loading creature " << creature.instance_id << " (monster_id "
+                      << creature.monster_id << ") at (" << creature.x << ", " << creature.y
+                      << ") for player " << session->characterId << "\n";
 
-    GamePacket responsePacket(GameOpcode::GC_ITEM_MAP_NEW, data);
-    auto responsePayload = responsePacket.Serialize(ctx.key);
+            crtLoadResponse.records.push_back(CrtLoadRecord{
+                .id = creature.instance_id,
+                .x = static_cast<std::uint32_t>(creature.x),
+                .y = static_cast<std::uint32_t>(creature.y),
+                .monster_id = static_cast<std::uint32_t>(creature.monster_id),
+                .direction = static_cast<std::uint32_t>(creature.direction),
+                .hp = monsterRecord ? static_cast<std::uint64_t>(monsterRecord->hp) : 0,
+            });
+        }
+    }
 
-    ctx.server.SendTo(ctx.clientSocket, responsePayload);
+    if (!crtLoadResponse.records.empty())
+    {
+        PayloadWriter writer;
+        crtLoadResponse.Serialize(writer);
+        auto data = writer.Data();
+
+        GamePacket packet(GameOpcode::GC_CRT_LOAD, data);
+        auto payload = packet.Serialize(ctx.key);
+
+        ctx.server.SendTo(ctx.clientSocket, payload);
+    }
+
+    // Zones no longer in view -- unload their creatures.
+    ViewRemoveAll removeResponse;
+    for (const auto& zone : oldZones)
+    {
+        if (Contains(newZones, zone))
+            continue;
+
+        for (const auto& creature : ctx.world.GetMap().CreaturesInZone(zone.first, zone.second))
+        {
+            removeResponse.creature_ids.push_back(creature.instance_id);
+        }
+    }
+
+    if (!removeResponse.creature_ids.empty())
+    {
+        PayloadWriter writer;
+        removeResponse.Serialize(writer);
+        auto data = writer.Data();
+
+        GamePacket packet(GameOpcode::GC_VIEW_REMOVE_ALL, data);
+        auto payload = packet.Serialize(ctx.key);
+
+        ctx.server.SendTo(ctx.clientSocket, payload);
+    }
+
+    session->player.x = static_cast<std::int32_t>(request.x);
+    session->player.y = static_cast<std::int32_t>(request.y);
+    session->player.direction = static_cast<std::int32_t>(request.direction);
+    session->player.known_zones = newZones;
+
+    ctx.sessions.Set(ctx.clientSocket, *session);
 }

@@ -18,6 +18,12 @@ namespace GameOpcode
             return "CG_ITEM_DROP";
         case CG_ITEM_MOVE:
             return "CG_ITEM_MOVE";
+        case CG_QUEST_RESULT:
+            return "CG_QUEST_RESULT";
+        case CG_ITEM_TRADE_BUY:
+            return "CG_ITEM_TRADE_BUY";
+        case CG_ITEM_TRADE_SELL:
+            return "CG_ITEM_TRADE_SELL";
         case CG_ITEM_MOVE_SUCC:
             return "CG_ITEM_MOVE_SUCC";
         case GC_ITEM_MOVE_FAIL:
@@ -38,6 +44,18 @@ namespace GameOpcode
             return "GC_CRT_LOAD";
         case GC_CHAR_EXIT_SUCC:
             return "GC_CHAR_EXIT_SUCC";
+        case GC_QUEST_SUCC:
+            return "GC_QUEST_SUCC";
+        case GC_VIEW_REMOVE_ALL:
+            return "GC_VIEW_REMOVE_ALL";
+        case GC_TRADE_BUY_SUCC:
+            return "GC_TRADE_BUY_SUCC";
+        case GC_TRADE_SELL_SUCC:
+            return "GC_TRADE_SELL_SUCC";
+        case GC_TRADE_BUY_FAIL:
+            return "GC_TRADE_BUY_FAIL";
+        case GC_TRADE_SELL_FAIL:
+            return "GC_TRADE_SELL_FAIL";
         default:
             return "UNKNOWN";
         }

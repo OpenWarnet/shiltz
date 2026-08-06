@@ -430,6 +430,10 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
 
     std::uint32_t droppedQuantity = 1;
     std::uint32_t droppedRefineLevel = 0;
+    // What's left in slotIndex after the drop -- 0 means the slot ended up
+    // empty (fully dropped, or an equippable item, which always drops
+    // whole).
+    std::uint32_t remainingQuantity = 0;
 
     if (std::holds_alternative<int64_t>(slotContent->quantity))
     {
@@ -446,6 +450,8 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
         }
         else
         {
+            remainingQuantity = static_cast<std::uint32_t>(currentQuantity - toDrop);
+
             auto updateSlot = ctx.db.Prepare(
                 "UPDATE inventory_slot SET quantity = ? WHERE character_id = ? AND slot_index = ?");
             updateSlot->Bind(0, currentQuantity - toDrop);
@@ -464,21 +470,11 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
         DeleteSlotRow(ctx.db, characterId, slotIndex);
     }
 
-    // TODO: character position isn't tracked live -- HandleMovement never
-    // persists it back to character_position -- so this falls back to
-    // whatever was stored at character creation, which is stale after any
-    // real movement. Good enough for a drop-at-your-feet placeholder.
-    auto findPosition = ctx.db.Prepare(
-        "SELECT location_x, location_y FROM character_position WHERE character_id = ?");
-    findPosition->Bind(0, characterId);
-
-    std::uint32_t dropX = 0;
-    std::uint32_t dropY = 0;
-    if (findPosition->Step())
-    {
-        dropX = static_cast<std::uint32_t>(std::get<int64_t>(findPosition->Column(0)));
-        dropY = static_cast<std::uint32_t>(std::get<int64_t>(findPosition->Column(1)));
-    }
+    // Player::x/y is kept live by HandleMovement on every CG_MOVE, unlike
+    // character_position (only written at creation) -- drop at the
+    // session's actual current position instead of a stale DB row.
+    const auto dropX = static_cast<std::uint32_t>(session->player.x);
+    const auto dropY = static_cast<std::uint32_t>(session->player.y);
 
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -500,10 +496,12 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
     PayloadWriter succWriter;
     ItemDropSuccess succResponse{
         .id = groundId,
-        .x = 0, // TODO: position not tracked live -- see the character_position note above
-        .y = 0,
+        .x = dropX,
+        .y = dropY,
         .item_id = itemId,
         .source_slot_id = request.slot_id,
+        .new_item_id = remainingQuantity > 0 ? itemId : 0,
+        .new_item_count = remainingQuantity > 0 ? remainingQuantity - 1 : 0,
     };
     succResponse.Serialize(succWriter);
     auto succData = succWriter.Data();

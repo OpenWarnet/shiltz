@@ -13,6 +13,9 @@ namespace GameOpcode
     inline constexpr uint32_t CG_ITEM_PICKUP = 411011;
     inline constexpr uint32_t CG_ITEM_DROP = 411012;
     inline constexpr uint32_t CG_ITEM_MOVE = 411013;
+    inline constexpr uint32_t CG_QUEST_RESULT = 411026;
+    inline constexpr uint32_t CG_ITEM_TRADE_BUY = 411020;
+    inline constexpr uint32_t CG_ITEM_TRADE_SELL = 411021;
 
     // Server -> Client
     inline constexpr uint32_t GC_CHAR_DATA_LOAD = 511001;
@@ -28,6 +31,12 @@ namespace GameOpcode
     inline constexpr uint32_t GC_ITEM_MOVE_FAIL = 532102;
     inline constexpr uint32_t GC_INVENTORY_ITEM_LIST = 511591;
     inline constexpr uint32_t GC_CHAR_EXIT_SUCC = 522010;
+    inline constexpr uint32_t GC_QUEST_SUCC = 521064;
+    inline constexpr uint32_t GC_VIEW_REMOVE_ALL = 511041;
+    inline constexpr uint32_t GC_TRADE_BUY_SUCC = 521052;
+    inline constexpr uint32_t GC_TRADE_SELL_SUCC = 521054;
+    inline constexpr uint32_t GC_TRADE_BUY_FAIL = 531053;
+    inline constexpr uint32_t GC_TRADE_SELL_FAIL = 531055;
 
     // Resolves an opcode to its constant's name, or "UNKNOWN" if not one of
     // the constants above. Used to make packet capture logs readable.

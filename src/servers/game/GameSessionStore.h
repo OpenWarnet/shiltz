@@ -1,5 +1,7 @@
 #pragma once
 
+#include "world/Player.h"
+
 #include <cstdint>
 #include <mutex>
 #include <optional>
@@ -14,12 +16,15 @@
 // CG_ENTER's char_name is known. Set by HandleEnter once both are
 // resolved; consulted by any later handler on the same connection that
 // needs to know the owning account/character (e.g. CG_ITEM_PICKUP scoping
-// an inventory_slot write to "this connection's character").
+// an inventory_slot write to "this connection's character"). `player`
+// carries this connection's live position/view state, updated by
+// HandleEnter (initial position) and HandleMovement (every CG_MOVE).
 struct GameSession
 {
     std::int64_t sessionId = 0;
     std::int64_t accountId = 0;
     std::int64_t characterId = 0;
+    Player player;
 };
 
 // Maps a connected socket to its resolved GameSession. Threaded through

@@ -12,6 +12,7 @@
 #include "protocol/server/EnterFail.h"
 #include "protocol/server/InventoryItemList.h"
 #include "storage/IDatabase.h"
+#include "world/World.h"
 
 #include <ctime>
 #include <iostream>
@@ -87,11 +88,6 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
     const auto characterId =
         static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(0)));
 
-    ctx.sessions.Set(ctx.clientSocket,
-                     GameSession{.sessionId = static_cast<int64_t>(request.session_id),
-                                 .accountId = accountId,
-                                 .characterId = characterId});
-
     const auto level = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(1)));
     const auto jobId = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(2)));
     const auto gender = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(3)));
@@ -108,6 +104,32 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
     const auto locX = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(13)));
     const auto locY = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(14)));
 
+    const auto initialZones = ctx.world.GetMap().ZonesAround(static_cast<std::int32_t>(locX),
+                                                             static_cast<std::int32_t>(locY));
+
+    GameSession session{
+        .sessionId = static_cast<int64_t>(request.session_id),
+        .accountId = accountId,
+        .characterId = characterId,
+        .player = Player{
+            .instance_id = characterId,
+            .x = static_cast<std::int32_t>(locX),
+            .y = static_cast<std::int32_t>(locY),
+            .direction = 0,
+            .known_zones = initialZones,
+            // TODO: none of these five have a DB column yet -- seeded here
+            // with the prior hardcoded placeholders so Player becomes the
+            // one source of truth other handlers (e.g. HandleQuestResult)
+            // read/update instead of each hardcoding its own copy.
+            .money = 100000, // "cegel" on the wire, see CharacterDataLoad::cegel
+            .hp = 1000,
+            .ap = 500,
+            .fame = 2556,
+            .exp = 100,
+        },
+    };
+    ctx.sessions.Set(ctx.clientSocket, session);
+
     PayloadWriter writer;
     CharacterDataLoad response{
         .self_entity_id = characterId,
@@ -118,17 +140,17 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
         .level = level,
         .job_id = jobId,
         .gender = gender,
-        .current_exp = 100, // TODO: no DB column -- kept as the prior hardcoded placeholder
-        .cegel = 9123456,   // TODO: no DB column -- kept as the prior hardcoded placeholder
-        .fame = 2556,       // TODO: no DB column -- kept as the prior hardcoded placeholder
+        .current_exp = session.player.exp,
+        .cegel = session.player.money,
+        .fame = session.player.fame,
         .stats_str = statsStr,
         .stats_int = statsInt,
         .stats_dex = statsDex,
         .stats_con = statsCon,
         .stats_men = statsMen,
         .stats_sen = statsSen,
-        .current_hp = 1000, // TODO: no DB column -- kept as the prior hardcoded placeholder
-        .current_ap = 500,  // TODO: no DB column -- kept as the prior hardcoded placeholder
+        .current_hp = session.player.hp,
+        .current_ap = session.player.ap,
         .hair_type = hairstyleId,
         .char_name = request.char_name,
         .record_array_a = {},
@@ -220,59 +242,25 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
     ctx.server.SendTo(ctx.clientSocket, inventoryPayload);
 
     PayloadWriter crtLoadWriter;
-    CrtLoad crtLoadResponse{
-        .records =
-            {
-                CrtLoadRecord{.id = 20828,
-                              .x = 200,
-                              .y = 200,
-                              .monster_id = 5643,
-                              .direction = 3,
-                              .hp = 108000},
-                CrtLoadRecord{.id = 20827,
-                              .x = 200,
-                              .y = 210,
-                              .monster_id = 5631,
-                              .direction = 4,
-                              .hp = 108000},
-                CrtLoadRecord{.id = 20826,
-                              .x = 200,
-                              .y = 220,
-                              .monster_id = 5630,
-                              .direction = 4,
-                              .hp = 108000},
-                CrtLoadRecord{.id = 20825,
-                              .x = 200,
-                              .y = 230,
-                              .monster_id = 983,
-                              .direction = 2,
-                              .hp = 108000},
-                CrtLoadRecord{.id = 20824,
-                              .x = 200,
-                              .y = 240,
-                              .monster_id = 980,
-                              .direction = 7,
-                              .hp = 108000},
-                CrtLoadRecord{.id = 20822,
-                              .x = 200,
-                              .y = 250,
-                              .monster_id = 843,
-                              .direction = 2,
-                              .hp = 108000},
-                CrtLoadRecord{.id = 20811,
-                              .x = 200,
-                              .y = 260,
-                              .monster_id = 618,
-                              .direction = 5,
-                              .hp = 108000},
-                CrtLoadRecord{.id = 20807,
-                              .x = 200,
-                              .y = 190,
-                              .monster_id = 584,
-                              .direction = 7,
-                              .hp = 108000},
-            },
-    };
+    CrtLoad crtLoadResponse;
+
+    for (const auto& [zoneX, zoneY] : initialZones)
+    {
+        for (const auto& creature : ctx.world.GetMap().CreaturesInZone(zoneX, zoneY))
+        {
+            const MonsterRecord* monsterRecord = ctx.world.FindMonsterRecord(creature.monster_id);
+
+            crtLoadResponse.records.push_back(CrtLoadRecord{
+                .id = creature.instance_id,
+                .x = static_cast<std::uint32_t>(creature.x),
+                .y = static_cast<std::uint32_t>(creature.y),
+                .monster_id = static_cast<std::uint32_t>(creature.monster_id),
+                .direction = static_cast<std::uint32_t>(creature.direction),
+                .hp = monsterRecord ? static_cast<std::uint64_t>(monsterRecord->hp) : 0,
+            });
+        }
+    }
+
     crtLoadResponse.Serialize(crtLoadWriter);
     auto crtLoadData = crtLoadWriter.Data();
 
