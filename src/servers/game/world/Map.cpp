@@ -22,13 +22,33 @@ namespace
     }
 } // namespace
 
+Map::Map(Map&& other)
+{
+    std::lock_guard lock(other.m_itemsMutex);
+    m_items = std::move(other.m_items);
+    m_creatureGrid = std::move(other.m_creatureGrid);
+}
+
+Map& Map::operator=(Map&& other)
+{
+    if (this != &other)
+    {
+        std::scoped_lock lock(m_itemsMutex, other.m_itemsMutex);
+        m_items = std::move(other.m_items);
+        m_creatureGrid = std::move(other.m_creatureGrid);
+    }
+    return *this;
+}
+
 void Map::AddItem(Item item)
 {
+    std::lock_guard lock(m_itemsMutex);
     m_items.push_back(item);
 }
 
 bool Map::RemoveItem(std::uint32_t id)
 {
+    std::lock_guard lock(m_itemsMutex);
     auto it = std::find_if(m_items.begin(), m_items.end(),
                             [id](const Item& item) { return item.id == id; });
     if (it == m_items.end())
@@ -38,8 +58,22 @@ bool Map::RemoveItem(std::uint32_t id)
     return true;
 }
 
-const std::vector<Item>& Map::Items() const
+std::optional<Item> Map::TryTakeItem(std::uint32_t id)
 {
+    std::lock_guard lock(m_itemsMutex);
+    auto it = std::find_if(m_items.begin(), m_items.end(),
+                            [id](const Item& item) { return item.id == id; });
+    if (it == m_items.end())
+        return std::nullopt;
+
+    Item taken = *it;
+    m_items.erase(it);
+    return taken;
+}
+
+std::vector<Item> Map::Items() const
+{
+    std::lock_guard lock(m_itemsMutex);
     return m_items;
 }
 

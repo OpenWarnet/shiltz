@@ -13,6 +13,7 @@
 #include "protocol/server/TradeSellFail.h"
 #include "protocol/server/TradeSellSucc.h"
 #include "storage/IDatabase.h"
+#include "storage/Transaction.h"
 #include "world/World.h"
 
 #include <algorithm>
@@ -92,6 +93,10 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
     const int64_t slotIndex =
         static_cast<int64_t>(request.slot_id) - static_cast<int64_t>(InventoryItemList::kBagStartSlot);
 
+    // The item write and the money debit must land together, or a crash
+    // between them grants the item for free or debits with nothing to show.
+    DatabaseTransaction txn(ctx.db);
+
     // Trust the client-given slot but verify it's consistent with the
     // purchase -- empty is fine (new stack), holding the same item_id is
     // fine (stack onto it), holding a *different* item_id means the
@@ -145,6 +150,9 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
     }
 
     session->player.money -= totalCost;
+    session->player.SaveMoney(ctx.db);
+    txn.Commit();
+
     ctx.sessions.Set(ctx.clientSocket, *session);
 
     // Same dual-purpose wire convention as ItemPickupSuccess::qty_or_refine --
@@ -206,6 +214,10 @@ void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
     // Same wire-relative -> bag-relative conversion as HandleItemPickup/HandleItemDrop.
     const int64_t slotIndex =
         static_cast<int64_t>(request.slot_id) - static_cast<int64_t>(InventoryItemList::kBagStartSlot);
+
+    // Same reasoning as HandleItemTradeBuy -- the item removal and the
+    // money credit must be one atomic unit.
+    DatabaseTransaction txn(ctx.db);
 
     auto findSlot = ctx.db.Prepare(
         "SELECT item_id, quantity, refine_level FROM inventory_slot "
@@ -274,6 +286,9 @@ void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
     }
 
     session->player.money += item->sell_price * static_cast<std::int64_t>(soldCount);
+    session->player.SaveMoney(ctx.db);
+    txn.Commit();
+
     ctx.sessions.Set(ctx.clientSocket, *session);
 
     std::cout << "Sold " << soldCount << "x item_id " << itemId << " from slot_index " << slotIndex

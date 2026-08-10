@@ -17,6 +17,10 @@ public:
     std::unique_ptr<IStatement> Prepare(const std::string& sql) override;
     int64_t LastInsertRowId() override;
 
+    void BeginTransaction() override;
+    void Commit() override;
+    void Rollback() override;
+
 private:
     sqlite3* m_db = nullptr;
 };

@@ -24,6 +24,10 @@ void TCPServer::OnClientConnected(SOCKET)
 {
 }
 
+void TCPServer::OnClientDisconnected(SOCKET)
+{
+}
+
 bool TCPServer::Run()
 {
     WSADATA wsaData;
@@ -177,6 +181,8 @@ void TCPServer::ServiceClient(SOCKET clientSocket)
         std::lock_guard lock(m_clientsMutex);
         std::erase(m_clients, clientSocket);
     }
+
+    OnClientDisconnected(clientSocket);
 
     closesocket(clientSocket);
 }

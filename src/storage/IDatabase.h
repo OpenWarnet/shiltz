@@ -5,10 +5,8 @@
 #include <string>
 #include <variant>
 
-// Backend-agnostic database access. Handlers should depend on IDatabase /
-// IStatement only, never on a concrete backend (sqlite3.h, a MySQL/Postgres
-// client library, etc.) -- that's what lets OpenDatabase() swap the backend
-// behind a connection string without touching call sites.
+// Handlers should depend on IDatabase / IStatement only, never a concrete
+// backend, so OpenDatabase() can swap backends without touching call sites.
 using SqlValue = std::variant<std::monostate, int64_t, double, std::string>;
 
 class IStatement
@@ -16,17 +14,10 @@ class IStatement
 public:
     virtual ~IStatement() = default;
 
-    // index is 0-based.
-    virtual void Bind(int index, SqlValue value) = 0;
-
-    // Advances to the next row. Returns false once the statement is exhausted.
-    virtual bool Step() = 0;
-
-    // Valid only for the row made current by the last Step() that returned true.
-    virtual SqlValue Column(int index) const = 0;
-
-    // Rewinds so the statement can be Step()'d again (bindings are cleared).
-    virtual void Reset() = 0;
+    virtual void Bind(int index, SqlValue value) = 0; // index is 0-based.
+    virtual bool Step() = 0;                           // false once exhausted.
+    virtual SqlValue Column(int index) const = 0;       // valid for the current row only.
+    virtual void Reset() = 0;                           // clears bindings too.
 };
 
 class IDatabase
@@ -34,16 +25,17 @@ class IDatabase
 public:
     virtual ~IDatabase() = default;
 
-    // Runs SQL with no result set (DDL, or one-off scripts during migration).
-    virtual void Exec(const std::string& sql) = 0;
-
+    virtual void Exec(const std::string& sql) = 0; // no result set (DDL, migrations).
     virtual std::unique_ptr<IStatement> Prepare(const std::string& sql) = 0;
 
-    // Rowid assigned by the most recent successful INSERT on this connection.
-    virtual int64_t LastInsertRowId() = 0;
+    // Left to each backend -- "take the write lock up front" isn't portable
+    // (SQLite: BEGIN IMMEDIATE; Postgres/MySQL: MVCC, conflicts at commit).
+    virtual void BeginTransaction() = 0;
+    virtual void Commit() = 0;
+    virtual void Rollback() = 0;
+
+    virtual int64_t LastInsertRowId() = 0; // from the most recent INSERT on this connection.
 };
 
 // Picks a backend from the connection string's scheme, e.g. "sqlite:db/login.sqlite3".
-// Adding a "mysql://..." or "postgres://..." backend later means implementing
-// IDatabase/IStatement for it and adding a branch here -- callers don't change.
 std::unique_ptr<IDatabase> OpenDatabase(const std::string& connectionString);

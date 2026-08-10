@@ -64,20 +64,12 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
 
     // GameEnter carries no server_id, so this game server instance's own
     // characters are found by (account_id, name) alone.
-    auto findCharacter =
-        ctx.db.Prepare("SELECT character.id, character.level, character.job_id, character.gender, "
-                       "       character.hairstyle_id, character.face_id, "
-                       "       character.stats_str, character.stats_int, character.stats_dex, "
-                       "       character.stats_con, character.stats_men, character.stats_sen, "
-                       "       character_position.map_id, character_position.location_x, "
-                       "       character_position.location_y "
-                       "FROM character "
-                       "JOIN character_position ON character_position.character_id = character.id "
-                       "WHERE character.account_id = ? AND character.name = ?");
-    findCharacter->Bind(0, accountId);
-    findCharacter->Bind(1, request.char_name);
+    auto findCharacterId =
+        ctx.db.Prepare("SELECT id FROM character WHERE account_id = ? AND name = ?");
+    findCharacterId->Bind(0, accountId);
+    findCharacterId->Bind(1, request.char_name);
 
-    if (!findCharacter->Step())
+    if (!findCharacterId->Step())
     {
         std::cout << "Rejecting CG_ENTER: no character '" << request.char_name
                   << "' for this account\n";
@@ -85,78 +77,41 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
         return;
     }
 
-    const auto characterId =
-        static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(0)));
+    const auto characterId = std::get<int64_t>(findCharacterId->Column(0));
 
-    const auto level = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(1)));
-    const auto jobId = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(2)));
-    const auto gender = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(3)));
-    const auto hairstyleId =
-        static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(4)));
-    const auto faceId = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(5)));
-    const auto statsStr = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(6)));
-    const auto statsInt = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(7)));
-    const auto statsDex = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(8)));
-    const auto statsCon = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(9)));
-    const auto statsMen = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(10)));
-    const auto statsSen = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(11)));
-    const auto mapId = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(12)));
-    const auto locX = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(13)));
-    const auto locY = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(14)));
+    // Must happen before LoadFromDB, so a rejected duplicate login never
+    // gets a chance to read/write anything -- see GameSessionStore.h.
+    if (!ctx.sessions.TryClaimCharacter(characterId, ctx.clientSocket))
+    {
+        std::cout << "Rejecting CG_ENTER: character " << characterId
+                  << " already has an active session\n";
+        sendFail();
+        return;
+    }
 
-    const auto initialZones = ctx.world.GetMap().ZonesAround(static_cast<std::int32_t>(locX),
-                                                             static_cast<std::int32_t>(locY));
+    Player player;
+    if (!player.LoadFromDB(ctx.db, characterId))
+    {
+        std::cout << "Rejecting CG_ENTER: character " << characterId
+                  << " vanished between lookup and load\n";
+        ctx.sessions.ReleaseCharacterClaim(characterId);
+        sendFail();
+        return;
+    }
+    player.known_zones = ctx.world.GetMap().ZonesAround(player.x, player.y);
 
     GameSession session{
         .sessionId = static_cast<int64_t>(request.session_id),
         .accountId = accountId,
         .characterId = characterId,
-        .player = Player{
-            .instance_id = characterId,
-            .x = static_cast<std::int32_t>(locX),
-            .y = static_cast<std::int32_t>(locY),
-            .direction = 0,
-            .known_zones = initialZones,
-            // TODO: none of these five have a DB column yet -- seeded here
-            // with the prior hardcoded placeholders so Player becomes the
-            // one source of truth other handlers (e.g. HandleQuestResult)
-            // read/update instead of each hardcoding its own copy.
-            .money = 100000, // "cegel" on the wire, see CharacterDataLoad::cegel
-            .hp = 1000,
-            .ap = 500,
-            .fame = 2556,
-            .exp = 100,
-        },
+        .player = player,
     };
     ctx.sessions.Set(ctx.clientSocket, session);
 
     PayloadWriter writer;
-    CharacterDataLoad response{
-        .self_entity_id = characterId,
-        .eps_user_flag = 1, // TODO: no DB column -- kept as the prior hardcoded placeholder
-        .map_id = mapId,
-        .loc_x = locX,
-        .loc_y = locY,
-        .level = level,
-        .job_id = jobId,
-        .gender = gender,
-        .current_exp = session.player.exp,
-        .cegel = session.player.money,
-        .fame = session.player.fame,
-        .stats_str = statsStr,
-        .stats_int = statsInt,
-        .stats_dex = statsDex,
-        .stats_con = statsCon,
-        .stats_men = statsMen,
-        .stats_sen = statsSen,
-        .current_hp = session.player.hp,
-        .current_ap = session.player.ap,
-        .hair_type = hairstyleId,
-        .char_name = request.char_name,
-        .record_array_a = {},
-        .server_timestamp = static_cast<std::uint32_t>(std::time(nullptr)),
-        .face_type = faceId,
-    };
+    CharacterDataLoad response = session.player.ToCharacterDataLoad(
+        /*epsUserFlag=*/1, // TODO: no DB column -- kept as the prior hardcoded placeholder
+        static_cast<std::uint32_t>(std::time(nullptr)));
     response.Serialize(writer);
     auto data = writer.Data();
 
@@ -166,72 +121,7 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
     ctx.server.SendTo(ctx.clientSocket, responsePayload);
 
     PayloadWriter inventoryWriter;
-    InventoryItemList inventoryResponse{.total_count = 0};
-
-    auto findEquipment = ctx.db.Prepare(
-        "SELECT slot, item_id, refine_level FROM equipment_slot WHERE character_id = ?");
-    findEquipment->Bind(0, characterId);
-
-    while (findEquipment->Step())
-    {
-        const int64_t slot = std::get<int64_t>(findEquipment->Column(0));
-        if (slot < 0 || static_cast<std::size_t>(slot) >= InventoryItemList::kBagStartSlot)
-        {
-            std::cout << "Ignoring equipment_slot row with out-of-range slot " << slot << "\n";
-            continue;
-        }
-
-        const SqlValue itemIdColumn = findEquipment->Column(1);
-        if (!std::holds_alternative<int64_t>(itemIdColumn))
-            continue; // NULL item_id -- empty slot, leave the wire slot zeroed
-
-        const SqlValue refineLevelColumn = findEquipment->Column(2);
-        const auto refineLevel =
-            std::holds_alternative<int64_t>(refineLevelColumn)
-                ? static_cast<std::uint32_t>(std::get<int64_t>(refineLevelColumn))
-                : 0;
-
-        inventoryResponse.slots[static_cast<std::size_t>(slot)] = {
-            .item_id = static_cast<std::uint32_t>(std::get<int64_t>(itemIdColumn)),
-            .qty_or_refine = refineLevel,
-        };
-    }
-
-    auto findInventory = ctx.db.Prepare("SELECT slot_index, item_id, quantity, refine_level FROM "
-                                        "inventory_slot WHERE character_id = ?");
-    findInventory->Bind(0, characterId);
-
-    while (findInventory->Step())
-    {
-        const int64_t slotIndex = std::get<int64_t>(findInventory->Column(0));
-        const int64_t wireSlot = static_cast<int64_t>(InventoryItemList::kBagStartSlot) + slotIndex;
-        if (slotIndex < 0 || static_cast<std::size_t>(wireSlot) >= InventoryItemList::kTotalSlots)
-        {
-            std::cout << "Ignoring inventory_slot row with out-of-range slot_index " << slotIndex
-                      << "\n";
-            continue;
-        }
-
-        // If the item has a refine_level, that's what it is -- used as-is
-        // (equippable items' "+N" display). Otherwise it's a stackable
-        // item: refine=N-1 displays as "N pcs" (see InventoryItemList.h),
-        // so db quantity needs the -1 transform.
-        const SqlValue quantityColumn = findInventory->Column(2);
-        const SqlValue refineLevelColumn = findInventory->Column(3);
-
-        std::uint32_t qtyOrRefine = 0;
-        if (std::holds_alternative<int64_t>(refineLevelColumn))
-            qtyOrRefine = static_cast<std::uint32_t>(std::get<int64_t>(refineLevelColumn));
-        else if (std::holds_alternative<int64_t>(quantityColumn) &&
-                 std::get<int64_t>(quantityColumn) > 0)
-            qtyOrRefine = static_cast<std::uint32_t>(std::get<int64_t>(quantityColumn) - 1);
-
-        inventoryResponse.slots[static_cast<std::size_t>(wireSlot)] = {
-            .item_id = static_cast<std::uint32_t>(std::get<int64_t>(findInventory->Column(1))),
-            .qty_or_refine = qtyOrRefine,
-        };
-    }
-
+    InventoryItemList inventoryResponse = session.player.ToInventoryItemList();
     inventoryResponse.Serialize(inventoryWriter);
     auto inventoryData = inventoryWriter.Data();
 
@@ -244,7 +134,7 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
     PayloadWriter crtLoadWriter;
     CrtLoad crtLoadResponse;
 
-    for (const auto& [zoneX, zoneY] : initialZones)
+    for (const auto& [zoneX, zoneY] : session.player.known_zones)
     {
         for (const auto& creature : ctx.world.GetMap().CreaturesInZone(zoneX, zoneY))
         {
@@ -278,6 +168,10 @@ void HandleCgPlayStart(const GameContext&)
 void HandleCgExit(const GameContext& ctx)
 {
     std::cout << "Received CG_EXIT packet.\n";
+
+    // Release the session/character claim immediately on exit-to-character-
+    // select, rather than waiting for the socket to fully disconnect.
+    ctx.sessions.Remove(ctx.clientSocket);
 
     PayloadWriter exitWriter;
     CharExitSucc exitResponse{

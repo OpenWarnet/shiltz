@@ -1,35 +1,153 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
-// A connected client's live position/facing in the simulation -- kept as
-// part of its GameSession (see GameSessionStore.h) and updated in
-// real-time from CG_MOVE, unlike Creature (world/Creature.h), which is
-// placed once at load and never moves. `instance_id` is the same value as
-// CharacterDataLoad::self_entity_id (the character's own id, reused as its
-// entity id on the wire).
+class IDatabase;
+struct CharacterDataLoad;
+struct InventoryItemList;
+
+struct PlayerRawStats
+{
+    std::uint32_t unallocated = 0;
+
+    std::uint32_t strength = 0;
+    std::uint32_t intelligence = 0;
+    std::uint32_t dexterity = 0;
+    std::uint32_t constitution = 0;
+    std::uint32_t mentality = 0;
+    std::uint32_t sense = 0;
+};
+
+struct PlayerDerivedStats
+{
+    std::uint32_t max_hp = 0;
+    std::uint32_t max_ap = 0;
+    std::uint32_t damage = 0;
+    std::uint32_t defense = 0;
+    std::uint32_t magic = 0;
+    std::uint32_t accuracy = 0;
+    std::uint32_t evasion = 0;
+    std::uint32_t critical = 0;
+    std::uint32_t attack_speed = 0;
+    std::uint32_t movement_speed = 0;
+    std::uint32_t damage_increase = 0;
+    std::uint32_t damage_decrease = 0;
+};
+
+struct PlayerStats
+{
+    PlayerRawStats raw;
+    PlayerDerivedStats derived;
+};
+
+struct PlayerSkill
+{
+    std::uint32_t id = 0;
+    std::uint32_t level = 0;
+};
+
+struct PlayerSkills
+{
+    std::uint32_t unallocated_sp = 0;
+    std::uint32_t unallocated_ep = 0;
+    std::vector<PlayerSkill> skills;
+};
+
+// Mirrors an `equipment_slot` DB row. Not world/Item.h's Item, which is a
+// ground-dropped instance.
+struct PlayerEquipmentItem
+{
+    std::uint32_t slot = 0;
+    std::uint32_t item_id = 0;
+    std::uint32_t refine_level = 0;
+};
+
+// Mirrors an `inventory_slot` DB row. has_refine_level tracks the column's
+// NULL-ness: set means an equippable item (quantity meaningless), unset
+// means a stackable item (quantity set).
+struct PlayerInventoryItem
+{
+    std::uint32_t slot_index = 0;
+    std::uint32_t item_id = 0;
+    std::uint32_t quantity = 0;
+    std::uint32_t refine_level = 0;
+    bool has_refine_level = false;
+};
+
+// Content of a single equipment-or-inventory wire slot, as exchanged by
+// LoadItemSlot/SaveItemSlot. Same has_refine_level discriminant as
+// PlayerInventoryItem.
+struct PlayerItemSlot
+{
+    std::uint32_t item_id = 0;
+    std::uint32_t quantity = 0;
+    std::uint32_t refine_level = 0;
+    bool has_refine_level = false;
+};
+
+// A connected client's full character data, shared by every game-server
+// handler via GameSession -- the source of truth between the DB
+// (LoadFromDB/SaveToDB) and the wire protocol (ToCharacterDataLoad/
+// ToInventoryItemList).
+//
+// hp/ap/fame/exp/xp have no DB column yet (see LoadFromDB, which seeds
+// placeholders); money is persisted. instance_id/direction/known_zones are
+// runtime-only, populated by the handler after LoadFromDB.
 struct Player
 {
     std::uint32_t instance_id = 0;
+
+    std::string name;
+    std::uint32_t job_id = 0;
+    std::uint32_t gender = 0;
+    std::uint32_t hairstyle_id = 0;
+    std::uint32_t face_id = 0;
+
+    std::uint32_t map_id = 0;
     std::int32_t x = 0;
     std::int32_t y = 0;
     std::int32_t direction = 0;
 
-    // The zones (see Map::ZonesAround) this player was last sent
-    // GC_CRT_LOAD/GC_VIEW_REMOVE_ALL for -- diffed against the new set on
-    // each move to know which zones' creatures to load/unload.
     std::vector<std::pair<std::int32_t, std::int32_t>> known_zones;
 
-    // Live simulation stats -- same fields CharacterDataLoad/QuestSucc
-    // currently send as hardcoded placeholders (see handlers/Session.cpp,
-    // handlers/Quest.cpp). Not yet persisted to or loaded from the DB, and
-    // not yet the source of truth for those responses; this is just the
-    // in-memory home for them until handlers are wired to read/write here.
     std::int64_t money = 0;
+
     std::uint32_t hp = 1;
     std::uint32_t ap = 1;
-    std::uint32_t fame = 0;
+    std::uint32_t xp = 1;
+
+    std::int32_t level = 1;
     std::int64_t exp = 1;
+    std::uint32_t fame = 0;
+
+    PlayerStats stats;
+    PlayerSkills skills;
+
+    std::vector<PlayerEquipmentItem> equipment;
+    std::vector<PlayerInventoryItem> inventory;
+
+    // Populates this Player from characterId's DB rows. False if no such
+    // character exists.
+    bool LoadFromDB(IDatabase& db, std::int64_t characterId);
+
+    void SaveToDB(IDatabase& db) const; // position only -- see LoadFromDB.
+
+    // Persists `money` alone, so callers that only changed money (e.g.
+    // Trade.cpp) don't also rewrite position.
+    void SaveMoney(IDatabase& db) const;
+
+    CharacterDataLoad ToCharacterDataLoad(std::uint32_t epsUserFlag,
+                                           std::uint32_t serverTimestamp) const;
+    InventoryItemList ToInventoryItemList() const;
+
+    // Wire slots 0-12 are equipment, 13+ are inventory (kBagStartSlot) --
+    // each lives in its own DB table. These resolve that split so callers
+    // never branch on which table a wire slot belongs to.
+    std::optional<PlayerItemSlot> LoadItemSlot(IDatabase& db, std::uint32_t wireSlotId) const;
+    void SaveItemSlot(IDatabase& db, std::uint32_t wireSlotId, const PlayerItemSlot& content) const;
+    void ClearItemSlot(IDatabase& db, std::uint32_t wireSlotId) const;
 };

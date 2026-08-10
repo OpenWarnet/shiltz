@@ -81,6 +81,11 @@ SQLiteDatabase::SQLiteDatabase(const std::string& path)
         sqlite3_close(m_db);
         throw std::runtime_error("Failed to open SQLite database '" + path + "': " + message);
     }
+
+    // Without this, a concurrent writer (another thread, or the other
+    // server process sharing this DB file) gets SQLITE_BUSY immediately
+    // instead of waiting for the in-progress transaction to finish.
+    sqlite3_busy_timeout(m_db, 5000);
 }
 
 SQLiteDatabase::~SQLiteDatabase()
@@ -111,4 +116,21 @@ std::unique_ptr<IStatement> SQLiteDatabase::Prepare(const std::string& sql)
 int64_t SQLiteDatabase::LastInsertRowId()
 {
     return sqlite3_last_insert_rowid(m_db);
+}
+
+void SQLiteDatabase::BeginTransaction()
+{
+    // IMMEDIATE takes the write lock up front instead of deferring it to
+    // the first write, so a conflict is caught at the start, not at COMMIT.
+    Exec("BEGIN IMMEDIATE");
+}
+
+void SQLiteDatabase::Commit()
+{
+    Exec("COMMIT");
+}
+
+void SQLiteDatabase::Rollback()
+{
+    Exec("ROLLBACK");
 }

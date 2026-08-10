@@ -30,13 +30,29 @@ struct GameSession
 // Maps a connected socket to its resolved GameSession. Threaded through
 // GameContext the same way IDatabase is -- GameServer owns one instance
 // and hands out a reference per dispatched frame.
+//
+// Also enforces at most one active connection per character (see
+// TryClaimCharacter) -- otherwise two connections could hold independent
+// Player copies mutating the same DB rows concurrently.
 class GameSessionStore
 {
 public:
     void Set(SOCKET clientSocket, GameSession session);
     std::optional<GameSession> Get(SOCKET clientSocket) const;
 
+    // True if characterId was free or already claimed by this socket.
+    // False if another socket holds it -- caller must reject.
+    bool TryClaimCharacter(std::int64_t characterId, SOCKET clientSocket);
+
+    // Undoes a claim made without a following Set() (e.g. LoadFromDB failed).
+    void ReleaseCharacterClaim(std::int64_t characterId);
+
+    // Erases clientSocket's session and its character claim. Call on
+    // disconnect and on CG_EXIT.
+    void Remove(SOCKET clientSocket);
+
 private:
     mutable std::mutex m_mutex;
     std::unordered_map<SOCKET, GameSession> m_sessionsBySocket;
+    std::unordered_map<std::int64_t, SOCKET> m_socketByCharacterId;
 };

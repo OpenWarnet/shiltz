@@ -16,6 +16,7 @@
 #include "protocol/server/ItemMoveSuccess.h"
 #include "protocol/server/ItemPickupSuccess.h"
 #include "storage/IDatabase.h"
+#include "storage/Transaction.h"
 #include "world/Item.h"
 #include "world/World.h"
 
@@ -45,19 +46,19 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
     const int64_t slotIndex =
         static_cast<int64_t>(request.slot_id) - static_cast<int64_t>(InventoryItemList::kBagStartSlot);
 
-    // Resolve the ground item's real item_id from the world simulation --
-    // request.id only identifies *which* dropped item this is, not its
-    // type (see ItemPickup.h).
-    const auto& groundItems = ctx.world.GetMap().Items();
-    auto groundItem = std::find_if(groundItems.begin(), groundItems.end(),
-                                    [&](const Item& item) { return item.id == request.id; });
-    if (groundItem == groundItems.end())
+    // Atomically claim the ground item so two players racing the same
+    // pickup can't both grant it to themselves. Claimed before the DB
+    // write, so a failed write loses the item rather than duplicating it.
+    auto groundItem = ctx.world.GetMap().TryTakeItem(request.id);
+    if (!groundItem)
     {
         std::cout << "Rejecting CG_ITEM_PICKUP: no ground item with id " << request.id << "\n";
         return;
     }
 
     const std::uint32_t itemId = groundItem->item_id;
+
+    DatabaseTransaction txn(ctx.db);
 
     // Trust the client-given slot rather than computing one server-side --
     // but verify it's actually consistent with the item being picked up:
@@ -81,6 +82,9 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
         {
             std::cout << "Rejecting CG_ITEM_PICKUP: slot_index " << slotIndex << " holds item_id "
                       << existingItemId << ", not " << itemId << " -- ignoring\n";
+            // Put the claimed item back rather than dropping it -- this is
+            // a normal rejection (stale client state), not a failure.
+            ctx.world.GetMap().AddItem(*groundItem);
             return;
         }
 
@@ -116,7 +120,7 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
         std::cout << "Added item_id " << itemId << " at slot_index " << slotIndex << "\n";
     }
 
-    ctx.world.GetMap().RemoveItem(request.id);
+    txn.Commit();
 
     // Same dual-purpose wire field as InventoryItemSlot::qty_or_refine --
     // if the slot has a refine_level, that wins (used as-is); otherwise
@@ -153,6 +157,8 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
 
 namespace
 {
+    // Used by HandleItemDrop, which only ever touches inventory_slot --
+    // see Player::LoadItemSlot for the equivalent covering both tables.
     struct SlotContent
     {
         int64_t itemId;
@@ -178,132 +184,12 @@ namespace
         };
     }
 
-    void WriteInventoryContent(IDatabase& db, int64_t characterId, int64_t slotIndex, const SlotContent& content)
-    {
-        // UPSERT: unlike the old same-table-only relocate (which updated an
-        // already-existing row's slot_index in place), content can now
-        // arrive from equipment_slot for a dest slot_index that has no row
-        // yet -- a plain UPDATE would silently affect zero rows there.
-        auto stmt = db.Prepare(
-            "INSERT INTO inventory_slot (character_id, slot_index, item_id, quantity, refine_level) "
-            "VALUES (?, ?, ?, ?, ?) "
-            "ON CONFLICT(character_id, slot_index) DO UPDATE SET item_id = excluded.item_id, "
-            "quantity = excluded.quantity, refine_level = excluded.refine_level");
-        stmt->Bind(0, characterId);
-        stmt->Bind(1, slotIndex);
-        stmt->Bind(2, content.itemId);
-        stmt->Bind(3, content.quantity);
-        stmt->Bind(4, content.refineLevel);
-        stmt->Step();
-    }
-
     void DeleteSlotRow(IDatabase& db, int64_t characterId, int64_t slotIndex)
     {
         auto stmt = db.Prepare("DELETE FROM inventory_slot WHERE character_id = ? AND slot_index = ?");
         stmt->Bind(0, characterId);
         stmt->Bind(1, slotIndex);
         stmt->Step();
-    }
-
-    // equipment_slot has no quantity column at all -- a stackable
-    // inventory item swapped into an equipment slot silently loses its
-    // quantity (there's nowhere on this table to keep it). An equipped
-    // item moved back into inventory lands with quantity NULL and
-    // refine_level set -- the same "equippable item sitting in the bag"
-    // shape HandleItemPickup/HandleItemDrop already produce.
-    std::optional<SlotContent> FindEquipmentContent(IDatabase& db, int64_t characterId, int64_t slot)
-    {
-        auto stmt = db.Prepare(
-            "SELECT item_id, refine_level FROM equipment_slot WHERE character_id = ? AND slot = ?");
-        stmt->Bind(0, characterId);
-        stmt->Bind(1, slot);
-
-        if (!stmt->Step())
-            return std::nullopt;
-
-        const SqlValue itemIdColumn = stmt->Column(0);
-        if (!std::holds_alternative<int64_t>(itemIdColumn))
-            return std::nullopt; // NULL item_id -- explicitly-empty slot row
-
-        return SlotContent{
-            .itemId = std::get<int64_t>(itemIdColumn),
-            .quantity = SqlValue{},
-            .refineLevel = stmt->Column(1),
-        };
-    }
-
-    void WriteEquipmentContent(IDatabase& db, int64_t characterId, int64_t slot, const SlotContent& content)
-    {
-        // UPSERT: the target row may not exist yet (equipment_slot rows
-        // aren't pre-seeded per slot), or may already exist with a NULL
-        // item_id (explicitly-empty convention -- see 0002_add_characters.sql).
-        auto stmt = db.Prepare(
-            "INSERT INTO equipment_slot (character_id, slot, item_id, refine_level) VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(character_id, slot) DO UPDATE SET item_id = excluded.item_id, "
-            "refine_level = excluded.refine_level");
-        stmt->Bind(0, characterId);
-        stmt->Bind(1, slot);
-        stmt->Bind(2, content.itemId);
-        stmt->Bind(3, content.refineLevel);
-        stmt->Step();
-    }
-
-    void ClearEquipmentSlot(IDatabase& db, int64_t characterId, int64_t slot)
-    {
-        auto stmt = db.Prepare(
-            "UPDATE equipment_slot SET item_id = NULL, refine_level = NULL "
-            "WHERE character_id = ? AND slot = ?");
-        stmt->Bind(0, characterId);
-        stmt->Bind(1, slot);
-        stmt->Step();
-    }
-
-    // Wire slots 0-12 are equipment (paperdoll) slots; 13+ are the general
-    // inventory bag, converted to bag-relative indexing -- see
-    // InventoryItemList::kBagStartSlot.
-    enum class SlotKind
-    {
-        Equipment,
-        Inventory,
-    };
-
-    struct SlotRef
-    {
-        SlotKind kind;
-        int64_t index;
-    };
-
-    SlotRef ResolveSlotRef(std::uint32_t wireSlotId)
-    {
-        if (wireSlotId < InventoryItemList::kBagStartSlot)
-            return SlotRef{.kind = SlotKind::Equipment, .index = static_cast<int64_t>(wireSlotId)};
-
-        return SlotRef{
-            .kind = SlotKind::Inventory,
-            .index = static_cast<int64_t>(wireSlotId) - static_cast<int64_t>(InventoryItemList::kBagStartSlot),
-        };
-    }
-
-    std::optional<SlotContent> FindContent(IDatabase& db, int64_t characterId, const SlotRef& ref)
-    {
-        return ref.kind == SlotKind::Equipment ? FindEquipmentContent(db, characterId, ref.index)
-                                                : FindInventoryContent(db, characterId, ref.index);
-    }
-
-    void WriteContent(IDatabase& db, int64_t characterId, const SlotRef& ref, const SlotContent& content)
-    {
-        if (ref.kind == SlotKind::Equipment)
-            WriteEquipmentContent(db, characterId, ref.index, content);
-        else
-            WriteInventoryContent(db, characterId, ref.index, content);
-    }
-
-    void ClearContent(IDatabase& db, int64_t characterId, const SlotRef& ref)
-    {
-        if (ref.kind == SlotKind::Equipment)
-            ClearEquipmentSlot(db, characterId, ref.index);
-        else
-            DeleteSlotRow(db, characterId, ref.index);
     }
 } // namespace
 
@@ -332,17 +218,12 @@ void HandleItemMove(const GameContext& ctx, const ItemMove& request)
         return;
     }
 
-    const int64_t characterId = session->characterId;
+    // The two writes below must be all-or-nothing, or a crash between them
+    // leaves the item's old and new slots both occupied (duplication).
+    DatabaseTransaction txn(ctx.db);
 
-    // Wire slots 0-12 are equipment (paperdoll), 13+ are the general
-    // inventory bag -- each lives in its own table with a different shape
-    // (equipment_slot has no quantity column), so resolve which table
-    // each side belongs to before touching the DB.
-    const SlotRef sourceRef = ResolveSlotRef(request.source_slot_id);
-    const SlotRef destRef = ResolveSlotRef(request.dest_slot_id);
-
-    auto sourceContent = FindContent(ctx.db, characterId, sourceRef);
-    auto destContent = FindContent(ctx.db, characterId, destRef);
+    auto sourceContent = session->player.LoadItemSlot(ctx.db, request.source_slot_id);
+    auto destContent = session->player.LoadItemSlot(ctx.db, request.dest_slot_id);
 
     if (!sourceContent && !destContent)
     {
@@ -357,8 +238,8 @@ void HandleItemMove(const GameContext& ctx, const ItemMove& request)
         // Both occupied -- swap contents. Can't swap by relocating a
         // primary key across tables the way same-table moves used to, so
         // this always writes full content both ways instead.
-        WriteContent(ctx.db, characterId, sourceRef, *destContent);
-        WriteContent(ctx.db, characterId, destRef, *sourceContent);
+        session->player.SaveItemSlot(ctx.db, request.source_slot_id, *destContent);
+        session->player.SaveItemSlot(ctx.db, request.dest_slot_id, *sourceContent);
 
         std::cout << "Swapped source_slot_id " << request.source_slot_id << " and dest_slot_id "
                   << request.dest_slot_id << "\n";
@@ -366,8 +247,8 @@ void HandleItemMove(const GameContext& ctx, const ItemMove& request)
     else if (sourceContent)
     {
         // dest is empty -- move source's content there and clear source.
-        WriteContent(ctx.db, characterId, destRef, *sourceContent);
-        ClearContent(ctx.db, characterId, sourceRef);
+        session->player.SaveItemSlot(ctx.db, request.dest_slot_id, *sourceContent);
+        session->player.ClearItemSlot(ctx.db, request.source_slot_id);
 
         std::cout << "Moved source_slot_id " << request.source_slot_id << " to empty dest_slot_id "
                   << request.dest_slot_id << "\n";
@@ -375,12 +256,14 @@ void HandleItemMove(const GameContext& ctx, const ItemMove& request)
     else
     {
         // source is empty, dest occupied -- move the other way.
-        WriteContent(ctx.db, characterId, sourceRef, *destContent);
-        ClearContent(ctx.db, characterId, destRef);
+        session->player.SaveItemSlot(ctx.db, request.source_slot_id, *destContent);
+        session->player.ClearItemSlot(ctx.db, request.dest_slot_id);
 
         std::cout << "Moved dest_slot_id " << request.dest_slot_id << " to empty source_slot_id "
                   << request.source_slot_id << "\n";
     }
+
+    txn.Commit();
 
     PayloadWriter writer;
     ItemMoveSuccess response{
@@ -418,6 +301,10 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
     // see the comment there.
     const int64_t slotIndex =
         static_cast<int64_t>(request.slot_id) - static_cast<int64_t>(InventoryItemList::kBagStartSlot);
+
+    // The slot removal must commit before the ground item is created --
+    // otherwise a crash between the two loses or duplicates the item.
+    DatabaseTransaction txn(ctx.db);
 
     auto slotContent = FindInventoryContent(ctx.db, characterId, slotIndex);
     if (!slotContent)
@@ -469,6 +356,8 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
 
         DeleteSlotRow(ctx.db, characterId, slotIndex);
     }
+
+    txn.Commit();
 
     // Player::x/y is kept live by HandleMovement on every CG_MOVE, unlike
     // character_position (only written at creation) -- drop at the

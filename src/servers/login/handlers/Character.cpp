@@ -12,6 +12,7 @@
 #include "protocol/server/CreateCharacterFail.h"
 #include "protocol/shared/GenericCharacterPayload.h"
 #include "storage/IDatabase.h"
+#include "storage/Transaction.h"
 
 #include <ctime>
 #include <iostream>
@@ -51,29 +52,38 @@ void HandleGetCharacterList(const LoginContext& ctx, const ServerSelect& select)
     const char* kExpiredWhere =
         "account_id = ? AND server_id = ? AND scheduled_deletion_at > 0 AND scheduled_deletion_at < ?";
 
-    auto deleteExpiredEquipment = ctx.db.Prepare(
-        std::string("DELETE FROM equipment_slot WHERE character_id IN (SELECT id FROM character WHERE ") +
-        kExpiredWhere + ")");
-    deleteExpiredEquipment->Bind(0, *accountId);
-    deleteExpiredEquipment->Bind(1, static_cast<int64_t>(select.server_id));
-    deleteExpiredEquipment->Bind(2, now);
-    deleteExpiredEquipment->Step();
+    {
+        // All three DELETEs must land together, or a crash between them
+        // leaves an orphaned `character` row.
+        DatabaseTransaction sweepTxn(ctx.db);
 
-    auto deleteExpiredPositions = ctx.db.Prepare(
-        std::string(
-            "DELETE FROM character_position WHERE character_id IN (SELECT id FROM character WHERE ") +
-        kExpiredWhere + ")");
-    deleteExpiredPositions->Bind(0, *accountId);
-    deleteExpiredPositions->Bind(1, static_cast<int64_t>(select.server_id));
-    deleteExpiredPositions->Bind(2, now);
-    deleteExpiredPositions->Step();
+        auto deleteExpiredEquipment = ctx.db.Prepare(
+            std::string(
+                "DELETE FROM equipment_slot WHERE character_id IN (SELECT id FROM character WHERE ") +
+            kExpiredWhere + ")");
+        deleteExpiredEquipment->Bind(0, *accountId);
+        deleteExpiredEquipment->Bind(1, static_cast<int64_t>(select.server_id));
+        deleteExpiredEquipment->Bind(2, now);
+        deleteExpiredEquipment->Step();
 
-    auto deleteExpiredCharacters =
-        ctx.db.Prepare(std::string("DELETE FROM character WHERE ") + kExpiredWhere);
-    deleteExpiredCharacters->Bind(0, *accountId);
-    deleteExpiredCharacters->Bind(1, static_cast<int64_t>(select.server_id));
-    deleteExpiredCharacters->Bind(2, now);
-    deleteExpiredCharacters->Step();
+        auto deleteExpiredPositions = ctx.db.Prepare(
+            std::string(
+                "DELETE FROM character_position WHERE character_id IN (SELECT id FROM character WHERE ") +
+            kExpiredWhere + ")");
+        deleteExpiredPositions->Bind(0, *accountId);
+        deleteExpiredPositions->Bind(1, static_cast<int64_t>(select.server_id));
+        deleteExpiredPositions->Bind(2, now);
+        deleteExpiredPositions->Step();
+
+        auto deleteExpiredCharacters =
+            ctx.db.Prepare(std::string("DELETE FROM character WHERE ") + kExpiredWhere);
+        deleteExpiredCharacters->Bind(0, *accountId);
+        deleteExpiredCharacters->Bind(1, static_cast<int64_t>(select.server_id));
+        deleteExpiredCharacters->Bind(2, now);
+        deleteExpiredCharacters->Step();
+
+        sweepTxn.Commit();
+    }
 
     std::vector<Character> characters;
 
@@ -332,11 +342,20 @@ void HandleCreateCharacter(const LoginContext& ctx, const CreateCharacter& reque
         return;
     }
 
+    // Prior hardcoded placeholder, now the actual starting balance (see
+    // 0005_add_character_money.sql).
+    constexpr int64_t kStartingMoney = 100000;
+
+    // A crash between the two INSERTs below would leave a `character` row
+    // with no matching `character_position` row, which LoadFromDB's JOIN
+    // would then never find -- silently soft-locking the character.
+    DatabaseTransaction createTxn(ctx.db);
+
     auto insertCharacter = ctx.db.Prepare(
         "INSERT INTO character "
         "(account_id, server_id, slot, name, gender, hairstyle_id, face_id, job_id, level, "
-        " stats_str, stats_int, stats_dex, stats_con, stats_men, stats_sen) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        " stats_str, stats_int, stats_dex, stats_con, stats_men, stats_sen, money) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     insertCharacter->Bind(0, *accountId);
     insertCharacter->Bind(1, static_cast<int64_t>(request.server_id));
     insertCharacter->Bind(2, static_cast<int64_t>(request.slot));
@@ -352,6 +371,7 @@ void HandleCreateCharacter(const LoginContext& ctx, const CreateCharacter& reque
     insertCharacter->Bind(12, static_cast<int64_t>(request.stat_con));
     insertCharacter->Bind(13, static_cast<int64_t>(request.stat_men));
     insertCharacter->Bind(14, static_cast<int64_t>(request.stat_sen));
+    insertCharacter->Bind(15, kStartingMoney);
     insertCharacter->Step();
 
     const int64_t characterId = ctx.db.LastInsertRowId();
@@ -364,6 +384,8 @@ void HandleCreateCharacter(const LoginContext& ctx, const CreateCharacter& reque
     insertPosition->Bind(2, static_cast<int64_t>(request.loc_x));
     insertPosition->Bind(3, static_cast<int64_t>(request.loc_y));
     insertPosition->Step();
+
+    createTxn.Commit();
 
     PayloadWriter writer;
     GenericCharacterPayload response{.server_id = request.server_id,

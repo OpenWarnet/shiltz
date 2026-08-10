@@ -17,6 +17,7 @@ public:
 
 protected:
     void OnFrame(SOCKET clientSocket, std::span<const uint8_t> frame) override;
+    void OnClientDisconnected(SOCKET clientSocket) override;
 
 private:
     GameDispatcher m_dispatcher;

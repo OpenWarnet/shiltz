@@ -4,6 +4,8 @@
 #include "Item.h"
 
 #include <cstdint>
+#include <mutex>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -14,6 +16,10 @@
 // the 3x3 zone neighborhood around their own zone, see ZonesAround) is a
 // small handful of buckets to gather, without paying for a 512x512 grid of
 // mostly-empty per-cell lists.
+//
+// One Map instance is shared by every connection's thread, so the
+// ground-item list is mutex-protected. The creature grid is NOT locked --
+// it's populated once, single-threaded, at load and never mutated after.
 class Map
 {
 public:
@@ -21,13 +27,29 @@ public:
     static constexpr std::int32_t kZoneSize = 16;
     static constexpr std::int32_t kZoneGridSize = kGridSize / kZoneSize;
 
+    Map() = default;
+
+    // std::mutex isn't movable, so these can't be defaulted -- move the
+    // data, leave each object's own mutex alone. Only used during
+    // single-threaded map loading, never while shared across threads.
+    Map(Map&& other);
+    Map& operator=(Map&& other);
+    Map(const Map&) = delete;
+    Map& operator=(const Map&) = delete;
+
     void AddItem(Item item);
 
     // Removes the ground item with this instance id (see Item::id). Returns
     // false if no such item was present (e.g. already picked up).
     bool RemoveItem(std::uint32_t id);
 
-    const std::vector<Item>& Items() const;
+    // Atomically finds and removes the item, returning it if present.
+    // Prefer this over RemoveItem to *claim* an item (e.g. pickup) --
+    // checking presence and removing as separate calls lets two players
+    // racing the same pickup both grab it.
+    std::optional<Item> TryTakeItem(std::uint32_t id);
+
+    std::vector<Item> Items() const; // snapshot copy, safe from any thread.
 
     // Places `creature` in the zone its own (x, y) falls in. Silently
     // dropped (with a log line) if that falls outside the 512x512 grid --
@@ -47,7 +69,9 @@ public:
     std::vector<std::pair<std::int32_t, std::int32_t>> ZonesAround(std::int32_t x, std::int32_t y) const;
 
 private:
+    mutable std::mutex m_itemsMutex;
     std::vector<Item> m_items;
+
     std::vector<std::vector<Creature>> m_creatureGrid =
         std::vector<std::vector<Creature>>(static_cast<std::size_t>(kZoneGridSize) * kZoneGridSize);
 };

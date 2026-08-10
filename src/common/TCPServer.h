@@ -46,6 +46,11 @@ protected:
     // Default does nothing.
     virtual void OnClientConnected(SOCKET clientSocket);
 
+    // Called once, right after a client's connection is torn down and
+    // deregistered. Default does nothing -- override to release
+    // per-connection state.
+    virtual void OnClientDisconnected(SOCKET clientSocket);
+
     // Called once per complete [len][code][payload] frame drained from a
     // client's stream.
     virtual void OnFrame(SOCKET clientSocket, std::span<const uint8_t> frame) = 0;

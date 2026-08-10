@@ -60,7 +60,9 @@ add_executable (
 	"${CMAKE_SOURCE_DIR}/src/storage/SQLiteDatabase.h"
 	"${CMAKE_SOURCE_DIR}/src/storage/SQLiteDatabase.cpp"
 	"${CMAKE_SOURCE_DIR}/src/storage/MigrationRunner.h"
-	"${CMAKE_SOURCE_DIR}/src/storage/MigrationRunner.cpp")
+	"${CMAKE_SOURCE_DIR}/src/storage/MigrationRunner.cpp"
+	"${CMAKE_SOURCE_DIR}/src/storage/Transaction.h"
+	"${CMAKE_SOURCE_DIR}/src/storage/Transaction.cpp")
 
 target_include_directories(login PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}

@@ -26,3 +26,8 @@ void GameServer::OnFrame(SOCKET clientSocket, std::span<const uint8_t> frame)
 
     m_dispatcher.Dispatch(GameContext{*this, clientSocket, m_key, m_db, m_sessions, m_world}, packet);
 }
+
+void GameServer::OnClientDisconnected(SOCKET clientSocket)
+{
+    m_sessions.Remove(clientSocket);
+}
