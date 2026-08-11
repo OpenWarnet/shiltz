@@ -5,6 +5,7 @@
 #include "GameSessionStore.h"
 #include "common/PayloadWriter.h"
 #include "common/TCPServer.h"
+#include "enums/SkillUpFailReason.h"
 #include "parser/SkillScr.h"
 #include "protocol/client/CharSkillUpEx.h"
 #include "protocol/server/CharSkillUpExFail.h"
@@ -16,19 +17,6 @@
 
 namespace
 {
-    // See protocol/server/CharSkillUpExFail.h for the full table.
-    enum class SkillUpFailReason : std::int32_t
-    {
-        DbError = -1,
-        TotalSkillCountError = -2,
-        SkillIdNotFound = -3,
-        PrereqNotLearned = -4,
-        AlreadyMaxLevel = -5,
-        LevelTooLow = -6,
-        NotEnoughSp = -7,
-        JobMismatch = -8,
-    };
-
     std::uint32_t CurrentSkillLevel(const PlayerSkills& skills, std::int64_t skillId)
     {
         for (const auto& skill : skills.skills)

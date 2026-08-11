@@ -81,12 +81,26 @@ struct PlayerInventoryItem
 // Content of a single equipment-or-inventory wire slot, as exchanged by
 // LoadItemSlot/SaveItemSlot. Same has_refine_level discriminant as
 // PlayerInventoryItem.
+//
+// item_level/item_opt2/option_bits/option_eligible_mask back the NPC magic-
+// option appraiser (see handlers/ItemConfirmNpc.h) -- nothing in this
+// codebase generates real per-instance values for these yet, so they
+// default to a permissive placeholder (item_opt2 = -1 exempts the item
+// from the appraiser's level gate; option_eligible_mask = all 10 bits set
+// makes every option eligible to roll) rather than to values that would
+// make the appraiser a no-op on every item. See migration
+// 0010_add_item_magic_option_columns.sql.
 struct PlayerItemSlot
 {
     std::uint32_t item_id = 0;
     std::uint32_t quantity = 0;
     std::uint32_t refine_level = 0;
     bool has_refine_level = false;
+
+    std::int32_t item_level = 0;
+    std::int32_t item_opt2 = -1;
+    std::uint32_t option_bits = 0;
+    std::uint32_t option_eligible_mask = 0x3FF;
 };
 
 // A connected client's full character data, shared by every game-server

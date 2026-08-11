@@ -21,6 +21,7 @@ namespace GameOpcode
     // sic -- named "GC_" in the real protocol despite being a client
     // request, matching the client's own (inconsistent) naming.
     inline constexpr uint32_t GC_CHAR_SKILL_UP_EX = 411059;
+    inline constexpr uint32_t CG_ITEM_CONFIRM_NPC_REQUEST = 412123; // 0x0649DB
 
     // Server -> Client
     inline constexpr uint32_t GC_CHAR_DATA_LOAD = 511001;
@@ -48,6 +49,8 @@ namespace GameOpcode
     inline constexpr uint32_t GC_CHAR_STATUS_UP_FAIL = 531049;
     inline constexpr uint32_t GC_CHAR_SKILL_UP_EX_SUCC = 521100;
     inline constexpr uint32_t GC_CHAR_SKILL_UP_EX_FAIL = 531102;
+    inline constexpr uint32_t GC_ITEM_CONFIRM_NPC_SUCC = 531234; // 0x081B22
+    inline constexpr uint32_t GC_ITEM_CONFIRM_NPC_FAIL = 531235; // 0x081B23
 
     // Resolves an opcode to its constant's name, or "UNKNOWN" if not one of
     // the constants above. Used to make packet capture logs readable.

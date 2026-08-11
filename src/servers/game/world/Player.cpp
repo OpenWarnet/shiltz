@@ -321,8 +321,9 @@ namespace
     std::optional<PlayerItemSlot> LoadInventoryRow(IDatabase& db, std::int64_t characterId,
                                                     std::int64_t slotIndex)
     {
-        auto stmt = db.Prepare("SELECT item_id, quantity, refine_level FROM inventory_slot "
-                                "WHERE character_id = ? AND slot_index = ?");
+        auto stmt = db.Prepare(
+            "SELECT item_id, quantity, refine_level, item_level, item_opt2, option_bits, "
+            "option_eligible_mask FROM inventory_slot WHERE character_id = ? AND slot_index = ?");
         stmt->Bind(0, characterId);
         stmt->Bind(1, slotIndex);
 
@@ -342,6 +343,10 @@ namespace
                                 ? static_cast<std::uint32_t>(std::get<int64_t>(refineLevelColumn))
                                 : 0,
             .has_refine_level = hasRefineLevel,
+            .item_level = static_cast<std::int32_t>(std::get<int64_t>(stmt->Column(3))),
+            .item_opt2 = static_cast<std::int32_t>(std::get<int64_t>(stmt->Column(4))),
+            .option_bits = static_cast<std::uint32_t>(std::get<int64_t>(stmt->Column(5))),
+            .option_eligible_mask = static_cast<std::uint32_t>(std::get<int64_t>(stmt->Column(6))),
         };
     }
 
@@ -351,16 +356,24 @@ namespace
         // UPSERT: dest slot_index may have no row yet (content can arrive
         // from equipment_slot, a different table).
         auto stmt = db.Prepare(
-            "INSERT INTO inventory_slot (character_id, slot_index, item_id, quantity, refine_level) "
-            "VALUES (?, ?, ?, ?, ?) "
+            "INSERT INTO inventory_slot (character_id, slot_index, item_id, quantity, refine_level, "
+            "item_level, item_opt2, option_bits, option_eligible_mask) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(character_id, slot_index) DO UPDATE SET item_id = excluded.item_id, "
-            "quantity = excluded.quantity, refine_level = excluded.refine_level");
+            "quantity = excluded.quantity, refine_level = excluded.refine_level, "
+            "item_level = excluded.item_level, item_opt2 = excluded.item_opt2, "
+            "option_bits = excluded.option_bits, "
+            "option_eligible_mask = excluded.option_eligible_mask");
         stmt->Bind(0, characterId);
         stmt->Bind(1, slotIndex);
         stmt->Bind(2, static_cast<int64_t>(content.item_id));
         // Write the unused side as NULL so has_refine_level round-trips.
         stmt->Bind(3, content.has_refine_level ? SqlValue{} : SqlValue{static_cast<int64_t>(content.quantity)});
         stmt->Bind(4, content.has_refine_level ? SqlValue{static_cast<int64_t>(content.refine_level)} : SqlValue{});
+        stmt->Bind(5, static_cast<int64_t>(content.item_level));
+        stmt->Bind(6, static_cast<int64_t>(content.item_opt2));
+        stmt->Bind(7, static_cast<int64_t>(content.option_bits));
+        stmt->Bind(8, static_cast<int64_t>(content.option_eligible_mask));
         stmt->Step();
     }
 
@@ -376,7 +389,8 @@ namespace
                                                     std::int64_t slot)
     {
         auto stmt = db.Prepare(
-            "SELECT item_id, refine_level FROM equipment_slot WHERE character_id = ? AND slot = ?");
+            "SELECT item_id, refine_level, item_level, item_opt2, option_bits, option_eligible_mask "
+            "FROM equipment_slot WHERE character_id = ? AND slot = ?");
         stmt->Bind(0, characterId);
         stmt->Bind(1, slot);
 
@@ -397,6 +411,10 @@ namespace
                                 ? static_cast<std::uint32_t>(std::get<int64_t>(refineLevelColumn))
                                 : 0,
             .has_refine_level = hasRefineLevel,
+            .item_level = static_cast<std::int32_t>(std::get<int64_t>(stmt->Column(2))),
+            .item_opt2 = static_cast<std::int32_t>(std::get<int64_t>(stmt->Column(3))),
+            .option_bits = static_cast<std::uint32_t>(std::get<int64_t>(stmt->Column(4))),
+            .option_eligible_mask = static_cast<std::uint32_t>(std::get<int64_t>(stmt->Column(5))),
         };
     }
 
@@ -407,13 +425,20 @@ namespace
         // aren't pre-seeded per slot), or may already exist with a NULL
         // item_id (explicitly-empty convention -- see 0002_add_characters.sql).
         auto stmt = db.Prepare(
-            "INSERT INTO equipment_slot (character_id, slot, item_id, refine_level) VALUES (?, ?, ?, ?) "
+            "INSERT INTO equipment_slot (character_id, slot, item_id, refine_level, item_level, "
+            "item_opt2, option_bits, option_eligible_mask) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(character_id, slot) DO UPDATE SET item_id = excluded.item_id, "
-            "refine_level = excluded.refine_level");
+            "refine_level = excluded.refine_level, item_level = excluded.item_level, "
+            "item_opt2 = excluded.item_opt2, option_bits = excluded.option_bits, "
+            "option_eligible_mask = excluded.option_eligible_mask");
         stmt->Bind(0, characterId);
         stmt->Bind(1, slot);
         stmt->Bind(2, static_cast<int64_t>(content.item_id));
         stmt->Bind(3, content.has_refine_level ? SqlValue{static_cast<int64_t>(content.refine_level)} : SqlValue{});
+        stmt->Bind(4, static_cast<int64_t>(content.item_level));
+        stmt->Bind(5, static_cast<int64_t>(content.item_opt2));
+        stmt->Bind(6, static_cast<int64_t>(content.option_bits));
+        stmt->Bind(7, static_cast<int64_t>(content.option_eligible_mask));
         stmt->Step();
     }
 

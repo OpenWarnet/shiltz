@@ -30,6 +30,8 @@ namespace GameOpcode
             return "CG_CHAR_STATUS_UP";
         case GC_CHAR_SKILL_UP_EX:
             return "GC_CHAR_SKILL_UP_EX";
+        case CG_ITEM_CONFIRM_NPC_REQUEST:
+            return "CG_ITEM_CONFIRM_NPC_REQUEST";
         case CG_ITEM_MOVE_SUCC:
             return "CG_ITEM_MOVE_SUCC";
         case GC_ITEM_MOVE_FAIL:
@@ -74,6 +76,10 @@ namespace GameOpcode
             return "GC_CHAR_SKILL_UP_EX_SUCC";
         case GC_CHAR_SKILL_UP_EX_FAIL:
             return "GC_CHAR_SKILL_UP_EX_FAIL";
+        case GC_ITEM_CONFIRM_NPC_SUCC:
+            return "GC_ITEM_CONFIRM_NPC_SUCC";
+        case GC_ITEM_CONFIRM_NPC_FAIL:
+            return "GC_ITEM_CONFIRM_NPC_FAIL";
         default:
             return "UNKNOWN";
         }

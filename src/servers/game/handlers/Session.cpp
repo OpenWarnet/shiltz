@@ -169,6 +169,17 @@ void HandleCgExit(const GameContext& ctx)
 {
     std::cout << "Received CG_EXIT packet.\n";
 
+    // Player::x/y is kept live by HandleMovement on every CG_MOVE, but
+    // character_position is only ever written at character creation (see
+    // Player::LoadFromDB) -- persist the session's current position now,
+    // before the session (and with it the only in-memory copy of where the
+    // character actually is) goes away.
+    auto session = ctx.sessions.Get(ctx.clientSocket);
+    if (session)
+    {
+        session->player.SaveToDB(ctx.db);
+    }
+
     // Release the session/character claim immediately on exit-to-character-
     // select, rather than waiting for the socket to fully disconnect.
     ctx.sessions.Remove(ctx.clientSocket);

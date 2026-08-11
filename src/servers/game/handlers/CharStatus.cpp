@@ -5,6 +5,7 @@
 #include "GameSessionStore.h"
 #include "common/PayloadWriter.h"
 #include "common/TCPServer.h"
+#include "enums/StatId.h"
 #include "protocol/client/CharStatusUp.h"
 #include "protocol/server/CharStatusUpFail.h"
 #include "protocol/server/CharStatusUpSucc.h"
@@ -14,25 +15,22 @@
 
 namespace
 {
-    // stat_id -> PlayerRawStats field, using the client's own wire order
-    // (see CharacterDataLoad's stats_str..stats_sen fields), 1-based:
-    // 1=str, 2=int, 3=dex, 4=con, 5=men, 6=sen. Returns nullptr for an
-    // out-of-range id.
+    // Returns nullptr for an out-of-range stat_id.
     std::uint32_t* ResolveRawStat(PlayerRawStats& raw, std::int32_t statId)
     {
-        switch (statId)
+        switch (static_cast<StatId>(statId))
         {
-        case 1: // str
+        case StatId::Strength:
             return &raw.strength;
-        case 2: // int
+        case StatId::Intelligence:
             return &raw.intelligence;
-        case 3: // dex
+        case StatId::Dexterity:
             return &raw.dexterity;
-        case 4: // con
+        case StatId::Constitution:
             return &raw.constitution;
-        case 5: // men
+        case StatId::Mentality:
             return &raw.mentality;
-        case 6: // sen
+        case StatId::Sense:
             return &raw.sense;
         default:
             return nullptr;
