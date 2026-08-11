@@ -2,8 +2,10 @@
 
 #include "Map.h"
 #include "parser/ItemScr.h"
+#include "parser/LevelScr.h"
 #include "parser/MonsterScr.h"
 #include "parser/SellerScr.h"
+#include "parser/SkillScr.h"
 
 #include <cstdint>
 #include <unordered_map>
@@ -48,10 +50,24 @@ public:
     // that item id.
     const ItemRecord* FindItemRecord(std::int64_t itemId) const;
 
+    // Looks up a level.scr row by LevelRecord::level -- the same id-space
+    // as Player::level. Returns nullptr if this World hasn't loaded that
+    // level (e.g. it's past the max level in the table).
+    const LevelRecord* FindLevelRecord(std::int64_t level) const;
+
+    // Looks up a skillNN.scr row by (SkillRecord::id, level) -- level comes
+    // from which skillNN.scr file the row was loaded from (see
+    // World::Start), the same id-space as PlayerSkill::level. Returns
+    // nullptr if this World hasn't loaded that skill/level combination.
+    const SkillRecord* FindSkillRecord(std::int64_t skillId, std::int64_t level) const;
+
 private:
     Map m_map;
     std::uint32_t m_nextCreatureInstanceId = 10000;
     std::unordered_map<std::int64_t, MonsterRecord> m_monsterRecords;
     std::unordered_map<std::int64_t, SellerRecord> m_sellerRecords;
     std::unordered_map<std::int64_t, ItemRecord> m_itemRecords;
+    std::unordered_map<std::int64_t, LevelRecord> m_levelRecords;
+    // Keyed by (skillId << 32) | level -- see MakeSkillLevelKey in World.cpp.
+    std::unordered_map<std::int64_t, SkillRecord> m_skillRecords;
 };

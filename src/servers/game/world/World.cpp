@@ -2,8 +2,10 @@
 
 #include "MapLoader.h"
 
+#include <charconv>
 #include <filesystem>
 #include <iostream>
+#include <string_view>
 
 namespace
 {
@@ -25,6 +27,42 @@ namespace
     std::filesystem::path ItemDataDir()
     {
         return DataDir() / "item";
+    }
+
+    std::filesystem::path SkillDataDir()
+    {
+        return DataDir() / "skill";
+    }
+
+    // Packs a (skillId, level) pair into one collision-free int64 key --
+    // skillId in the high 32 bits, level in the low 32 bits, so any two
+    // distinct pairs always land on distinct keys regardless of either
+    // value's magnitude (unlike e.g. skillId * 100 + level, which silently
+    // collides if level ever reaches double digits... which it already
+    // does, up to skill23.scr).
+    std::int64_t MakeSkillLevelKey(std::int64_t skillId, std::int64_t level)
+    {
+        return (skillId << 32) | (level & 0xFFFFFFFFLL);
+    }
+
+    // skillNN.scr's level isn't a column in the row -- it's which file the
+    // row came from. Parses "skillNN" -> NN; returns 0 (an invalid level,
+    // never matched by MakeSkillLevelKey's callers) for anything that
+    // doesn't fit that shape, e.g. a future uskillNN.scr dropped in the
+    // same directory.
+    std::int64_t ParseSkillFileLevel(const std::filesystem::path& path)
+    {
+        static constexpr std::string_view kPrefix = "skill";
+
+        const std::string stem = path.stem().string();
+        if (stem.size() <= kPrefix.size() || stem.compare(0, kPrefix.size(), kPrefix) != 0)
+            return 0;
+
+        std::int64_t level = 0;
+        const std::string digits = stem.substr(kPrefix.size());
+        auto result = std::from_chars(digits.data(), digits.data() + digits.size(), level);
+
+        return result.ec == std::errc() ? level : 0;
     }
 } // namespace
 
@@ -60,6 +98,32 @@ void World::Start()
         {
             const std::int64_t id = record.id;
             m_itemRecords.emplace(id, std::move(record));
+        }
+    }
+
+    for (auto& record : LevelScr::Load(DataDir() / "level.scr"))
+    {
+        const std::int64_t level = record.level;
+        m_levelRecords.emplace(level, std::move(record));
+    }
+
+    // skillNN.scr is split one file per skill level (skill01.scr = every
+    // skill's attributes at level 1, ...), same "load every .scr file in
+    // the directory" approach as ItemDataDir -- the level comes from the
+    // filename (ParseSkillFileLevel), not a column in the row.
+    for (const auto& entry : std::filesystem::directory_iterator(SkillDataDir()))
+    {
+        if (!entry.is_regular_file() || entry.path().extension() != ".scr")
+            continue;
+
+        const std::int64_t level = ParseSkillFileLevel(entry.path());
+        if (level <= 0)
+            continue;
+
+        for (auto& record : SkillScr::Load(entry.path()))
+        {
+            const std::int64_t key = MakeSkillLevelKey(record.id, level);
+            m_skillRecords.emplace(key, std::move(record));
         }
     }
 }
@@ -100,4 +164,16 @@ const ItemRecord* World::FindItemRecord(std::int64_t itemId) const
 {
     auto it = m_itemRecords.find(itemId);
     return it != m_itemRecords.end() ? &it->second : nullptr;
+}
+
+const LevelRecord* World::FindLevelRecord(std::int64_t level) const
+{
+    auto it = m_levelRecords.find(level);
+    return it != m_levelRecords.end() ? &it->second : nullptr;
+}
+
+const SkillRecord* World::FindSkillRecord(std::int64_t skillId, std::int64_t level) const
+{
+    auto it = m_skillRecords.find(MakeSkillLevelKey(skillId, level));
+    return it != m_skillRecords.end() ? &it->second : nullptr;
 }

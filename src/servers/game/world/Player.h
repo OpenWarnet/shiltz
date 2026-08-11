@@ -12,7 +12,7 @@ struct InventoryItemList;
 
 struct PlayerRawStats
 {
-    std::uint32_t unallocated = 0;
+    std::uint32_t unallocated_stat_points = 0;
 
     std::uint32_t strength = 0;
     std::uint32_t intelligence = 0;
@@ -94,8 +94,8 @@ struct PlayerItemSlot
 // (LoadFromDB/SaveToDB) and the wire protocol (ToCharacterDataLoad/
 // ToInventoryItemList).
 //
-// hp/ap/fame/exp/xp have no DB column yet (see LoadFromDB, which seeds
-// placeholders); money is persisted. instance_id/direction/known_zones are
+// xp has no DB column yet (see LoadFromDB, which leaves it at its default);
+// money/exp/hp/ap/fame are persisted. instance_id/direction/known_zones are
 // runtime-only, populated by the handler after LoadFromDB.
 struct Player
 {
@@ -139,6 +139,30 @@ struct Player
     // Persists `money` alone, so callers that only changed money (e.g.
     // Trade.cpp) don't also rewrite position.
     void SaveMoney(IDatabase& db) const;
+
+    // Persists `fame` alone.
+    void SaveFame(IDatabase& db) const;
+
+    // Persists the six named raw stats (stats.raw.strength..sense) plus
+    // stats.raw.unallocated_stat_points.
+    void SaveRawStats(IDatabase& db) const;
+
+    // Persists skills.unallocated_sp/unallocated_ep. Kept separate from
+    // SaveRawStats since they're a different concern (skill points, not
+    // raw stats) and are touched by different handlers.
+    void SaveSkillPoints(IDatabase& db) const;
+
+    // Upserts every entry currently in skills.skills into `character_skill`
+    // (one row per skill_id). Persisting the whole list rather than a
+    // single changed skill mirrors how a CG_CHAR_SKILL_UP_EX request can
+    // raise several skills at once -- re-upserting an unchanged skill is
+    // harmless (see handlers/CharSkillUp.cpp).
+    void SaveSkillLevels(IDatabase& db) const;
+
+    // Persists `level` and `exp` together -- always move in lockstep after
+    // a CG_LEVEL_UP_CHECK (see handlers/LevelUp.cpp), so one narrow update
+    // covers both without also rewriting position/stats.
+    void SaveLevel(IDatabase& db) const;
 
     CharacterDataLoad ToCharacterDataLoad(std::uint32_t epsUserFlag,
                                            std::uint32_t serverTimestamp) const;

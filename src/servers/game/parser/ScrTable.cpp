@@ -47,3 +47,16 @@ std::int64_t ScrTable::ParseInt64(std::string_view token)
 
     return value;
 }
+
+double ScrTable::ParseDouble(std::string_view token)
+{
+    double value = 0.0;
+    auto result = std::from_chars(token.data(), token.data() + token.size(), value);
+
+    if (result.ec != std::errc())
+    {
+        return 0.0;
+    }
+
+    return value;
+}

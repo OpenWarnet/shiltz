@@ -49,6 +49,12 @@ public:
     // integer columns.
     static std::int64_t ParseInt64(std::string_view token);
 
+    // Same, for a decimal token (e.g. "1.5") into a double -- 0.0 on
+    // failure rather than throwing. For float-typed columns (e.g.
+    // skill01.scr's casting_time), which ParseInt64 would silently
+    // truncate at the decimal point.
+    static double ParseDouble(std::string_view token);
+
 private:
     static std::string ReadFile(const std::filesystem::path& path);
 

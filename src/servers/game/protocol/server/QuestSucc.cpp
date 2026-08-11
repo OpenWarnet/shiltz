@@ -4,12 +4,13 @@
 
 void QuestSuccItem::Serialize(PayloadWriter& writer) const
 {
-    writer.Write(instance_id);
+    writer.Write(inventory_id);
+    writer.Write(slot_id);
     writer.Write(item_id);
     writer.Write(qty_or_refine);
     writer.Write(option);
     writer.Write(option2);
-    writer.Write(time);
+    writer.Write(unknown2);
 }
 
 void QuestSucc::Serialize(PayloadWriter& writer) const

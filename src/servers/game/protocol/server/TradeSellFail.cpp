@@ -4,5 +4,5 @@
 
 void TradeSellFail::Serialize(PayloadWriter& writer) const
 {
-    writer.Write(reason);
+    writer.Write(failure);
 }

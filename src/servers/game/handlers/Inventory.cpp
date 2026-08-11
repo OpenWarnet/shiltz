@@ -201,7 +201,7 @@ void HandleItemMove(const GameContext& ctx, const ItemMove& request)
     auto sendFail = [&]
     {
         PayloadWriter failWriter;
-        ItemMoveFail{}.Serialize(failWriter);
+        ItemMoveFail{.source_slot_id = request.source_slot_id}.Serialize(failWriter);
         auto failData = failWriter.Data();
 
         GamePacket failPacket(GameOpcode::GC_ITEM_MOVE_FAIL, failData);

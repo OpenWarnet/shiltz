@@ -15,7 +15,10 @@ bool Player::LoadFromDB(IDatabase& db, std::int64_t characterId)
                    "       character.stats_con, character.stats_men, character.stats_sen, "
                    "       character.money, "
                    "       character_position.map_id, character_position.location_x, "
-                   "       character_position.location_y "
+                   "       character_position.location_y, "
+                   "       character.unallocated_stat_points, character.unallocated_sp, "
+                   "       character.unallocated_ep, character.exp, "
+                   "       character.hp, character.ap, character.fame "
                    "FROM character "
                    "JOIN character_position ON character_position.character_id = character.id "
                    "WHERE character.id = ?");
@@ -48,11 +51,19 @@ bool Player::LoadFromDB(IDatabase& db, std::int64_t characterId)
     x = static_cast<std::int32_t>(std::get<int64_t>(findCharacter->Column(14)));
     y = static_cast<std::int32_t>(std::get<int64_t>(findCharacter->Column(15)));
 
-    // TODO: none of these four have a DB column yet -- placeholders.
-    hp = 1000;
-    ap = 500;
-    fame = 2556;
-    exp = 100;
+    stats.raw.unallocated_stat_points =
+        static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(16)));
+    skills.unallocated_sp = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(17)));
+    skills.unallocated_ep = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(18)));
+    exp = std::get<int64_t>(findCharacter->Column(19));
+
+    hp = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(20)));
+    ap = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(21)));
+    fame = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(22)));
+
+    // TODO: xp has no DB column yet -- placeholder. Note this is distinct
+    // from `exp` (current_exp on the wire, backing the level.scr curve) --
+    // xp isn't read anywhere else in the codebase yet.
 
     equipment.clear();
     auto findEquipment =
@@ -74,6 +85,19 @@ bool Player::LoadFromDB(IDatabase& db, std::int64_t characterId)
             .slot = static_cast<std::uint32_t>(std::get<int64_t>(findEquipment->Column(0))),
             .item_id = static_cast<std::uint32_t>(std::get<int64_t>(itemIdColumn)),
             .refine_level = refineLevel,
+        });
+    }
+
+    skills.skills.clear();
+    auto findSkills =
+        db.Prepare("SELECT skill_id, level FROM character_skill WHERE character_id = ?");
+    findSkills->Bind(0, characterId);
+
+    while (findSkills->Step())
+    {
+        skills.skills.push_back(PlayerSkill{
+            .id = static_cast<std::uint32_t>(std::get<int64_t>(findSkills->Column(0))),
+            .level = static_cast<std::uint32_t>(std::get<int64_t>(findSkills->Column(1))),
         });
     }
 
@@ -125,10 +149,71 @@ void Player::SaveMoney(IDatabase& db) const
     updateMoney->Step();
 }
 
+void Player::SaveFame(IDatabase& db) const
+{
+    auto updateFame = db.Prepare("UPDATE character SET fame = ? WHERE id = ?");
+    updateFame->Bind(0, static_cast<int64_t>(fame));
+    updateFame->Bind(1, static_cast<int64_t>(instance_id));
+    updateFame->Step();
+}
+
+void Player::SaveRawStats(IDatabase& db) const
+{
+    auto updateStats = db.Prepare(
+        "UPDATE character SET stats_str = ?, stats_int = ?, stats_dex = ?, stats_con = ?, "
+        "stats_men = ?, stats_sen = ?, unallocated_stat_points = ? WHERE id = ?");
+    updateStats->Bind(0, static_cast<int64_t>(stats.raw.strength));
+    updateStats->Bind(1, static_cast<int64_t>(stats.raw.intelligence));
+    updateStats->Bind(2, static_cast<int64_t>(stats.raw.dexterity));
+    updateStats->Bind(3, static_cast<int64_t>(stats.raw.constitution));
+    updateStats->Bind(4, static_cast<int64_t>(stats.raw.mentality));
+    updateStats->Bind(5, static_cast<int64_t>(stats.raw.sense));
+    updateStats->Bind(6, static_cast<int64_t>(stats.raw.unallocated_stat_points));
+    updateStats->Bind(7, static_cast<int64_t>(instance_id));
+    updateStats->Step();
+}
+
+void Player::SaveSkillPoints(IDatabase& db) const
+{
+    auto updateSkillPoints = db.Prepare(
+        "UPDATE character SET unallocated_sp = ?, unallocated_ep = ? WHERE id = ?");
+    updateSkillPoints->Bind(0, static_cast<int64_t>(skills.unallocated_sp));
+    updateSkillPoints->Bind(1, static_cast<int64_t>(skills.unallocated_ep));
+    updateSkillPoints->Bind(2, static_cast<int64_t>(instance_id));
+    updateSkillPoints->Step();
+}
+
+void Player::SaveSkillLevels(IDatabase& db) const
+{
+    const auto characterId = static_cast<std::int64_t>(instance_id);
+
+    for (const auto& skill : skills.skills)
+    {
+        // UPSERT: the target row may not exist yet (character_skill rows
+        // aren't pre-seeded per skill) -- same idiom as SaveEquipmentRow.
+        auto stmt = db.Prepare(
+            "INSERT INTO character_skill (character_id, skill_id, level) VALUES (?, ?, ?) "
+            "ON CONFLICT(character_id, skill_id) DO UPDATE SET level = excluded.level");
+        stmt->Bind(0, characterId);
+        stmt->Bind(1, static_cast<int64_t>(skill.id));
+        stmt->Bind(2, static_cast<int64_t>(skill.level));
+        stmt->Step();
+    }
+}
+
+void Player::SaveLevel(IDatabase& db) const
+{
+    auto updateLevel = db.Prepare("UPDATE character SET level = ?, exp = ? WHERE id = ?");
+    updateLevel->Bind(0, static_cast<int64_t>(level));
+    updateLevel->Bind(1, exp);
+    updateLevel->Bind(2, static_cast<int64_t>(instance_id));
+    updateLevel->Step();
+}
+
 CharacterDataLoad Player::ToCharacterDataLoad(std::uint32_t epsUserFlag,
                                                std::uint32_t serverTimestamp) const
 {
-    return CharacterDataLoad{
+    CharacterDataLoad result{
         .self_entity_id = instance_id,
         .eps_user_flag = epsUserFlag,
         .map_id = map_id,
@@ -148,11 +233,27 @@ CharacterDataLoad Player::ToCharacterDataLoad(std::uint32_t epsUserFlag,
         .stats_sen = stats.raw.sense,
         .current_hp = hp,
         .current_ap = ap,
+        .unused_stat_points = stats.raw.unallocated_stat_points,
+        .skill_points = skills.unallocated_sp,
+        .enforced_points = skills.unallocated_ep,
         .hair_type = hairstyle_id,
         .char_name = name,
         .server_timestamp = serverTimestamp,
         .face_type = face_id,
     };
+
+    // skill_list is a fixed 64-slot wire array -- silently drop anything
+    // past that (no character has come close to 64 learned skills yet, but
+    // nothing here enforces it) rather than writing out of bounds.
+    for (std::size_t i = 0; i < skills.skills.size() && i < result.skill_list.size(); ++i)
+    {
+        result.skill_list[i] = CharacterSkillEntry{
+            .skill_id = static_cast<std::uint16_t>(skills.skills[i].id),
+            .skill_level = static_cast<std::uint16_t>(skills.skills[i].level),
+        };
+    }
+
+    return result;
 }
 
 InventoryItemList Player::ToInventoryItemList() const

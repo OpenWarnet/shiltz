@@ -16,6 +16,11 @@ namespace GameOpcode
     inline constexpr uint32_t CG_QUEST_RESULT = 411026;
     inline constexpr uint32_t CG_ITEM_TRADE_BUY = 411020;
     inline constexpr uint32_t CG_ITEM_TRADE_SELL = 411021;
+    inline constexpr uint32_t CG_LEVEL_UP_CHECK = 412016;
+    inline constexpr uint32_t CG_CHAR_STATUS_UP = 411018;
+    // sic -- named "GC_" in the real protocol despite being a client
+    // request, matching the client's own (inconsistent) naming.
+    inline constexpr uint32_t GC_CHAR_SKILL_UP_EX = 411059;
 
     // Server -> Client
     inline constexpr uint32_t GC_CHAR_DATA_LOAD = 511001;
@@ -37,6 +42,12 @@ namespace GameOpcode
     inline constexpr uint32_t GC_TRADE_SELL_SUCC = 521054;
     inline constexpr uint32_t GC_TRADE_BUY_FAIL = 531053;
     inline constexpr uint32_t GC_TRADE_SELL_FAIL = 531055;
+    inline constexpr uint32_t GC_LEVEL_UP_SUCC = 521045;
+    inline constexpr uint32_t GC_LEVEL_UP_FAIL = 531066;
+    inline constexpr uint32_t GC_CHAR_STATUS_UP_SUCC = 521048;
+    inline constexpr uint32_t GC_CHAR_STATUS_UP_FAIL = 531049;
+    inline constexpr uint32_t GC_CHAR_SKILL_UP_EX_SUCC = 521100;
+    inline constexpr uint32_t GC_CHAR_SKILL_UP_EX_FAIL = 531102;
 
     // Resolves an opcode to its constant's name, or "UNKNOWN" if not one of
     // the constants above. Used to make packet capture logs readable.

@@ -8,6 +8,9 @@
 #include "handlers/Inventory.h"
 #include "handlers/Quest.h"
 #include "handlers/Trade.h"
+#include "handlers/LevelUp.h"
+#include "handlers/CharStatus.h"
+#include "handlers/CharSkillUp.h"
 #include "protocol/client/GameEnter.h"
 #include "protocol/client/CharMove.h"
 #include "protocol/client/ItemPickup.h"
@@ -16,6 +19,9 @@
 #include "protocol/client/ItemTradeBuy.h"
 #include "protocol/client/ItemTradeSell.h"
 #include "protocol/client/QuestResult.h"
+#include "protocol/client/LevelUpCheck.h"
+#include "protocol/client/CharStatusUp.h"
+#include "protocol/client/CharSkillUpEx.h"
 
 namespace
 {
@@ -36,6 +42,9 @@ GameDispatcher::GameDispatcher()
               When(GameOpcode::CG_QUEST_RESULT).ParseAs<QuestResult>().Then(HandleQuestResult),
               When(GameOpcode::CG_ITEM_TRADE_BUY).ParseAs<ItemTradeBuy>().Then(HandleItemTradeBuy),
               When(GameOpcode::CG_ITEM_TRADE_SELL).ParseAs<ItemTradeSell>().Then(HandleItemTradeSell),
+              When(GameOpcode::CG_LEVEL_UP_CHECK).ParseAs<LevelUpCheck>().Then(HandleLevelUpCheck),
+              When(GameOpcode::CG_CHAR_STATUS_UP).ParseAs<CharStatusUp>().Then(HandleCharStatusUp),
+              When(GameOpcode::GC_CHAR_SKILL_UP_EX).ParseAs<CharSkillUpEx>().Then(HandleCharSkillUpEx),
           },
       }
 {

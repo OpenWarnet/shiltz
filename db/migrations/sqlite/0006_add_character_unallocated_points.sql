@@ -1,0 +1,3 @@
+ALTER TABLE character ADD COLUMN unallocated_stat_points INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE character ADD COLUMN unallocated_sp INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE character ADD COLUMN unallocated_ep INTEGER NOT NULL DEFAULT 0;

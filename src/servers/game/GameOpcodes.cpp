@@ -24,6 +24,12 @@ namespace GameOpcode
             return "CG_ITEM_TRADE_BUY";
         case CG_ITEM_TRADE_SELL:
             return "CG_ITEM_TRADE_SELL";
+        case CG_LEVEL_UP_CHECK:
+            return "CG_LEVEL_UP_CHECK";
+        case CG_CHAR_STATUS_UP:
+            return "CG_CHAR_STATUS_UP";
+        case GC_CHAR_SKILL_UP_EX:
+            return "GC_CHAR_SKILL_UP_EX";
         case CG_ITEM_MOVE_SUCC:
             return "CG_ITEM_MOVE_SUCC";
         case GC_ITEM_MOVE_FAIL:
@@ -56,6 +62,18 @@ namespace GameOpcode
             return "GC_TRADE_BUY_FAIL";
         case GC_TRADE_SELL_FAIL:
             return "GC_TRADE_SELL_FAIL";
+        case GC_LEVEL_UP_SUCC:
+            return "GC_LEVEL_UP_SUCC";
+        case GC_LEVEL_UP_FAIL:
+            return "GC_LEVEL_UP_FAIL";
+        case GC_CHAR_STATUS_UP_SUCC:
+            return "GC_CHAR_STATUS_UP_SUCC";
+        case GC_CHAR_STATUS_UP_FAIL:
+            return "GC_CHAR_STATUS_UP_FAIL";
+        case GC_CHAR_SKILL_UP_EX_SUCC:
+            return "GC_CHAR_SKILL_UP_EX_SUCC";
+        case GC_CHAR_SKILL_UP_EX_FAIL:
+            return "GC_CHAR_SKILL_UP_EX_FAIL";
         default:
             return "UNKNOWN";
         }

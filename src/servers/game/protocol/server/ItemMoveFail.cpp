@@ -4,5 +4,5 @@
 
 void ItemMoveFail::Serialize(PayloadWriter& writer) const
 {
-    writer.Write(reason);
+    writer.Write(source_slot_id);
 }
