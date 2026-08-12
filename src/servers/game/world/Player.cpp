@@ -157,6 +157,15 @@ void Player::SaveFame(IDatabase& db) const
     updateFame->Step();
 }
 
+void Player::SaveVitals(IDatabase& db) const
+{
+    auto updateVitals = db.Prepare("UPDATE character SET hp = ?, ap = ? WHERE id = ?");
+    updateVitals->Bind(0, static_cast<int64_t>(hp));
+    updateVitals->Bind(1, static_cast<int64_t>(ap));
+    updateVitals->Bind(2, static_cast<int64_t>(instance_id));
+    updateVitals->Step();
+}
+
 void Player::SaveRawStats(IDatabase& db) const
 {
     auto updateStats = db.Prepare(

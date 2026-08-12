@@ -161,6 +161,11 @@ struct Player
     // Persists `fame` alone.
     void SaveFame(IDatabase& db) const;
 
+    // Persists `hp` and `ap` together -- both are touched together by quest
+    // rewards (see handlers/Quest.cpp), so one narrow update covers both
+    // without also rewriting position/stats.
+    void SaveVitals(IDatabase& db) const;
+
     // Persists the six named raw stats (stats.raw.strength..sense) plus
     // stats.raw.unallocated_stat_points.
     void SaveRawStats(IDatabase& db) const;
