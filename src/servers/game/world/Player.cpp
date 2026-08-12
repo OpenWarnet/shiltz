@@ -66,8 +66,8 @@ bool Player::LoadFromDB(IDatabase& db, std::int64_t characterId)
     // xp isn't read anywhere else in the codebase yet.
 
     equipment.clear();
-    auto findEquipment =
-        db.Prepare("SELECT slot, item_id, refine_level FROM equipment_slot WHERE character_id = ?");
+    auto findEquipment = db.Prepare(
+        "SELECT slot, item_id, refine_level, option_bits FROM equipment_slot WHERE character_id = ?");
     findEquipment->Bind(0, characterId);
 
     while (findEquipment->Step())
@@ -85,6 +85,7 @@ bool Player::LoadFromDB(IDatabase& db, std::int64_t characterId)
             .slot = static_cast<std::uint32_t>(std::get<int64_t>(findEquipment->Column(0))),
             .item_id = static_cast<std::uint32_t>(std::get<int64_t>(itemIdColumn)),
             .refine_level = refineLevel,
+            .option_bits = static_cast<std::uint32_t>(std::get<int64_t>(findEquipment->Column(3))),
         });
     }
 
@@ -102,7 +103,7 @@ bool Player::LoadFromDB(IDatabase& db, std::int64_t characterId)
     }
 
     inventory.clear();
-    auto findInventory = db.Prepare("SELECT slot_index, item_id, quantity, refine_level FROM "
+    auto findInventory = db.Prepare("SELECT slot_index, item_id, quantity, refine_level, option_bits FROM "
                                      "inventory_slot WHERE character_id = ?");
     findInventory->Bind(0, characterId);
 
@@ -123,6 +124,7 @@ bool Player::LoadFromDB(IDatabase& db, std::int64_t characterId)
                                 ? static_cast<std::uint32_t>(std::get<int64_t>(refineLevelColumn))
                                 : 0,
             .has_refine_level = hasRefineLevel,
+            .option_bits = static_cast<std::uint32_t>(std::get<int64_t>(findInventory->Column(4))),
         });
     }
 
@@ -277,6 +279,7 @@ InventoryItemList Player::ToInventoryItemList() const
         result.slots[item.slot] = {
             .item_id = item.item_id,
             .qty_or_refine = item.refine_level,
+            .option_bits = item.option_bits,
         };
     }
 
@@ -295,6 +298,7 @@ InventoryItemList Player::ToInventoryItemList() const
         result.slots[wireSlot] = {
             .item_id = item.item_id,
             .qty_or_refine = qtyOrRefine,
+            .option_bits = item.option_bits,
         };
     }
 

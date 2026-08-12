@@ -15,11 +15,8 @@
 // callers must track it alongside SkillScr::Load's return value (see
 // World::Start).
 //
-// Field layout/order matches unsealed's SKILL_BAND_SCHEMA (46 pipe-
-// delimited columns, one skillNN.scr row per skill) -- named fields are
-// carried over verbatim from that reverse-engineering; `field_N` names mark
-// columns whose meaning isn't known yet. Row 0 of every file is an all-zero
-// placeholder (id=0, name="skill").
+// `field_N` names mark columns whose meaning isn't known yet. Row 0 of
+// every file is an all-zero placeholder (id=0, name="skill").
 struct SkillRecord
 {
     std::int64_t id = 0;

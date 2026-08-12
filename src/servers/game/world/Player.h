@@ -24,22 +24,30 @@ struct PlayerRawStats
 
 struct PlayerDerivedStats
 {
-    std::uint32_t max_hp = 0;
-    std::uint32_t max_ap = 0;
-    std::uint32_t damage = 0;
-    std::uint32_t defense = 0;
-    std::uint32_t magic = 0;
-    std::uint32_t accuracy = 0;
-    std::uint32_t evasion = 0;
-    std::uint32_t critical = 0;
-    std::uint32_t attack_speed = 0;
-
-    // Signed, unlike every other field here -- confirmed via live client
-    // cross-check (world/Stats.cpp) that this is a per-class flat offset
-    // that goes negative for some classes (e.g. Knight, Mage).
+    // Signed -- equipment options (Stats.cpp's CalculateEquipmentDerivedStats)
+    // can roll a stat-lowering tier, so a cursed-enough loadout can legitimately
+    // push any of these below zero; the raw-stat-only formulas never do.
+    // movement_speed was already signed independent of equipment, confirmed
+    // via live client cross-check as a per-class flat offset that goes
+    // negative for some classes (e.g. Knight, Mage).
+    std::int32_t max_hp = 0;
+    std::int32_t max_ap = 0;
+    std::int32_t damage = 0;
+    std::int32_t defense = 0;
+    std::int32_t magic = 0;
+    std::int32_t accuracy = 0;
+    std::int32_t evasion = 0;
+    std::int32_t critical = 0;
+    std::int32_t attack_speed = 0;
     std::int32_t movement_speed = 0;
-    std::uint32_t damage_increase = 0;
-    std::uint32_t damage_decrease = 0;
+
+    // Percentages, not flat amounts. Named for *direction*, not sign --
+    // dealt/taken says whose damage this modifies, matching how the real
+    // client's tooltip separates "Increase Damage" (dealt, by this
+    // character, to a target) from "Damage Decrease" (taken, by this
+    // character, from an attacker) as two unrelated stats.
+    std::int32_t damage_dealt_increase_percent = 0;
+    std::int32_t damage_taken_decrease_percent = 0;
 };
 
 struct PlayerStats
@@ -68,6 +76,7 @@ struct PlayerEquipmentItem
     std::uint32_t slot = 0;
     std::uint32_t item_id = 0;
     std::uint32_t refine_level = 0;
+    std::uint32_t option_bits = 0;
 };
 
 // Mirrors an `inventory_slot` DB row. has_refine_level tracks the column's
@@ -80,6 +89,7 @@ struct PlayerInventoryItem
     std::uint32_t quantity = 0;
     std::uint32_t refine_level = 0;
     bool has_refine_level = false;
+    std::uint32_t option_bits = 0;
 };
 
 // Content of a single equipment-or-inventory wire slot, as exchanged by

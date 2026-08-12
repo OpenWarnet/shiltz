@@ -51,6 +51,12 @@ namespace
         return (classId << 32) | (blockId & 0xFFFFFFFFLL);
     }
 
+    // Same idiom, for set_opt.scr's (setId, pieceCount) pairs.
+    std::int64_t MakeSetOptionKey(std::int64_t setId, std::int64_t pieceCount)
+    {
+        return (setId << 32) | (pieceCount & 0xFFFFFFFFLL);
+    }
+
     // skillNN.scr's level isn't a column in the row -- it's which file the
     // row came from. Parses "skillNN" -> NN; returns 0 (an invalid level,
     // never matched by MakeSkillLevelKey's callers) for anything that
@@ -105,6 +111,12 @@ void World::Start()
             const std::int64_t id = record.id;
             m_itemRecords.emplace(id, std::move(record));
         }
+    }
+
+    for (auto& record : SetOptScr::Load(DataDir() / "set_opt.scr"))
+    {
+        const std::int64_t key = MakeSetOptionKey(record.set_id, record.piece_count);
+        m_setOptionRecords.emplace(key, std::move(record));
     }
 
     for (auto& record : LevelScr::Load(DataDir() / "level.scr"))
@@ -176,6 +188,12 @@ const ItemRecord* World::FindItemRecord(std::int64_t itemId) const
 {
     auto it = m_itemRecords.find(itemId);
     return it != m_itemRecords.end() ? &it->second : nullptr;
+}
+
+const SetOptionRecord* World::FindSetOptionRecord(std::int64_t setId, std::int64_t pieceCount) const
+{
+    auto it = m_setOptionRecords.find(MakeSetOptionKey(setId, pieceCount));
+    return it != m_setOptionRecords.end() ? &it->second : nullptr;
 }
 
 const LevelRecord* World::FindLevelRecord(std::int64_t level) const

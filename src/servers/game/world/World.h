@@ -6,6 +6,7 @@
 #include "parser/LevelScr.h"
 #include "parser/MonsterScr.h"
 #include "parser/SellerScr.h"
+#include "parser/SetOptScr.h"
 #include "parser/SkillScr.h"
 #include "parser/StatusScr.h"
 
@@ -52,6 +53,13 @@ public:
     // that item id.
     const ItemRecord* FindItemRecord(std::int64_t itemId) const;
 
+    // Looks up a set_opt.scr row by (ItemRecord::set_id, exact worn piece
+    // count). Returns nullptr if this World hasn't loaded a row for that
+    // exact pair -- most (set_id, piece_count) combinations don't have one
+    // (e.g. a set might only grant a bonus at its full piece count, with no
+    // partial-set row at all).
+    const SetOptionRecord* FindSetOptionRecord(std::int64_t setId, std::int64_t pieceCount) const;
+
     // Looks up a level.scr row by LevelRecord::level -- the same id-space
     // as Player::level. Returns nullptr if this World hasn't loaded that
     // level (e.g. it's past the max level in the table).
@@ -88,6 +96,8 @@ private:
     std::unordered_map<std::int64_t, MonsterRecord> m_monsterRecords;
     std::unordered_map<std::int64_t, SellerRecord> m_sellerRecords;
     std::unordered_map<std::int64_t, ItemRecord> m_itemRecords;
+    // Keyed by (setId << 32) | pieceCount -- see MakeSetOptionKey in World.cpp.
+    std::unordered_map<std::int64_t, SetOptionRecord> m_setOptionRecords;
     std::unordered_map<std::int64_t, LevelRecord> m_levelRecords;
     // Keyed by (skillId << 32) | level -- see MakeSkillLevelKey in World.cpp.
     std::unordered_map<std::int64_t, SkillRecord> m_skillRecords;

@@ -64,6 +64,8 @@ add_executable (
 	"parser/SellerScr.cpp"
 	"parser/ItemScr.h"
 	"parser/ItemScr.cpp"
+	"parser/SetOptScr.h"
+	"parser/SetOptScr.cpp"
 	"parser/LevelScr.h"
 	"parser/LevelScr.cpp"
 	"parser/SkillScr.h"

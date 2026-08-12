@@ -37,21 +37,26 @@ namespace
         return {
             PlayerItemSlot{.item_id = 7938, .refine_level = 0, .has_refine_level = true,
                            .option_bits = 0x12492497},
-            PlayerItemSlot{.item_id = 11690, // Weapon
+            PlayerItemSlot{.item_id = 12295, // Weapon
                            .refine_level = 0,
-                           .has_refine_level = true},
-            PlayerItemSlot{.item_id = 14227, // Head
+                           .has_refine_level = true,
+                           .option_bits = 0x3FFFFFFF},
+            PlayerItemSlot{.item_id = 16411, // Head
                            .refine_level = 0,
-                           .has_refine_level = true},
-            PlayerItemSlot{.item_id = 14228, // Top
+                           .has_refine_level = true,
+                           .option_bits = 0x3FFFFFFF},
+            PlayerItemSlot{.item_id = 16415, // Top
                            .refine_level = 0,
-                           .has_refine_level = true},
-            PlayerItemSlot{.item_id = 14229, // Bot
+                           .has_refine_level = true,
+                           .option_bits = 0x3FFFFFFF},
+            PlayerItemSlot{.item_id = 16419, // Bot
                            .refine_level = 0,
-                           .has_refine_level = true},
-            PlayerItemSlot{.item_id = 14230, // Shoes
+                           .has_refine_level = true,
+                           .option_bits = 0x3FFFFFFF},
+            PlayerItemSlot{.item_id = 16423, // Shoes
                            .refine_level = 0,
-                           .has_refine_level = true},
+                           .has_refine_level = true,
+                           .option_bits = 0x3FFFFFFF},
         };
     }
 

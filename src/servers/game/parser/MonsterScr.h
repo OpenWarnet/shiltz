@@ -13,13 +13,11 @@
 // `element` is a 1-based index (1 Fire, 2 Water, 3 Tree, 4 Steel, 5 Earth,
 // 6 Sun, 7 Darkness, 8 Magical, 9 Physical; 0 none).
 //
-// Field layout reverse-engineered from the client's MonsterDataFile
-// loader: every column is a 64-bit value, stored in the text file as one
-// pipe-delimited decimal token per column, so column N sits at token
-// index N directly. Only columns the client is known to read are named;
-// the rest stay in `fields` (indexed by COLUMN, same as token index here)
-// so columns with no meaning yet -- or added by a newer file version --
-// aren't dropped.
+// Every column is a 64-bit value, one pipe-delimited decimal token per
+// column, so column N sits at token index N directly. Only columns this
+// project reads are named; the rest stay in `fields` (indexed by column,
+// same as token index here) so columns with no meaning yet -- or added by
+// a newer file version -- aren't dropped.
 struct MonsterRecord
 {
     std::int64_t id = 0;
