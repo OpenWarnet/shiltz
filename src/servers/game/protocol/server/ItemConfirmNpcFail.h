@@ -10,8 +10,7 @@ class PayloadWriter;
 // handler ever actually sends -- there's no per-cause code on the wire,
 // so a bad slot index, an ineligible item type, an unmet level
 // requirement, and insufficient money are all indistinguishable to the
-// client (see handlers/ItemConfirmNpc.h). Reserved (10) is never sent by
-// this handler -- kept for protocol parity only, not a real code path.
+// client (see handlers/ItemConfirmNpc.h).
 struct ItemConfirmNpcFail
 {
     std::int32_t result_code = 3;

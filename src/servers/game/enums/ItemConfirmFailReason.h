@@ -7,5 +7,5 @@
 enum class ItemConfirmFailReason : std::int32_t
 {
     NoSlotsAppraised = 3,
-    Reserved = 10, // never actually sent -- see ItemConfirmNpcFail.h
+    Reserved = 10, // not sent by this handler
 };

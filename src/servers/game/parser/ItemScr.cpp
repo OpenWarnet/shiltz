@@ -5,6 +5,7 @@
 namespace
 {
     constexpr std::size_t kItemTypeColumn = 2;
+    constexpr std::size_t kMinLevelColumn = 3;
     constexpr std::size_t kBuyPriceColumn = 35;
     constexpr std::size_t kSellPriceColumn = 36;
 
@@ -49,6 +50,7 @@ namespace
         ItemRecord record;
         record.id = ScrTable::ParseInt64(row[0]);
         record.item_type = ColumnOrZero(row, kItemTypeColumn);
+        record.min_level = ColumnOrZero(row, kMinLevelColumn);
         record.buy_price = ColumnOrZero(row, kBuyPriceColumn);
         record.sell_price = ColumnOrZero(row, kSellPriceColumn);
 

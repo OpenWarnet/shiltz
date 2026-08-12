@@ -38,6 +38,7 @@ struct ItemRecord
 {
     std::int64_t id = 0;
     std::int64_t item_type = 0;
+    std::int64_t min_level = 0; // level required to USE/equip the item
     std::int64_t buy_price = 0;
     std::int64_t sell_price = 0;
 

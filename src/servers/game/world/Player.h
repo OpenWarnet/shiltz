@@ -96,14 +96,12 @@ struct PlayerInventoryItem
 // LoadItemSlot/SaveItemSlot. Same has_refine_level discriminant as
 // PlayerInventoryItem.
 //
-// item_level/item_opt2/option_bits/option_eligible_mask back the NPC magic-
-// option appraiser (see handlers/ItemConfirmNpc.h) -- nothing in this
-// codebase generates real per-instance values for these yet, so they
-// default to a permissive placeholder (item_opt2 = -1 exempts the item
-// from the appraiser's level gate; option_eligible_mask = all 10 bits set
-// makes every option eligible to roll) rather than to values that would
-// make the appraiser a no-op on every item. See migration
-// 0010_add_item_magic_option_columns.sql.
+// item_level/option_bits back the NPC magic-option appraiser (see
+// handlers/ItemConfirmNpc.h). option_bits doubles as its own "never
+// appraised" sentinel (kNeverAppraised) until the first real roll
+// overwrites it. Gate eligibility isn't stored per-instance -- it's
+// recomputed on every appraisal from the item's own ItemScr.h
+// `*_scale` columns.
 struct PlayerItemSlot
 {
     std::uint32_t item_id = 0;
@@ -112,9 +110,7 @@ struct PlayerItemSlot
     bool has_refine_level = false;
 
     std::int32_t item_level = 0;
-    std::int32_t item_opt2 = -1;
-    std::uint32_t option_bits = 0;
-    std::uint32_t option_eligible_mask = 0x3FF;
+    std::uint32_t option_bits = 0xFFFFFFFFu; // kNeverAppraised, see ItemConfirmNpc.cpp
 };
 
 // A connected client's full character data, shared by every game-server

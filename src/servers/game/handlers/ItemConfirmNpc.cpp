@@ -14,27 +14,39 @@
 #include "world/Player.h"
 #include "world/World.h"
 
+#include <algorithm>
+#include <array>
 #include <iostream>
+#include <iterator>
 #include <random>
+#include <vector>
 
 namespace
 {
-    // Not read from any table -- a flat requirement for every appraisable
-    // item regardless of type.
+    // Flat level requirement for rerolling an already-appraised item.
     constexpr std::int32_t kLevelRequirementThreshold = 90;
 
     // A rolled result where every one of the 10 gates landed on baseline
     // tier 2 (i.e. nothing actually changed) is reported as option_bits=0
-    // instead of the literal all-2s bit pattern -- two literals map to
-    // this "nothing happened" state, differing only in an unused high bit.
+    // instead of the literal all-2s bit pattern.
     constexpr std::uint32_t kBaselinePattern1 = 0x12492492;
     constexpr std::uint32_t kBaselinePattern2 = 0x52492492;
 
+    // Sentinel stored in PlayerItemSlot::option_bits meaning "this slot
+    // has never been through the appraiser." A successful appraisal
+    // overwrites it with the real rolled bits.
+    constexpr std::uint32_t kNeverAppraised = 0xFFFFFFFFu;
+
     constexpr int kGateCount = 10;
+
+    // Malformed requests (empty or too many slots) are dropped silently
+    // rather than answered with a FAIL.
+    constexpr std::size_t kMaxSlotsPerRequest = 8;
 
     bool IsSlotInRange(std::uint32_t slot)
     {
-        return slot <= 0x2F;
+        // Equipment slots (0-7) aren't appraisable via this path.
+        return slot > 7 && slot <= 0x2F;
     }
 
     bool IsItemTypeEligible(std::int64_t rawItemType)
@@ -84,18 +96,84 @@ namespace
         return 7;
     }
 
-    // Rolls all 10 gates for one item instance. A gate only gets a fresh
-    // roll if its bit is set in `eligibleMask` (this item instance's
-    // "hidden roll" eligibility -- see PlayerItemSlot::option_eligible_mask);
-    // otherwise it defaults to baseline tier 2 (no effect).
-    std::uint32_t RollOptionBits(std::uint32_t eligibleMask, std::mt19937& rng)
+    // How many of an item's eligible gates activate on a single appraisal
+    // attempt -- a second, independent roll from BucketTier above:
+    //   0 gates -> 30.0%   1 gate  -> 34.0%   2 gates -> 20.0%
+    //   3 gates -> 10.0%   4 gates ->  3.0%   5-10 gates -> 0.5% each
+    int RollActivatedGateCount(std::mt19937& rng)
     {
         std::uniform_int_distribution<int> dist(0, 999);
+        const int r = dist(rng);
+        if (r <= 299)
+            return 0;
+        if (r <= 639)
+            return 1;
+        if (r <= 839)
+            return 2;
+        if (r <= 939)
+            return 3;
+        if (r <= 969)
+            return 4;
+        if (r <= 974)
+            return 5;
+        if (r <= 979)
+            return 6;
+        if (r <= 984)
+            return 7;
+        if (r <= 989)
+            return 8;
+        if (r <= 994)
+            return 9;
+        return 10;
+    }
 
+    // Gate index -> the item's own per-gate scale, in the same order
+    // option_bits packs them. A gate is eligible to roll for an item if
+    // and only if its scale is nonzero.
+    std::array<std::int64_t, kGateCount> GateScales(const ItemRecord& item)
+    {
+        return {
+            item.damage_scale,       item.magic_power_scale,
+            item.defense_scale,      item.attack_speed_scale,
+            item.accuracy_scale,     item.critical_rate_scale,
+            item.evasion_rate_scale, item.movement_speed_scale,
+            item.hp_percent_scale,   item.ap_percent_scale,
+        };
+    }
+
+    std::vector<int> EligibleGates(const ItemRecord& item)
+    {
+        const auto scales = GateScales(item);
+        std::vector<int> eligible;
+        for (int gate = 0; gate < kGateCount; ++gate)
+        {
+            if (scales[gate] != 0)
+                eligible.push_back(gate);
+        }
+        return eligible;
+    }
+
+    // Rolls option_bits for one item instance. Every gate defaults to
+    // baseline tier 2 (no effect); only gates BOTH template-eligible
+    // (nonzero scale) AND drawn by this attempt's activation roll get a
+    // real BucketTier roll.
+    std::uint32_t RollOptionBits(const ItemRecord& item, std::mt19937& rng)
+    {
+        const std::vector<int> eligible = EligibleGates(item);
+        const int activateCount =
+            std::min<int>(RollActivatedGateCount(rng), static_cast<int>(eligible.size()));
+
+        std::vector<int> activated;
+        std::sample(eligible.begin(), eligible.end(), std::back_inserter(activated), activateCount,
+                    rng);
+
+        std::uniform_int_distribution<int> tierDist(0, 999);
         std::uint32_t bits = 0;
         for (int gate = 0; gate < kGateCount; ++gate)
         {
-            const int tier = (eligibleMask & (1u << gate)) ? BucketTier(dist(rng)) : 2;
+            const bool isActivated =
+                std::find(activated.begin(), activated.end(), gate) != activated.end();
+            const int tier = isActivated ? BucketTier(tierDist(rng)) : 2;
             bits |= static_cast<std::uint32_t>(tier) << (gate * 3);
         }
 
@@ -110,6 +188,13 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
 {
     std::cout << "Item confirm npc request: " << request.slot_ids.size() << " slot(s), npc_flag "
               << request.npc_flag << "\n";
+
+    if (request.slot_ids.empty() || request.slot_ids.size() > kMaxSlotsPerRequest)
+    {
+        std::cout << "Dropping CG_ITEM_CONFIRM_NPC_REQUEST: count " << request.slot_ids.size()
+                  << " out of range [1," << kMaxSlotsPerRequest << "]\n";
+        return;
+    }
 
     auto session = ctx.sessions.Get(ctx.clientSocket);
     if (!session)
@@ -151,12 +236,15 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
             continue;
         }
 
-        // item_opt2 == -1 exempts the item from the level-90 gate.
-        const bool exempt = content->item_opt2 == -1;
-        if (!exempt && content->item_level < kLevelRequirementThreshold)
+        // A never-appraised item always qualifies; an already-appraised
+        // one can only be rerolled if its use-level requirement is under
+        // the threshold.
+        const bool neverAppraised = content->option_bits == kNeverAppraised;
+        if (itemRecord->min_level >= kLevelRequirementThreshold || !neverAppraised)
         {
-            std::cout << "item_type=" << itemRecord->item_type << ", item_opt2=" << content->item_opt2
-                      << ", item_level=" << content->item_level
+            std::cout << "item_type=" << itemRecord->item_type
+                      << ", option_bits=" << content->option_bits
+                      << ", min_level=" << itemRecord->min_level
                       << ", require_level=" << kLevelRequirementThreshold << "\n";
             continue;
         }
@@ -171,7 +259,7 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
 
         runningFee += fee;
 
-        content->option_bits = RollOptionBits(content->option_eligible_mask, rng);
+        content->option_bits = RollOptionBits(*itemRecord, rng);
         session->player.SaveItemSlot(ctx.db, slotId, *content);
 
         results.push_back(ItemConfirmNpcResult{

@@ -13,7 +13,7 @@ class PayloadReader;
 // but its meaning isn't confirmed -- parsed and kept, not branched on),
 // then `count` u32 slot ids (an inventory/equipment slot index, not an
 // item id), then a trailing u32 that's always 0 (unused padding, not a
-// field).
+// field). count must be in [1,8] (see handlers/ItemConfirmNpc.cpp).
 struct ItemConfirmNpcRequest
 {
     std::uint32_t npc_flag = 1;
