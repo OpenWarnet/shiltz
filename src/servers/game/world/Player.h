@@ -33,7 +33,11 @@ struct PlayerDerivedStats
     std::uint32_t evasion = 0;
     std::uint32_t critical = 0;
     std::uint32_t attack_speed = 0;
-    std::uint32_t movement_speed = 0;
+
+    // Signed, unlike every other field here -- confirmed via live client
+    // cross-check (world/Stats.cpp) that this is a per-class flat offset
+    // that goes negative for some classes (e.g. Knight, Mage).
+    std::int32_t movement_speed = 0;
     std::uint32_t damage_increase = 0;
     std::uint32_t damage_decrease = 0;
 };

@@ -1,11 +1,13 @@
 #pragma once
 
 #include "Map.h"
+#include "enums/JobId.h"
 #include "parser/ItemScr.h"
 #include "parser/LevelScr.h"
 #include "parser/MonsterScr.h"
 #include "parser/SellerScr.h"
 #include "parser/SkillScr.h"
+#include "parser/StatusScr.h"
 
 #include <cstdint>
 #include <unordered_map>
@@ -61,6 +63,25 @@ public:
     // nullptr if this World hasn't loaded that skill/level combination.
     const SkillRecord* FindSkillRecord(std::int64_t skillId, std::int64_t level) const;
 
+    // status.scr blockIds. Blocks 7, 9, and 10 have no confirmed reader;
+    // block 11 (kClownDamageBonusBlock) is genuinely sparse -- present
+    // only for JobId::Clown -- rather than "loaded but unused".
+    static constexpr std::size_t kDamageBlock = 0;
+    static constexpr std::size_t kMagicBlock = 1;
+    static constexpr std::size_t kDefenseBlock = 2;
+    static constexpr std::size_t kAccuracyBlock = 3;
+    static constexpr std::size_t kCriticalBlock = 4;
+    static constexpr std::size_t kEvasionBlock = 5;
+    static constexpr std::size_t kMaxHpBlock = 6;
+    static constexpr std::size_t kApBlock = 8;
+    static constexpr std::size_t kClownDamageBonusBlock = 11;
+
+    // Looks up a status.scr rate by (block, jobId). Returns nullptr if
+    // this World hasn't loaded that block/job combination -- always
+    // true for kClownDamageBonusBlock except at JobId::Clown, since
+    // that row simply doesn't exist for anyone else.
+    const double* FindStatusRate(std::size_t block, JobId jobId) const;
+
 private:
     Map m_map;
     std::uint32_t m_nextCreatureInstanceId = 10000;
@@ -70,4 +91,6 @@ private:
     std::unordered_map<std::int64_t, LevelRecord> m_levelRecords;
     // Keyed by (skillId << 32) | level -- see MakeSkillLevelKey in World.cpp.
     std::unordered_map<std::int64_t, SkillRecord> m_skillRecords;
+    // Keyed by (classId << 32) | blockId -- see MakeStatusKey in World.cpp.
+    std::unordered_map<std::int64_t, double> m_statusRates;
 };

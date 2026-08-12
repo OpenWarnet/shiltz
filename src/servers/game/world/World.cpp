@@ -45,6 +45,12 @@ namespace
         return (skillId << 32) | (level & 0xFFFFFFFFLL);
     }
 
+    // Same idiom, for status.scr's (classId, blockId) pairs.
+    std::int64_t MakeStatusKey(std::int64_t classId, std::int64_t blockId)
+    {
+        return (classId << 32) | (blockId & 0xFFFFFFFFLL);
+    }
+
     // skillNN.scr's level isn't a column in the row -- it's which file the
     // row came from. Parses "skillNN" -> NN; returns 0 (an invalid level,
     // never matched by MakeSkillLevelKey's callers) for anything that
@@ -105,6 +111,12 @@ void World::Start()
     {
         const std::int64_t level = record.level;
         m_levelRecords.emplace(level, std::move(record));
+    }
+
+    for (auto& record : StatusScr::Load(DataDir() / "status.scr"))
+    {
+        const std::int64_t key = MakeStatusKey(record.class_id, record.block_id);
+        m_statusRates.emplace(key, record.value);
     }
 
     // skillNN.scr is split one file per skill level (skill01.scr = every
@@ -176,4 +188,11 @@ const SkillRecord* World::FindSkillRecord(std::int64_t skillId, std::int64_t lev
 {
     auto it = m_skillRecords.find(MakeSkillLevelKey(skillId, level));
     return it != m_skillRecords.end() ? &it->second : nullptr;
+}
+
+const double* World::FindStatusRate(std::size_t block, JobId jobId) const
+{
+    auto it = m_statusRates.find(MakeStatusKey(static_cast<std::int64_t>(jobId),
+                                                static_cast<std::int64_t>(block)));
+    return it != m_statusRates.end() ? &it->second : nullptr;
 }

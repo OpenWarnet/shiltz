@@ -12,6 +12,7 @@
 #include "protocol/server/EnterFail.h"
 #include "protocol/server/InventoryItemList.h"
 #include "storage/IDatabase.h"
+#include "world/Stats.h"
 #include "world/World.h"
 
 #include <ctime>
@@ -99,6 +100,7 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
         return;
     }
     player.known_zones = ctx.world.GetMap().ZonesAround(player.x, player.y);
+    RecalculateDerivedStats(player, ctx.world);
 
     GameSession session{
         .sessionId = static_cast<int64_t>(request.session_id),
