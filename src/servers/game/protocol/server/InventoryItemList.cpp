@@ -7,7 +7,6 @@ void InventoryItemSlot::Serialize(PayloadWriter& writer) const
     writer.Write(item_id);
     writer.Write(qty_or_refine);
     writer.Write(option_bits);
-    writer.Write(unknown_tail);
 }
 
 void InventoryItemList::Serialize(PayloadWriter& writer) const

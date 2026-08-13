@@ -11,8 +11,7 @@ struct QuestSuccItem
     std::uint32_t slot_id = 0;
     std::uint32_t item_id = 0;
     std::uint32_t qty_or_refine = 0;
-    std::uint32_t option = 0;
-    std::uint32_t option2 = 0;
+    std::uint64_t option = 0;
     std::uint32_t unknown2 = 0;
 
     void Serialize(PayloadWriter& writer) const;

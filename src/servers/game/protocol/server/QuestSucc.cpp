@@ -9,7 +9,6 @@ void QuestSuccItem::Serialize(PayloadWriter& writer) const
     writer.Write(item_id);
     writer.Write(qty_or_refine);
     writer.Write(option);
-    writer.Write(option2);
     writer.Write(unknown2);
 }
 

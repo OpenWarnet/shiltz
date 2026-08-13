@@ -156,7 +156,7 @@ namespace
     // baseline tier 2 (no effect); only gates BOTH template-eligible
     // (nonzero scale) AND drawn by this attempt's activation roll get a
     // real BucketTier roll.
-    std::uint32_t RollOptionBits(const ItemRecord& item, std::mt19937& rng)
+    std::uint64_t RollOptionBits(const ItemRecord& item, std::mt19937& rng)
     {
         const std::vector<int> eligible = EligibleGates(item);
         const int activateCount =
@@ -167,7 +167,7 @@ namespace
                     rng);
 
         std::uniform_int_distribution<int> tierDist(0, 999);
-        std::uint32_t bits = 0;
+        std::uint64_t bits = 0;
         for (int gate = 0; gate < kGateCount; ++gate)
         {
             const bool isActivated =

@@ -16,7 +16,7 @@ struct Item
     // Sentinel for option_bits meaning "never appraised" -- see
     // handlers/ItemConfirmNpc.cpp, which is the only writer of a real
     // rolled value.
-    static constexpr std::uint32_t kNeverAppraised = 0xFFFFFFFFu;
+    static constexpr std::uint64_t kNeverAppraised = 0xFFFFFFFFFFFFFFFFu;
 
     std::uint32_t item_id = 0;
     std::uint32_t quantity = 0;
@@ -28,7 +28,7 @@ struct Item
     bool has_refine_level = false;
 
     std::int32_t item_level = 0;
-    std::uint32_t option_bits = kNeverAppraised;
+    std::uint64_t option_bits = kNeverAppraised;
 
     // Wire's dual-purpose slot field: refine_level as-is for an equippable,
     // else quantity - 1 for a stackable (a stack of N displays as N, backed

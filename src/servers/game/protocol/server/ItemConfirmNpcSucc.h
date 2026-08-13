@@ -8,7 +8,7 @@ class PayloadWriter;
 struct ItemConfirmNpcResult
 {
     std::uint32_t slot_id = 0;
-    std::uint32_t option_bits = 0;
+    std::uint64_t option_bits = 0;
 
     void Serialize(PayloadWriter& writer) const;
 };

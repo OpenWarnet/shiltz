@@ -29,26 +29,26 @@ namespace
         return {
             Item{.item_id = 7938, .refine_level = 0, .has_refine_level = true,
                          .option_bits = 0x12492497},
-            Item{.item_id = 12295, // Weapon
+            Item{.item_id = 950, // Weapon
                          .refine_level = 0,
                          .has_refine_level = true,
-                         .option_bits = 0x3FFFFFFF},
-            Item{.item_id = 16411, // Head
-                         .refine_level = 0,
-                         .has_refine_level = true,
-                         .option_bits = 0x3FFFFFFF},
-            Item{.item_id = 16628, // Top
-                         .refine_level = 0,
-                         .has_refine_level = true,
-                         .option_bits = 0x3FFFFFFF},
-            Item{.item_id = 16629, // Bot
-                         .refine_level = 0,
-                         .has_refine_level = true,
-                         .option_bits = 0x3FFFFFFF},
-            Item{.item_id = 14337, // Shoes
-                         .refine_level = 0,
-                         .has_refine_level = true,
-                         .option_bits = 0x3FFFFFFF},
+                         .option_bits = 0xFFFFFFFFu},
+            //Item{.item_id = 16411, // Head
+            //             .refine_level = 0,
+            //             .has_refine_level = true,
+            //             .option_bits = 0x3FFFFFFF},
+            //Item{.item_id = 16628, // Top
+            //             .refine_level = 0,
+            //             .has_refine_level = true,
+            //             .option_bits = 0x3FFFFFFF},
+            //Item{.item_id = 16629, // Bot
+            //             .refine_level = 0,
+            //             .has_refine_level = true,
+            //             .option_bits = 0x3FFFFFFF},
+            //Item{.item_id = 14337, // Shoes
+            //             .refine_level = 0,
+            //             .has_refine_level = true,
+            //             .option_bits = 0x3FFFFFFF},
         };
     }
 
@@ -66,7 +66,6 @@ namespace
                 .item_id = item.item_id,
                 .qty_or_refine = item.refine_level,
                 .option = item.option_bits,
-                .option2 = 0,
                 .unknown2 = 0,
             });
         }

@@ -9,12 +9,7 @@ struct InventoryItemSlot
 {
     std::uint32_t item_id = 0;
     std::uint32_t qty_or_refine = 0;
-
-    // CONFIRMED layout: the option_bits system's per-instance roll (see
-    // handlers/ItemConfirmNpc.h), followed by 4 bytes whose meaning isn't
-    // known yet.
-    std::uint32_t option_bits = 0;
-    std::array<std::uint8_t, 4> unknown_tail{};
+    std::uint64_t option_bits = 0;
 
     void Serialize(PayloadWriter& writer) const;
 };
