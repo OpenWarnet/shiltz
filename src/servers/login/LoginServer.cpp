@@ -12,12 +12,10 @@ LoginServer::LoginServer(uint16_t port, std::span<const uint8_t> key,
 
 void LoginServer::OnClientConnected(SOCKET clientSocket)
 {
-    // If the peer already closed the connection before we even called send()
-    // (e.g. a bare TCP health-check/port-probe that connects then hangs up
-    // immediately, rather than a client that speaks the login protocol),
-    // this is where SendTo's failure log shows up -- WSAECONNRESET/
-    // WSAECONNABORTED here means the "Client disconnected" that follows has
-    // nothing to do with the DES/nonce handshake at all.
+    // A peer that closes before we send (e.g. a bare TCP port-probe rather than
+    // a real client) surfaces as WSAECONNRESET/WSAECONNABORTED in SendTo's log
+    // here -- unrelated to the DES/nonce handshake despite the "Client
+    // disconnected" that follows.
     if (SendTo(clientSocket, m_noncePayload))
         std::cout << "Sent step-0 nonce frame (" << m_noncePayload.size() << " bytes)\n";
 }

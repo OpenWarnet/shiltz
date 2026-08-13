@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Creature.h"
-#include "Item.h"
+#include "GroundItem.h"
 
 #include <cstdint>
 #include <mutex>
@@ -10,7 +10,7 @@
 #include <vector>
 
 // A single map's simulation state. Ground items stay a flat list (see
-// Item.h); creatures (NPCs and monsters, see Creature.h) are indexed by
+// GroundItem.h); creatures (NPCs and monsters, see Creature.h) are indexed by
 // which 16x16 zone of the 512x512 world grid their (x, y) falls in, one
 // list per zone -- coarse enough that a player's field of view (currently
 // the 3x3 zone neighborhood around their own zone, see ZonesAround) is a
@@ -37,19 +37,19 @@ public:
     Map(const Map&) = delete;
     Map& operator=(const Map&) = delete;
 
-    void AddItem(Item item);
+    void AddItem(GroundItem item);
 
-    // Removes the ground item with this instance id (see Item::id). Returns
-    // false if no such item was present (e.g. already picked up).
+    // Removes the ground item with this instance id (see GroundItem::id).
+    // Returns false if no such item was present (e.g. already picked up).
     bool RemoveItem(std::uint32_t id);
 
     // Atomically finds and removes the item, returning it if present.
     // Prefer this over RemoveItem to *claim* an item (e.g. pickup) --
     // checking presence and removing as separate calls lets two players
     // racing the same pickup both grab it.
-    std::optional<Item> TryTakeItem(std::uint32_t id);
+    std::optional<GroundItem> TryTakeItem(std::uint32_t id);
 
-    std::vector<Item> Items() const; // snapshot copy, safe from any thread.
+    std::vector<GroundItem> Items() const; // snapshot copy, safe from any thread.
 
     // Places `creature` in the zone its own (x, y) falls in. Silently
     // dropped (with a log line) if that falls outside the 512x512 grid --
@@ -70,7 +70,7 @@ public:
 
 private:
     mutable std::mutex m_itemsMutex;
-    std::vector<Item> m_items;
+    std::vector<GroundItem> m_items;
 
     std::vector<std::vector<Creature>> m_creatureGrid =
         std::vector<std::vector<Creature>>(static_cast<std::size_t>(kZoneGridSize) * kZoneGridSize);

@@ -4,6 +4,7 @@
 #include "GameSessionStore.h"
 #include "common/TCPServer.h"
 #include "storage/IDatabase.h"
+#include "tables/GameData.h"
 #include "world/World.h"
 
 #include <cstdint>
@@ -24,5 +25,6 @@ private:
     std::span<const uint8_t> m_key;
     IDatabase& m_db;
     GameSessionStore m_sessions;
+    GameData m_data;
     World m_world;
 };

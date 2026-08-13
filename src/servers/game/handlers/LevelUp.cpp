@@ -9,7 +9,8 @@
 #include "protocol/client/LevelUpCheck.h"
 #include "protocol/server/LevelUpFail.h"
 #include "protocol/server/LevelUpSucc.h"
-#include "world/World.h"
+#include "tables/GameData.h"
+#include "tables/LevelTable.h"
 
 #include <iostream>
 
@@ -37,7 +38,7 @@ void HandleLevelUpCheck(const GameContext& ctx, const LevelUpCheck& request)
     // until the next one can't be afforded or the table runs out (max
     // level). Each level crossed also awards that row's stat_points_gained/
     // sp_gained -- ep is deliberately not accumulated here, see LevelScr.h.
-    while (const LevelRecord* record = ctx.world.FindLevelRecord(level))
+    while (const LevelRecord* record = ctx.data.levels.Find(level))
     {
         if (exp <= record->exp)
             break;

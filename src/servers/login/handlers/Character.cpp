@@ -43,12 +43,10 @@ void HandleGetCharacterList(const LoginContext& ctx, const ServerSelect& select)
 
     const int64_t now = static_cast<int64_t>(std::time(nullptr));
 
-    // Sweep characters whose deletion grace period has elapsed before listing
-    // -- three bulk statements scoped to (account_id, server_id), regardless
-    // of how many characters are actually expired, rather than checking/
-    // deleting per-row in the loop below. Children first (unenforced FKs --
-    // see 0002_add_characters.sql -- so nothing stops us leaving them behind
-    // if we did the parent first).
+    // Sweep characters whose deletion grace period has elapsed before listing,
+    // as three bulk statements scoped to (account_id, server_id) rather than
+    // per-row deletes. Children first -- FKs are unenforced (see
+    // 0002_add_characters.sql), so a parent-first order would leave orphans.
     const char* kExpiredWhere =
         "account_id = ? AND server_id = ? AND scheduled_deletion_at > 0 AND scheduled_deletion_at < ?";
 
@@ -342,8 +340,7 @@ void HandleCreateCharacter(const LoginContext& ctx, const CreateCharacter& reque
         return;
     }
 
-    // Prior hardcoded placeholder, now the actual starting balance (see
-    // 0005_add_character_money.sql).
+    // Starting balance for new characters (see 0005_add_character_money.sql).
     constexpr int64_t kStartingMoney = 100000;
 
     // A crash between the two INSERTs below would leave a `character` row

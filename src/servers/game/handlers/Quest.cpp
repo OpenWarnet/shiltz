@@ -7,6 +7,7 @@
 #include "common/TCPServer.h"
 #include "protocol/client/QuestResult.h"
 #include "protocol/server/QuestSucc.h"
+#include "repositories/ItemRepository.h"
 #include "storage/Transaction.h"
 #include "world/Player.h"
 
@@ -23,51 +24,42 @@ namespace
     // hardcoded item set regardless of which quest/action was reported (see
     // GrantQuestReward for the money/fame/exp/ap/hp side of the same TODO).
     // Every item here is equippable (refine_level, not stackable qty).
-    // item_level/item_opt2/option_eligible_mask are left at PlayerItemSlot's
-    // permissive placeholder defaults, same as elsewhere in this codebase.
-    //
-    // A few alternate items were previously tried in this same slot range
-    // and are kept here only for reference, not compiled:
-    //   slot 25: item_id 7938,  option_bits 0x124925DA
-    //   slot 26: item_id 7938,  option_bits 0x125D2492
-    //   slot 27: item_id 99,    option_bits 0x174BFE92
-    //   slot 28: item_id 16682, option_bits 0x174BFE92
-    std::vector<PlayerItemSlot> BuildQuestRewardItems()
+    std::vector<Item> BuildQuestRewardItems()
     {
         return {
-            PlayerItemSlot{.item_id = 7938, .refine_level = 0, .has_refine_level = true,
-                           .option_bits = 0x12492497},
-            PlayerItemSlot{.item_id = 12295, // Weapon
-                           .refine_level = 0,
-                           .has_refine_level = true,
-                           .option_bits = 0x3FFFFFFF},
-            PlayerItemSlot{.item_id = 16411, // Head
-                           .refine_level = 0,
-                           .has_refine_level = true,
-                           .option_bits = 0x3FFFFFFF},
-            PlayerItemSlot{.item_id = 16415, // Top
-                           .refine_level = 0,
-                           .has_refine_level = true,
-                           .option_bits = 0x3FFFFFFF},
-            PlayerItemSlot{.item_id = 16419, // Bot
-                           .refine_level = 0,
-                           .has_refine_level = true,
-                           .option_bits = 0x3FFFFFFF},
-            PlayerItemSlot{.item_id = 16423, // Shoes
-                           .refine_level = 0,
-                           .has_refine_level = true,
-                           .option_bits = 0x3FFFFFFF},
+            Item{.item_id = 7938, .refine_level = 0, .has_refine_level = true,
+                         .option_bits = 0x12492497},
+            Item{.item_id = 12295, // Weapon
+                         .refine_level = 0,
+                         .has_refine_level = true,
+                         .option_bits = 0x3FFFFFFF},
+            Item{.item_id = 16411, // Head
+                         .refine_level = 0,
+                         .has_refine_level = true,
+                         .option_bits = 0x3FFFFFFF},
+            Item{.item_id = 16628, // Top
+                         .refine_level = 0,
+                         .has_refine_level = true,
+                         .option_bits = 0x3FFFFFFF},
+            Item{.item_id = 16629, // Bot
+                         .refine_level = 0,
+                         .has_refine_level = true,
+                         .option_bits = 0x3FFFFFFF},
+            Item{.item_id = 14337, // Shoes
+                         .refine_level = 0,
+                         .has_refine_level = true,
+                         .option_bits = 0x3FFFFFFF},
         };
     }
 
-    std::vector<QuestSuccItem> ToQuestSuccItems(const std::vector<PlayerItemSlot>& items)
+    std::vector<QuestSuccItem> ToQuestSuccItems(const std::vector<Item>& items)
     {
         std::vector<QuestSuccItem> result;
         result.reserve(items.size());
 
         for (std::size_t i = 0; i < items.size(); ++i)
         {
-            const PlayerItemSlot& item = items[i];
+            const Item& item = items[i];
             result.push_back(QuestSuccItem{
                 .inventory_id = 1,
                 .slot_id = kQuestRewardStartSlot + static_cast<std::uint32_t>(i),
@@ -90,7 +82,8 @@ namespace
         player.ap += 1;
         player.hp += 1;
 
-        const std::vector<PlayerItemSlot> rewardItems = BuildQuestRewardItems();
+        const std::vector<Item> rewardItems = BuildQuestRewardItems();
+        const auto characterId = static_cast<std::int64_t>(player.instance_id);
 
         DatabaseTransaction txn(ctx.db);
 
@@ -102,7 +95,8 @@ namespace
         for (std::size_t i = 0; i < rewardItems.size(); ++i)
         {
             const std::uint32_t slotId = kQuestRewardStartSlot + static_cast<std::uint32_t>(i);
-            player.SaveItemSlot(ctx.db, slotId, rewardItems[i]);
+            ItemRepository::SaveItemSlot(ctx.db, characterId, slotId, rewardItems[i]);
+            player.SetItemSlot(slotId, rewardItems[i]);
         }
 
         txn.Commit();

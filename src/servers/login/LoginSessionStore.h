@@ -6,16 +6,13 @@
 #include <unordered_map>
 #include <winsock2.h>
 
-// Maps a connected socket to the account that authenticated on it, and to
-// the `session` table row created for that login. Both set by HandleLogin
-// on success. account_id is consulted by any later handler on the same
-// connection that needs to scope a DB write to "the account owning this
-// connection" (e.g. character creation); session_id is handed to the game
-// server (see HandleGameServerConnection) so it, in turn, can resolve
-// account_id from the `session` table once a client connects to it and
-// presents that id. Threaded through LoginContext the same way IDatabase
-// is -- LoginServer owns one instance and hands out a reference per
-// dispatched frame.
+// Maps a connected socket to the account/session set by HandleLogin on
+// success. account_id lets later handlers on the same connection scope DB
+// writes to the authenticated account (e.g. character creation); session_id
+// is handed to the game server (see HandleGameServerConnection) so it can
+// resolve account_id from the `session` table when the client presents that
+// id there. Threaded through LoginContext like IDatabase -- LoginServer owns
+// one instance and hands out a reference per dispatched frame.
 class LoginSessionStore
 {
 public:

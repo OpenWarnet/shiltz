@@ -13,9 +13,7 @@
 // `stat_points_gained`/`sp_gained` are the unallocated stat/skill points
 // awarded for making that same level -> level+1 jump. There used to be a
 // fifth column for enchant points (ep), but ep hasn't been granted on
-// level-up since a 2024 update (see
-// http://forum.playrohan.com/forum/showthread.php?t=44514), so it's not
-// modeled here.
+// level-up since a 2024 update, so it's not modeled here.
 struct LevelRecord
 {
     std::int64_t level = 0;

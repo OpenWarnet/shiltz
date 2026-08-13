@@ -12,7 +12,9 @@
 #include "protocol/server/EnterFail.h"
 #include "protocol/server/InventoryItemList.h"
 #include "storage/IDatabase.h"
-#include "world/Stats.h"
+#include "tables/GameData.h"
+#include "tables/MonsterTable.h"
+#include "stats/Stats.h"
 #include "world/World.h"
 
 #include <ctime>
@@ -100,7 +102,7 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
         return;
     }
     player.known_zones = ctx.world.GetMap().ZonesAround(player.x, player.y);
-    RecalculateDerivedStats(player, ctx.world);
+    RecalculateDerivedStats(player, ctx.data.items, ctx.data.setOptions, ctx.data.statusRates);
 
     GameSession session{
         .sessionId = static_cast<int64_t>(request.session_id),
@@ -117,7 +119,7 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
     response.Serialize(writer);
     auto data = writer.Data();
 
-    GamePacket responsePacket(GameOpcode::GC_CHAR_DATA_LOAD, data); // GC_CHAR_DATA_LOAD
+    GamePacket responsePacket(GameOpcode::GC_CHAR_DATA_LOAD, data);
     auto responsePayload = responsePacket.Serialize(ctx.key);
 
     ctx.server.SendTo(ctx.clientSocket, responsePayload);
@@ -127,8 +129,7 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
     inventoryResponse.Serialize(inventoryWriter);
     auto inventoryData = inventoryWriter.Data();
 
-    GamePacket inventoryPacket(GameOpcode::GC_INVENTORY_ITEM_LIST,
-                               inventoryData); // GC_INVENTORY_ITEM_LIST
+    GamePacket inventoryPacket(GameOpcode::GC_INVENTORY_ITEM_LIST, inventoryData);
     auto inventoryPayload = inventoryPacket.Serialize(ctx.key);
 
     ctx.server.SendTo(ctx.clientSocket, inventoryPayload);
@@ -140,7 +141,7 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
     {
         for (const auto& creature : ctx.world.GetMap().CreaturesInZone(zoneX, zoneY))
         {
-            const MonsterRecord* monsterRecord = ctx.world.FindMonsterRecord(creature.monster_id);
+            const MonsterRecord* monsterRecord = ctx.data.monsters.Find(creature.monster_id);
 
             crtLoadResponse.records.push_back(CrtLoadRecord{
                 .id = creature.instance_id,
@@ -156,7 +157,7 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
     crtLoadResponse.Serialize(crtLoadWriter);
     auto crtLoadData = crtLoadWriter.Data();
 
-    GamePacket crtLoadPacket(GameOpcode::GC_CRT_LOAD, crtLoadData); // GC_CRT_LOAD
+    GamePacket crtLoadPacket(GameOpcode::GC_CRT_LOAD, crtLoadData);
     auto crtLoadPayload = crtLoadPacket.Serialize(ctx.key);
 
     ctx.server.SendTo(ctx.clientSocket, crtLoadPayload);
@@ -193,7 +194,7 @@ void HandleCgExit(const GameContext& ctx)
     exitResponse.Serialize(exitWriter);
     auto exitData = exitWriter.Data();
 
-    GamePacket exitPacket(GameOpcode::GC_CHAR_EXIT_SUCC, exitData); // GC_CHAR_EXIT_SUCC
+    GamePacket exitPacket(GameOpcode::GC_CHAR_EXIT_SUCC, exitData);
     auto exitPayload = exitPacket.Serialize(ctx.key);
 
     ctx.server.SendTo(ctx.clientSocket, exitPayload);

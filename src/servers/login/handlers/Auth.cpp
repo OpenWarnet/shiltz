@@ -52,7 +52,6 @@ void HandleLogin(const LoginContext& ctx, const Login& login)
     auto accountId = EnsureAccount(ctx.db, login.username, login.password);
     if (!accountId)
     {
-        // Send login fail packet
         LoginFail failure{.reason = 1};
         failure.Serialize(writer);
         auto failData = writer.Data();

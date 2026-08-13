@@ -16,10 +16,10 @@
 // appraiser applies to a rolled tier (see handlers/ItemConfirmNpc.h). The
 // ten `*_bonus` fields are a separate, always-on flat stat grant from
 // simply wearing the item, independent of the appraiser system above
-// (world/Stats.cpp sums both). hp_bonus/ap_bonus in particular are NOT the
-// same thing as hp_percent_scale/ap_percent_scale: the bonus fields are a
-// flat point grant, the scale fields are a percent-of-roll input to the
-// unrelated appraiser system.
+// (world/Item.cpp's CalculateDerivedStats sums both). hp_bonus/ap_bonus in
+// particular are NOT the same thing as hp_percent_scale/ap_percent_scale:
+// the bonus fields are a flat point grant, the scale fields are a
+// percent-of-roll input to the unrelated appraiser system.
 //
 // `damage_dealt_increase_percent_bonus` and
 // `damage_taken_decrease_percent_bonus` are percentages, not flat point
@@ -32,8 +32,8 @@
 //
 // `set_id` groups items into an equipped-set bonus (0 = not part of a
 // set) -- world/data/set_opt.scr has one row per (set_id, piece_count)
-// actually worn together, see parser/SetOptScr.h and world/Stats.cpp's
-// set-bonus pass.
+// actually worn together, see parser/SetOptScr.h and
+// stats/EquipmentStatCalculator.cpp's set-bonus pass.
 struct ItemRecord
 {
     std::int64_t id = 0;
@@ -73,8 +73,11 @@ struct ItemRecord
     // at a given refine level = a per-(refine_group, level) curve shared
     // by every item with that refine_group, multiplied by the item's own
     // refine_damage_scale/refine_magic_scale/refine_defense_scale for that
-    // stat (see world/Stats.cpp's kRefineCurve* tables); a scale of 0
-    // means that stat doesn't grow on this item at all.
+    // stat (see world/Item.cpp's kRefineCurve* tables); a scale of 0
+    // means that stat doesn't grow on this item at all. refine_group's
+    // confirmed values are enums/RefineGroup.h -- kept raw std::int64_t
+    // here (not that enum type) to mirror item_type/ItemType, cast at the
+    // point of use.
     std::int64_t refine_damage_scale = 0;
     std::int64_t refine_magic_scale = 0;
     std::int64_t refine_defense_scale = 0;

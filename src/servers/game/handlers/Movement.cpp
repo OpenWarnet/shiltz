@@ -8,6 +8,8 @@
 #include "protocol/client/CharMove.h"
 #include "protocol/server/CrtLoad.h"
 #include "protocol/server/ViewRemoveAll.h"
+#include "tables/GameData.h"
+#include "tables/MonsterTable.h"
 #include "world/World.h"
 
 #include <algorithm>
@@ -35,7 +37,6 @@ void HandleMovement(const GameContext& ctx, const CharMove& request)
                                                           static_cast<std::int32_t>(request.y));
     const auto& oldZones = session->player.known_zones;
 
-    // Zones newly in view -- load their creatures.
     CrtLoad crtLoadResponse;
     for (const auto& zone : newZones)
     {
@@ -44,7 +45,7 @@ void HandleMovement(const GameContext& ctx, const CharMove& request)
 
         for (const auto& creature : ctx.world.GetMap().CreaturesInZone(zone.first, zone.second))
         {
-            const MonsterRecord* monsterRecord = ctx.world.FindMonsterRecord(creature.monster_id);
+            const MonsterRecord* monsterRecord = ctx.data.monsters.Find(creature.monster_id);
 
             std::cout << "Loading creature " << creature.instance_id << " (monster_id "
                       << creature.monster_id << ") at (" << creature.x << ", " << creature.y
@@ -73,7 +74,6 @@ void HandleMovement(const GameContext& ctx, const CharMove& request)
         ctx.server.SendTo(ctx.clientSocket, payload);
     }
 
-    // Zones no longer in view -- unload their creatures.
     ViewRemoveAll removeResponse;
     for (const auto& zone : oldZones)
     {

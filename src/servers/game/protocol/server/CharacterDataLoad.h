@@ -73,13 +73,13 @@ struct CharacterDataLoad
     std::uint32_t channel_id = 0;
 
     std::array<std::uint8_t, 128>
-        record_array_a{}; // 8 x 16-byte records, likely pet/summon slots (unconfirmed)
+        record_array_a{}; // 8 x 16-byte record block; purpose not yet identified
 
     std::uint32_t server_timestamp = 0;
     std::uint32_t costume_slot_index = 0;
     std::uint32_t face_type = 0;
     std::uint32_t pvp_point = 0;
-    std::uint32_t f40 = 0; // anti-cheat XOR key seed (sub_7AD0A0/sub_7AD2C0 family), not plain data
+    std::uint32_t f40 = 0; // anti-cheat XOR key seed, not a plain data value
     std::uint32_t f41 = 0; // unidentified
     std::uint32_t minigame_flag = 0;
     std::uint32_t monster_survival_state = 0;

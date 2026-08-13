@@ -95,15 +95,15 @@ void CharacterDataLoad::Serialize(PayloadWriter& writer) const
     writer.Write(f41);
     writer.Write(minigame_flag);
 
-    writer.Write(std::uint32_t{0}); // confirmed dead: cursor advances, client never reads this dword
+    writer.Write(std::uint32_t{0}); // unread padding dword
 
     writer.Write(monster_survival_state);
     writer.Write(monster_survival_state_2);
 
-    writer.Write(std::uint32_t{0}); // confirmed dead: a second unread gap
+    writer.Write(std::uint32_t{0}); // second unread padding dword
 
     std::uint8_t reservedGap[68]{};
-    writer.Write(reservedGap); // confirmed dead: a larger unread gap right after
+    writer.Write(reservedGap); // larger unread padding block
 
     writer.Write(record_array_b);
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Item.h"
+
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -24,12 +26,6 @@ struct PlayerRawStats
 
 struct PlayerDerivedStats
 {
-    // Signed -- equipment options (Stats.cpp's CalculateEquipmentDerivedStats)
-    // can roll a stat-lowering tier, so a cursed-enough loadout can legitimately
-    // push any of these below zero; the raw-stat-only formulas never do.
-    // movement_speed was already signed independent of equipment, confirmed
-    // via live client cross-check as a per-class flat offset that goes
-    // negative for some classes (e.g. Knight, Mage).
     std::int32_t max_hp = 0;
     std::int32_t max_ap = 0;
     std::int32_t damage = 0;
@@ -41,14 +37,22 @@ struct PlayerDerivedStats
     std::int32_t attack_speed = 0;
     std::int32_t movement_speed = 0;
 
-    // Percentages, not flat amounts. Named for *direction*, not sign --
-    // dealt/taken says whose damage this modifies, matching how the real
-    // client's tooltip separates "Increase Damage" (dealt, by this
-    // character, to a target) from "Damage Decrease" (taken, by this
-    // character, from an attacker) as two unrelated stats.
     std::int32_t damage_dealt_increase_percent = 0;
     std::int32_t damage_taken_decrease_percent = 0;
+
+    // HP%/AP% contributions (currently equipment-only). Unlike every other
+    // field here, these don't add directly onto max_hp/max_ap -- they scale
+    // the combined total as one final multiplicative step after every stat
+    // source has been summed via operator+ (see RecalculateDerivedStats in
+    // Stats.cpp).
+    std::int32_t hp_percent_bonus = 0;
+    std::int32_t ap_percent_bonus = 0;
 };
+
+// Sums every field, including hp_percent_bonus/ap_percent_bonus -- percent
+// contributions from multiple sources (equipment, later skill buffs) add
+// together before being applied once. See PlayerDerivedStats::hp_percent_bonus.
+PlayerDerivedStats operator+(const PlayerDerivedStats& a, const PlayerDerivedStats& b);
 
 struct PlayerStats
 {
@@ -69,58 +73,18 @@ struct PlayerSkills
     std::vector<PlayerSkill> skills;
 };
 
-// Mirrors an `equipment_slot` DB row. Not world/Item.h's Item, which is a
-// ground-dropped instance.
 struct PlayerEquipmentItem
 {
     std::uint32_t slot = 0;
-    std::uint32_t item_id = 0;
-    std::uint32_t refine_level = 0;
-    std::uint32_t option_bits = 0;
+    Item item;
 };
 
-// Mirrors an `inventory_slot` DB row. has_refine_level tracks the column's
-// NULL-ness: set means an equippable item (quantity meaningless), unset
-// means a stackable item (quantity set).
 struct PlayerInventoryItem
 {
     std::uint32_t slot_index = 0;
-    std::uint32_t item_id = 0;
-    std::uint32_t quantity = 0;
-    std::uint32_t refine_level = 0;
-    bool has_refine_level = false;
-    std::uint32_t option_bits = 0;
+    Item item;
 };
 
-// Content of a single equipment-or-inventory wire slot, as exchanged by
-// LoadItemSlot/SaveItemSlot. Same has_refine_level discriminant as
-// PlayerInventoryItem.
-//
-// item_level/option_bits back the NPC magic-option appraiser (see
-// handlers/ItemConfirmNpc.h). option_bits doubles as its own "never
-// appraised" sentinel (kNeverAppraised) until the first real roll
-// overwrites it. Gate eligibility isn't stored per-instance -- it's
-// recomputed on every appraisal from the item's own ItemScr.h
-// `*_scale` columns.
-struct PlayerItemSlot
-{
-    std::uint32_t item_id = 0;
-    std::uint32_t quantity = 0;
-    std::uint32_t refine_level = 0;
-    bool has_refine_level = false;
-
-    std::int32_t item_level = 0;
-    std::uint32_t option_bits = 0xFFFFFFFFu; // kNeverAppraised, see ItemConfirmNpc.cpp
-};
-
-// A connected client's full character data, shared by every game-server
-// handler via GameSession -- the source of truth between the DB
-// (LoadFromDB/SaveToDB) and the wire protocol (ToCharacterDataLoad/
-// ToInventoryItemList).
-//
-// xp has no DB column yet (see LoadFromDB, which leaves it at its default);
-// money/exp/hp/ap/fame are persisted. instance_id/direction/known_zones are
-// runtime-only, populated by the handler after LoadFromDB.
 struct Player
 {
     std::uint32_t instance_id = 0;
@@ -193,14 +157,30 @@ struct Player
     // covers both without also rewriting position/stats.
     void SaveLevel(IDatabase& db) const;
 
+    // Keep equipment/inventory in step with the same wire-slot writes made
+    // through ItemRepository -- call alongside every ItemRepository::Save*/
+    // Clear* so this connection's cached Player never drifts from the DB
+    // rows a handler just wrote (see repositories/ItemRepository.h for the
+    // write side of the same slots). Equipment and inventory each get a
+    // table-relative overload plus a wire-slot overload that resolves which
+    // table it belongs to, mirroring ItemRepository's own split.
+    void SetEquipmentSlot(std::uint32_t slot, const Item& item);
+    void ClearEquipmentSlot(std::uint32_t slot);
+
+    void SetInventorySlot(std::uint32_t slotIndex, const Item& item);
+    void ClearInventorySlot(std::uint32_t slotIndex);
+
+    void SetItemSlot(std::uint32_t wireSlotId, const Item& item);
+    void ClearItemSlot(std::uint32_t wireSlotId);
+
+    // Reads from this cache rather than the DB -- valid as long as every
+    // write above is kept paired with its ItemRepository::Save*/Clear*
+    // call, which is the point of the Set*/Clear* methods above.
+    std::optional<Item> GetEquipmentSlot(std::uint32_t slot) const;
+    std::optional<Item> GetInventorySlot(std::uint32_t slotIndex) const;
+    std::optional<Item> GetItemSlot(std::uint32_t wireSlotId) const;
+
     CharacterDataLoad ToCharacterDataLoad(std::uint32_t epsUserFlag,
                                            std::uint32_t serverTimestamp) const;
     InventoryItemList ToInventoryItemList() const;
-
-    // Wire slots 0-12 are equipment, 13+ are inventory (kBagStartSlot) --
-    // each lives in its own DB table. These resolve that split so callers
-    // never branch on which table a wire slot belongs to.
-    std::optional<PlayerItemSlot> LoadItemSlot(IDatabase& db, std::uint32_t wireSlotId) const;
-    void SaveItemSlot(IDatabase& db, std::uint32_t wireSlotId, const PlayerItemSlot& content) const;
-    void ClearItemSlot(IDatabase& db, std::uint32_t wireSlotId) const;
 };

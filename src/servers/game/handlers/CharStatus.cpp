@@ -9,8 +9,9 @@
 #include "protocol/client/CharStatusUp.h"
 #include "protocol/server/CharStatusUpFail.h"
 #include "protocol/server/CharStatusUpSucc.h"
+#include "tables/GameData.h"
 #include "world/Player.h"
-#include "world/Stats.h"
+#include "stats/Stats.h"
 
 #include <iostream>
 
@@ -64,7 +65,7 @@ void HandleCharStatusUp(const GameContext& ctx, const CharStatusUp& request)
     {
         *rawStat += static_cast<std::uint32_t>(request.amount);
         raw.unallocated_stat_points -= static_cast<std::uint32_t>(request.amount);
-        RecalculateDerivedStats(session->player, ctx.world);
+        RecalculateDerivedStats(session->player, ctx.data.items, ctx.data.setOptions, ctx.data.statusRates);
         ctx.sessions.Set(ctx.clientSocket, *session);
         session->player.SaveRawStats(ctx.db);
 

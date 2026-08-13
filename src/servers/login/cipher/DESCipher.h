@@ -10,11 +10,9 @@ public:
     DESCipher() = default;
     ~DESCipher() = default;
 
-    // Block-level API (8 bytes / 64 bits per block)
     [[nodiscard]] std::array<uint8_t, 8> EncryptBlock(const std::array<uint8_t, 8>& block) const;
     [[nodiscard]] std::array<uint8_t, 8> DecryptBlock(const std::array<uint8_t, 8>& block) const;
 
-    // Stream / Buffer API (ECB Mode)
     [[nodiscard]] std::vector<uint8_t> EncryptECB(std::span<const uint8_t> plaintext) const;
     [[nodiscard]] std::vector<uint8_t> DecryptECB(std::span<const uint8_t> ciphertext) const;
 
@@ -22,7 +20,7 @@ private:
     static uint32_t Feistel(uint32_t half, int round);
     static constexpr int HexNibble(char c);
 
-    // Custom S-Box hex table from the game binary (S6 and S7 swapped)
+    // Non-standard DES S-box table: S6 and S7 are swapped relative to the standard spec
     static constexpr char kSboxHex[] =
         "e4d12fb83a6c59070f74e2d1a6cb953841e8d62bfc973a50fc8249175b2ea06df18e6b34972dc05a3d47f28ec01a69b"
         "50e7ba4d158c6932fd8a13f42b67c05e9a09e63f51dc7b428d709346a285ecbf1d6498f30b12c5ae71ad069874fe3b52"

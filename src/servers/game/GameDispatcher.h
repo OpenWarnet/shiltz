@@ -11,6 +11,7 @@ class GamePacket;
 class IDatabase;
 class GameSessionStore;
 class World;
+class GameData;
 
 struct GameContext
 {
@@ -20,6 +21,7 @@ struct GameContext
     IDatabase& db;
     GameSessionStore& sessions;
     World& world;
+    const GameData& data;
 };
 
 class GameDispatcher : public Dispatcher<GameContext, GamePacket>

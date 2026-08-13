@@ -16,12 +16,11 @@
 // The ten stat fields are in the same order as ItemRecord's per-item
 // `*_bonus`/`*_scale` fields (damage, magic, defense, attack_speed,
 // accuracy, critical_rate, evasion, movement_speed, hp_percent,
-// ap_percent) -- confirmed by reverse-matching set 255/piece 4's row
-// (20|0|20|20|0|20|0|0|1|0) against character id 3's real client-reported
-// stat deltas after equipping that set's 4th piece: adding this row on top
-// of the four items' own ItemRecord::*_bonus columns exactly reproduced
-// every one of the ten reported stats. Five more numeric columns follow in
-// the raw file with no confirmed meaning yet -- not parsed.
+// ap_percent), and add on top of the equipped items' own
+// ItemRecord::*_bonus columns rather than replacing them (see
+// stats/EquipmentStatCalculator.cpp's set-bonus pass). Five more numeric
+// columns follow in the raw file with no confirmed meaning yet -- not
+// parsed.
 struct SetOptionRecord
 {
     std::int64_t set_id = 0;

@@ -12,9 +12,12 @@
 #include "protocol/server/TradeBuySucc.h"
 #include "protocol/server/TradeSellFail.h"
 #include "protocol/server/TradeSellSucc.h"
-#include "storage/IDatabase.h"
+#include "repositories/ItemRepository.h"
 #include "storage/Transaction.h"
-#include "world/World.h"
+#include "tables/GameData.h"
+#include "tables/ItemTable.h"
+#include "tables/SellerTable.h"
+#include "world/Item.h"
 
 #include <algorithm>
 #include <iostream>
@@ -52,7 +55,7 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
         return;
     }
 
-    const SellerRecord* seller = ctx.world.FindSellerRecord(request.shop_id);
+    const SellerRecord* seller = ctx.data.sellers.Find(request.shop_id);
     if (!seller)
     {
         std::cout << "Rejecting CG_ITEM_TRADE_BUY: no seller record for shop_id " << request.shop_id << "\n";
@@ -70,7 +73,7 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
 
     const auto itemId = static_cast<std::uint32_t>(seller->items[request.item_buy_index]);
 
-    const ItemRecord* item = ctx.world.FindItemRecord(itemId);
+    const ItemRecord* item = ctx.data.items.Find(itemId);
     if (!item)
     {
         std::cout << "Rejecting CG_ITEM_TRADE_BUY: no item record for item_id " << itemId << "\n";
@@ -90,8 +93,8 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
 
     const int64_t characterId = session->characterId;
     // Same wire-relative -> bag-relative conversion as HandleItemPickup/HandleItemDrop.
-    const int64_t slotIndex =
-        static_cast<int64_t>(request.slot_id) - static_cast<int64_t>(InventoryItemList::kBagStartSlot);
+    const auto slotIndex = static_cast<std::uint32_t>(static_cast<int64_t>(request.slot_id) -
+                                                        static_cast<int64_t>(InventoryItemList::kBagStartSlot));
 
     // The item write and the money debit must land together, or a crash
     // between them grants the item for free or debits with nothing to show.
@@ -102,57 +105,46 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
     // fine (stack onto it), holding a *different* item_id means the
     // client's view of its own inventory is stale, so reject rather than
     // clobbering whatever's actually there. Checked before any money moves.
-    auto findSlot =
-        ctx.db.Prepare("SELECT item_id, quantity FROM inventory_slot WHERE character_id = ? AND slot_index = ?");
-    findSlot->Bind(0, characterId);
-    findSlot->Bind(1, slotIndex);
+    // Read from the cache rather than the DB -- see repositories/ItemRepository.h.
+    auto existing = session->player.GetInventorySlot(slotIndex);
 
-    int64_t newQuantity = static_cast<int64_t>(request.amount);
-
-    if (findSlot->Step())
+    Item updated;
+    if (existing)
     {
-        const auto existingItemId = static_cast<std::uint32_t>(std::get<int64_t>(findSlot->Column(0)));
-        if (existingItemId != itemId)
+        if (existing->item_id != itemId)
         {
             std::cout << "Rejecting CG_ITEM_TRADE_BUY: slot_index " << slotIndex << " holds item_id "
-                      << existingItemId << ", not " << itemId << " -- ignoring\n";
+                      << existing->item_id << ", not " << itemId << " -- ignoring\n";
             sendFail();
             return;
         }
 
-        const SqlValue quantityColumn = findSlot->Column(1);
-        const int64_t currentQuantity =
-            std::holds_alternative<int64_t>(quantityColumn) ? std::get<int64_t>(quantityColumn) : 0;
-        newQuantity = currentQuantity + static_cast<int64_t>(request.amount);
-
-        auto updateQuantity = ctx.db.Prepare(
-            "UPDATE inventory_slot SET quantity = ? WHERE character_id = ? AND slot_index = ?");
-        updateQuantity->Bind(0, newQuantity);
-        updateQuantity->Bind(1, characterId);
-        updateQuantity->Bind(2, slotIndex);
-        updateQuantity->Step();
+        // Stack onto the existing slot -- item_level/option_bits stay the
+        // existing stack's, same reasoning as HandleItemPickup.
+        updated = *existing;
+        updated.quantity += request.amount;
 
         std::cout << "Stacked item_id " << itemId << " at slot_index " << slotIndex << " (qty now "
-                  << newQuantity << ")\n";
+                  << updated.quantity << ")\n";
     }
     else
     {
-        auto insertItem = ctx.db.Prepare(
-            "INSERT INTO inventory_slot (character_id, slot_index, item_id, quantity) VALUES (?, ?, ?, ?)");
-        insertItem->Bind(0, characterId);
-        insertItem->Bind(1, slotIndex);
-        insertItem->Bind(2, static_cast<int64_t>(itemId));
-        insertItem->Bind(3, newQuantity);
-        insertItem->Step();
+        updated = Item{.item_id = itemId, .quantity = request.amount};
 
-        std::cout << "Added item_id " << itemId << " at slot_index " << slotIndex << " (qty " << newQuantity
-                  << ")\n";
+        std::cout << "Added item_id " << itemId << " at slot_index " << slotIndex << " (qty "
+                  << updated.quantity << ")\n";
     }
+
+    ItemRepository::SaveInventorySlot(ctx.db, characterId, slotIndex, updated);
 
     session->player.money -= totalCost;
     session->player.SaveMoney(ctx.db);
+
     txn.Commit();
 
+    // Only mirror into the cache / session store once the transaction is
+    // actually durable -- see the equivalent comment in ItemConfirmNpc.cpp.
+    session->player.SetInventorySlot(slotIndex, updated);
     ctx.sessions.Set(ctx.clientSocket, *session);
 
     // Same dual-purpose wire convention as ItemPickupSuccess::qty_or_refine --
@@ -164,7 +156,7 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
     TradeBuySucc response{
         .slot_id = request.slot_id,
         .item_id = itemId,
-        .new_count = static_cast<std::uint32_t>(newQuantity - 1),
+        .new_count = updated.WireQuantityOrRefine(),
         .option = 0,
         .option2 = 0,
         .money = session->player.money,
@@ -212,30 +204,25 @@ void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
 
     const int64_t characterId = session->characterId;
     // Same wire-relative -> bag-relative conversion as HandleItemPickup/HandleItemDrop.
-    const int64_t slotIndex =
-        static_cast<int64_t>(request.slot_id) - static_cast<int64_t>(InventoryItemList::kBagStartSlot);
+    const auto slotIndex = static_cast<std::uint32_t>(static_cast<int64_t>(request.slot_id) -
+                                                        static_cast<int64_t>(InventoryItemList::kBagStartSlot));
 
     // Same reasoning as HandleItemTradeBuy -- the item removal and the
     // money credit must be one atomic unit.
     DatabaseTransaction txn(ctx.db);
 
-    auto findSlot = ctx.db.Prepare(
-        "SELECT item_id, quantity, refine_level FROM inventory_slot "
-        "WHERE character_id = ? AND slot_index = ?");
-    findSlot->Bind(0, characterId);
-    findSlot->Bind(1, slotIndex);
-
-    if (!findSlot->Step())
+    // Read from the cache rather than the DB -- see repositories/ItemRepository.h.
+    auto existing = session->player.GetInventorySlot(slotIndex);
+    if (!existing)
     {
         std::cout << "Rejecting CG_ITEM_TRADE_SELL: slot_index " << slotIndex << " is empty\n";
         sendFail();
         return;
     }
 
-    const auto itemId = static_cast<std::uint32_t>(std::get<int64_t>(findSlot->Column(0)));
-    const SqlValue quantityColumn = findSlot->Column(1);
+    const std::uint32_t itemId = existing->item_id;
 
-    const ItemRecord* item = ctx.world.FindItemRecord(itemId);
+    const ItemRecord* item = ctx.data.items.Find(itemId);
     if (!item)
     {
         std::cout << "Rejecting CG_ITEM_TRADE_SELL: no item record for item_id " << itemId << "\n";
@@ -245,50 +232,49 @@ void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
 
     std::uint32_t soldCount = 1;
     std::uint32_t remainingCount = 0;
+    bool slotCleared = true;
+    Item remainingItem;
 
-    if (std::holds_alternative<int64_t>(quantityColumn))
+    if (!existing->has_refine_level)
     {
-        const int64_t currentQuantity = std::get<int64_t>(quantityColumn);
+        const std::uint32_t currentQuantity = existing->quantity;
         // Explicit template argument dodges the Windows.h min/max macro
         // collision -- see HexDump.h for the same idiom.
-        const int64_t toSell = std::min<int64_t>(static_cast<int64_t>(request.count), currentQuantity);
-        soldCount = static_cast<std::uint32_t>(toSell);
+        const std::uint32_t toSell = std::min<std::uint32_t>(request.count, currentQuantity);
+        soldCount = toSell;
 
         if (toSell >= currentQuantity)
         {
-            auto deleteSlot =
-                ctx.db.Prepare("DELETE FROM inventory_slot WHERE character_id = ? AND slot_index = ?");
-            deleteSlot->Bind(0, characterId);
-            deleteSlot->Bind(1, slotIndex);
-            deleteSlot->Step();
+            ItemRepository::ClearInventorySlot(ctx.db, characterId, slotIndex);
         }
         else
         {
-            remainingCount = static_cast<std::uint32_t>(currentQuantity - toSell);
+            remainingCount = currentQuantity - toSell;
 
-            auto updateSlot = ctx.db.Prepare(
-                "UPDATE inventory_slot SET quantity = ? WHERE character_id = ? AND slot_index = ?");
-            updateSlot->Bind(0, currentQuantity - toSell);
-            updateSlot->Bind(1, characterId);
-            updateSlot->Bind(2, slotIndex);
-            updateSlot->Step();
+            remainingItem = *existing;
+            remainingItem.quantity = remainingCount;
+            ItemRepository::SaveInventorySlot(ctx.db, characterId, slotIndex, remainingItem);
+            slotCleared = false;
         }
     }
     else
     {
         // Equippable-style item (refine_level, not stackable) -- selling
         // always removes the whole thing, regardless of requested count.
-        auto deleteSlot =
-            ctx.db.Prepare("DELETE FROM inventory_slot WHERE character_id = ? AND slot_index = ?");
-        deleteSlot->Bind(0, characterId);
-        deleteSlot->Bind(1, slotIndex);
-        deleteSlot->Step();
+        ItemRepository::ClearInventorySlot(ctx.db, characterId, slotIndex);
     }
 
     session->player.money += item->sell_price * static_cast<std::int64_t>(soldCount);
     session->player.SaveMoney(ctx.db);
+
     txn.Commit();
 
+    // Only mirror into the cache / session store once the transaction is
+    // actually durable -- see the equivalent comment in ItemConfirmNpc.cpp.
+    if (slotCleared)
+        session->player.ClearInventorySlot(slotIndex);
+    else
+        session->player.SetInventorySlot(slotIndex, remainingItem);
     ctx.sessions.Set(ctx.clientSocket, *session);
 
     std::cout << "Sold " << soldCount << "x item_id " << itemId << " from slot_index " << slotIndex

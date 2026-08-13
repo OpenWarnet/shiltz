@@ -11,8 +11,12 @@
 #include "protocol/client/ItemConfirmNpcRequest.h"
 #include "protocol/server/ItemConfirmNpcFail.h"
 #include "protocol/server/ItemConfirmNpcSucc.h"
+#include "repositories/ItemRepository.h"
+#include "storage/Transaction.h"
+#include "world/Item.h"
 #include "world/Player.h"
-#include "world/World.h"
+#include "tables/GameData.h"
+#include "tables/ItemTable.h"
 
 #include <algorithm>
 #include <array>
@@ -31,11 +35,6 @@ namespace
     // instead of the literal all-2s bit pattern.
     constexpr std::uint32_t kBaselinePattern1 = 0x12492492;
     constexpr std::uint32_t kBaselinePattern2 = 0x52492492;
-
-    // Sentinel stored in PlayerItemSlot::option_bits meaning "this slot
-    // has never been through the appraiser." A successful appraisal
-    // overwrites it with the real rolled bits.
-    constexpr std::uint32_t kNeverAppraised = 0xFFFFFFFFu;
 
     constexpr int kGateCount = 10;
 
@@ -204,14 +203,29 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
         return;
     }
 
+    const int64_t characterId = session->characterId;
+
     std::random_device rd;
     std::mt19937 rng(rd());
 
+    struct AppraisedSlot
+    {
+        std::uint32_t slot_id;
+        Item item;
+    };
+
     // One atomic pass: a per-slot gate failure just skips that slot and
     // the loop continues -- only the very end decides SUCC vs FAIL, based
-    // on whether anything actually succeeded.
+    // on whether anything actually succeeded. Writes go to the DB inside
+    // txn below; session->player and the session store only see them once
+    // txn.Commit() has actually succeeded (see appraisedItems below), so a
+    // write failure partway through can't leave the cache ahead of what's
+    // really on disk.
     std::vector<ItemConfirmNpcResult> results;
+    std::vector<AppraisedSlot> appraisedItems;
     std::int64_t runningFee = 0;
+
+    DatabaseTransaction txn(ctx.db);
 
     for (std::uint32_t slotId : request.slot_ids)
     {
@@ -221,11 +235,11 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
             continue;
         }
 
-        auto content = session->player.LoadItemSlot(ctx.db, slotId);
+        auto content = session->player.GetItemSlot(slotId);
         if (!content)
             continue; // empty slot -- nothing to appraise
 
-        const ItemRecord* itemRecord = ctx.world.FindItemRecord(content->item_id);
+        const ItemRecord* itemRecord = ctx.data.items.Find(content->item_id);
         if (!itemRecord)
             continue; // unknown item_id -- no type/scale data to check against
 
@@ -239,7 +253,7 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
         // A never-appraised item always qualifies; an already-appraised
         // one can only be rerolled if its use-level requirement is under
         // the threshold.
-        const bool neverAppraised = content->option_bits == kNeverAppraised;
+        const bool neverAppraised = content->option_bits == Item::kNeverAppraised;
         if (itemRecord->min_level >= kLevelRequirementThreshold || !neverAppraised)
         {
             std::cout << "item_type=" << itemRecord->item_type
@@ -260,7 +274,8 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
         runningFee += fee;
 
         content->option_bits = RollOptionBits(*itemRecord, rng);
-        session->player.SaveItemSlot(ctx.db, slotId, *content);
+        ItemRepository::SaveItemSlot(ctx.db, characterId, slotId, *content);
+        appraisedItems.push_back(AppraisedSlot{.slot_id = slotId, .item = *content});
 
         results.push_back(ItemConfirmNpcResult{
             .slot_id = slotId,
@@ -283,10 +298,20 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
         return;
     }
 
-    // Fee is deducted once for the whole request, not per slot.
+    // Fee is deducted once for the whole request, not per slot. Written
+    // inside the same transaction as the appraised slots above, so a
+    // partway failure rolls back the fee along with them rather than
+    // charging for appraisals that never landed.
     session->player.money -= runningFee;
-    ctx.sessions.Set(ctx.clientSocket, *session);
     session->player.SaveMoney(ctx.db);
+
+    txn.Commit();
+
+    // Only mirror into the cache / session store once the transaction is
+    // actually durable -- see the comment on appraisedItems above.
+    for (const AppraisedSlot& appraised : appraisedItems)
+        session->player.SetItemSlot(appraised.slot_id, appraised.item);
+    ctx.sessions.Set(ctx.clientSocket, *session);
 
     ItemConfirmNpcSucc response{
         .results = results,

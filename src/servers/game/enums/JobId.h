@@ -5,7 +5,7 @@
 // Real Seal Online job ids -- the same space Player::job_id and
 // status.scr's class_id column use. 2nd/3rd-tier promotions of a base
 // job collapse to that base job for growth-stat purposes (see
-// ResolveStatusClassIndex in world/Stats.cpp); the *Tier2/*Tier3 values
+// ResolveStatusClassIndex in stats/RawStatCalculator.cpp); the *Tier2/*Tier3 values
 // below are those promotion ids, not separate growth-stat identities.
 enum class JobId : std::uint32_t
 {

@@ -1,0 +1,236 @@
+#include "RawStatCalculator.h"
+
+#include "enums/JobId.h"
+#include "tables/StatusTable.h"
+#include "world/Player.h"
+
+#include <cstdint>
+
+namespace
+{
+// Collapses tiered job ids (e.g. WarriorTier2/3) down to their base class,
+// since status.scr and the tables below are keyed per base class only.
+// No promotion system exists yet, so job_id never actually holds a tiered
+// value today, but the mapping is here for when it does.
+std::optional<JobId> ResolveStatusClassIndex(std::uint32_t jobId)
+{
+    JobId id = static_cast<JobId>(jobId);
+
+    switch (id)
+    {
+    case JobId::WarriorTier2:
+    case JobId::WarriorTier3:
+        id = JobId::Warrior;
+        break;
+    case JobId::KnightTier2:
+    case JobId::KnightTier3:
+        id = JobId::Knight;
+        break;
+    case JobId::ClownTier2:
+    case JobId::ClownTier3:
+        id = JobId::Clown;
+        break;
+    case JobId::MageTier2:
+    case JobId::MageTier3:
+        id = JobId::Mage;
+        break;
+    case JobId::PriestTier2:
+    case JobId::PriestTier3:
+        id = JobId::Priest;
+        break;
+    case JobId::CraftsmanTier2:
+    case JobId::CraftsmanTier3:
+        id = JobId::Craftsman;
+        break;
+    case JobId::HunterTier2:
+    case JobId::HunterTier3:
+        id = JobId::Hunter;
+        break;
+    case JobId::CookTier2:
+    case JobId::CookTier3:
+        id = JobId::Cook;
+        break;
+    default:
+        break;
+    }
+
+    if (id <= JobId::Hunter || id == JobId::Cook)
+        return id;
+
+    return std::nullopt;
+}
+
+// Not in status.scr; hardcoded per job id here.
+struct ClassConstants
+{
+    double accuracy_level_factor;
+    double accuracy_base_bonus;
+    double evasion_level_factor;
+    double evasion_base_bonus;
+    double max_hp_base_bonus;
+};
+
+struct ClassConstantsEntry
+{
+    JobId job_id;
+    ClassConstants constants;
+};
+
+constexpr ClassConstantsEntry kClassConstants[] = {
+    {JobId::Beginner, {1.5, 40, 2.0, 10, 50}},
+    {JobId::Warrior, {1.3, 20, 1.8, 10, 250}},
+    {JobId::Knight, {1.15, 30, 1.8, 0, 300}},
+    {JobId::Clown, {1.15, 40, 1.8, 20, 170}},
+    {JobId::Mage, {1.9, 40, 1.8, 15, 150}},
+    {JobId::Priest, {1.9, 30, 1.8, 10, 200}},
+    {JobId::Craftsman, {1.9, 20, 1.2, 0, 250}},
+    {JobId::GameMaster, {1.5, 40, 2.0, 10, 50}},
+    {JobId::Vagabond, {1.5, 40, 2.0, 10, 50}},
+    {JobId::Hunter, {1.1, 40, 1.8, 18, 160}},
+    {JobId::Cook, {1.5, 20, 1.5, 10, 230}},
+};
+
+const ClassConstants* FindClassConstants(JobId jobId)
+{
+    for (const auto& entry : kClassConstants)
+    {
+        if (entry.job_id == jobId)
+            return &entry.constants;
+    }
+
+    return nullptr;
+}
+
+struct MovementSpeedEntry
+{
+    JobId job_id;
+    std::int32_t offset;
+};
+
+// A flat per-class integer offset -- not a rate against any raw stat,
+// and not level-dependent.
+constexpr MovementSpeedEntry kMovementSpeedOffset[] = {
+    {JobId::Beginner, 0},
+    {JobId::Warrior, 9},
+    {JobId::Knight, -5},
+    {JobId::Clown, 6},
+    {JobId::Mage, -15},
+    {JobId::Priest, 3},
+    {JobId::Craftsman, 0},
+    {JobId::GameMaster, 0},
+    {JobId::Vagabond, 0},
+    {JobId::Hunter, 6},
+    {JobId::Cook, 6},
+};
+
+std::optional<std::int32_t> FindMovementSpeedOffset(JobId jobId)
+{
+    for (const auto& entry : kMovementSpeedOffset)
+    {
+        if (entry.job_id == jobId)
+            return entry.offset;
+    }
+
+    return std::nullopt;
+}
+
+// trunc() toward zero, matching every formula below (never use std::round
+// here).
+std::int32_t TruncI32(double value)
+{
+    return static_cast<std::int32_t>(static_cast<std::int64_t>(value));
+}
+} // namespace
+
+std::optional<PlayerDerivedStats> RawStatCalculator::Calculate(const Player& player, const StatusTable& statusRates)
+{
+    const std::optional<JobId> jobId = ResolveStatusClassIndex(player.job_id);
+    if (!jobId)
+        return std::nullopt;
+
+    const double* damageRate = statusRates.Find(StatusTable::kDamageBlock, *jobId);
+    const double* magicRate = statusRates.Find(StatusTable::kMagicBlock, *jobId);
+    const double* accuracyRate = statusRates.Find(StatusTable::kAccuracyBlock, *jobId);
+    const double* maxHpRate = statusRates.Find(StatusTable::kMaxHpBlock, *jobId);
+    const double* apRate = statusRates.Find(StatusTable::kApBlock, *jobId);
+    const double* criticalRate = statusRates.Find(StatusTable::kCriticalBlock, *jobId);
+    const double* evasionRate = statusRates.Find(StatusTable::kEvasionBlock, *jobId);
+    const double* defenseRate = statusRates.Find(StatusTable::kDefenseBlock, *jobId);
+
+    if (!damageRate || !magicRate || !accuracyRate || !maxHpRate || !apRate || !criticalRate ||
+        !evasionRate || !defenseRate)
+        return std::nullopt; // status.scr not loaded for this job id.
+
+    // Sparse -- only JobId::Clown has a row for this block. nullptr
+    // (treated as 0) for everyone else is correct, not missing data.
+    const double* clownDamageBonusRate = statusRates.Find(StatusTable::kClownDamageBonusBlock, *jobId);
+
+    const ClassConstants* constantsPtr = FindClassConstants(*jobId);
+    const std::optional<std::int32_t> movementSpeedOffset = FindMovementSpeedOffset(*jobId);
+    if (!constantsPtr || !movementSpeedOffset)
+        return std::nullopt; // no ClassConstants/movement-speed entry for this job id yet.
+
+    const ClassConstants& constants = *constantsPtr;
+
+    const double str = player.stats.raw.strength;
+    const double dex = player.stats.raw.dexterity;
+    const double intel = player.stats.raw.intelligence;
+    const double con = player.stats.raw.constitution;
+    const double men = player.stats.raw.mentality;
+    const double sen = player.stats.raw.sense;
+    const double level = player.level;
+
+    PlayerDerivedStats derived;
+
+    // SkillBonus/PctBuffA/PctBuffB/FlatBuff come from skill-cast bonuses
+    // and active buffs -- none of those systems exist yet, so they're
+    // named placeholders wired to real values once those systems land.
+    // kDamageBase is not a placeholder: it's a bare-hands/no-weapon floor.
+    constexpr double kDamageBase = 5;
+    constexpr double kSkillBonus = 0;
+    constexpr double kPctBuffA = 0;
+    constexpr double kPctBuffB = 0;
+    constexpr double kFlatBuff = 0;
+
+    const double strTerm = static_cast<double>(TruncI32(str * *damageRate));
+    double damage =
+        kDamageBase + kSkillBonus + strTerm * (1 + kPctBuffA / 100 + kPctBuffB / 100) + kFlatBuff;
+
+    // Clown's AGI-scaled damage bonus, from kClownDamageBonusBlock.
+    if (clownDamageBonusRate)
+        damage += static_cast<double>(TruncI32(dex * *clownDamageBonusRate));
+
+    derived.damage = TruncI32(damage);
+
+    derived.magic = TruncI32(intel * *magicRate);
+
+    derived.critical = TruncI32(dex * *criticalRate);
+
+    // kDefenseBase mirrors kDamageBase above: an unarmored floor.
+    constexpr double kDefenseBase = 5;
+
+    derived.defense = TruncI32(con * *defenseRate + kDefenseBase);
+
+    derived.accuracy = TruncI32(dex * *accuracyRate + level * constants.accuracy_level_factor +
+                                constants.accuracy_base_bonus);
+
+    derived.evasion = TruncI32(sen * *evasionRate + level * constants.evasion_level_factor +
+                               constants.evasion_base_bonus);
+
+    // HPBase/BuffBonus come from equipment/buffs -- none exist yet.
+    constexpr double kHpBase = 0;
+    constexpr double kHpBuffBonus = 0;
+    derived.max_hp = TruncI32(kHpBase) + TruncI32(kHpBuffBonus) +
+                     TruncI32(con * *maxHpRate + level * 20 + constants.max_hp_base_bonus);
+
+    // MaxAP's Level*5+30 term is fully universal -- no per-class
+    // variation beyond APRate.
+    derived.max_ap = TruncI32(men * *apRate + level * 5 + 30);
+
+    derived.movement_speed = *movementSpeedOffset;
+
+    // attack_speed/damage_dealt_increase_percent/damage_taken_decrease_percent
+    // have no raw-stat (job base) formula -- they're equipment-only.
+
+    return derived;
+}

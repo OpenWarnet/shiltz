@@ -2,9 +2,30 @@
 
 #include "protocol/server/CharacterDataLoad.h"
 #include "protocol/server/InventoryItemList.h"
+#include "repositories/ItemRepository.h"
 #include "storage/IDatabase.h"
 
 #include <variant>
+
+PlayerDerivedStats operator+(const PlayerDerivedStats& a, const PlayerDerivedStats& b)
+{
+    PlayerDerivedStats sum;
+    sum.max_hp = a.max_hp + b.max_hp;
+    sum.max_ap = a.max_ap + b.max_ap;
+    sum.damage = a.damage + b.damage;
+    sum.defense = a.defense + b.defense;
+    sum.magic = a.magic + b.magic;
+    sum.accuracy = a.accuracy + b.accuracy;
+    sum.evasion = a.evasion + b.evasion;
+    sum.critical = a.critical + b.critical;
+    sum.attack_speed = a.attack_speed + b.attack_speed;
+    sum.movement_speed = a.movement_speed + b.movement_speed;
+    sum.damage_dealt_increase_percent = a.damage_dealt_increase_percent + b.damage_dealt_increase_percent;
+    sum.damage_taken_decrease_percent = a.damage_taken_decrease_percent + b.damage_taken_decrease_percent;
+    sum.hp_percent_bonus = a.hp_percent_bonus + b.hp_percent_bonus;
+    sum.ap_percent_bonus = a.ap_percent_bonus + b.ap_percent_bonus;
+    return sum;
+}
 
 bool Player::LoadFromDB(IDatabase& db, std::int64_t characterId)
 {
@@ -65,29 +86,7 @@ bool Player::LoadFromDB(IDatabase& db, std::int64_t characterId)
     // from `exp` (current_exp on the wire, backing the level.scr curve) --
     // xp isn't read anywhere else in the codebase yet.
 
-    equipment.clear();
-    auto findEquipment = db.Prepare(
-        "SELECT slot, item_id, refine_level, option_bits FROM equipment_slot WHERE character_id = ?");
-    findEquipment->Bind(0, characterId);
-
-    while (findEquipment->Step())
-    {
-        const SqlValue itemIdColumn = findEquipment->Column(1);
-        if (!std::holds_alternative<int64_t>(itemIdColumn))
-            continue; // NULL item_id -- empty slot
-
-        const SqlValue refineLevelColumn = findEquipment->Column(2);
-        const auto refineLevel = std::holds_alternative<int64_t>(refineLevelColumn)
-                                      ? static_cast<std::uint32_t>(std::get<int64_t>(refineLevelColumn))
-                                      : 0;
-
-        equipment.push_back(PlayerEquipmentItem{
-            .slot = static_cast<std::uint32_t>(std::get<int64_t>(findEquipment->Column(0))),
-            .item_id = static_cast<std::uint32_t>(std::get<int64_t>(itemIdColumn)),
-            .refine_level = refineLevel,
-            .option_bits = static_cast<std::uint32_t>(std::get<int64_t>(findEquipment->Column(3))),
-        });
-    }
+    equipment = ItemRepository::LoadAllEquipment(db, characterId);
 
     skills.skills.clear();
     auto findSkills =
@@ -102,31 +101,7 @@ bool Player::LoadFromDB(IDatabase& db, std::int64_t characterId)
         });
     }
 
-    inventory.clear();
-    auto findInventory = db.Prepare("SELECT slot_index, item_id, quantity, refine_level, option_bits FROM "
-                                     "inventory_slot WHERE character_id = ?");
-    findInventory->Bind(0, characterId);
-
-    while (findInventory->Step())
-    {
-        const SqlValue quantityColumn = findInventory->Column(2);
-        const SqlValue refineLevelColumn = findInventory->Column(3);
-
-        const bool hasRefineLevel = std::holds_alternative<int64_t>(refineLevelColumn);
-
-        inventory.push_back(PlayerInventoryItem{
-            .slot_index = static_cast<std::uint32_t>(std::get<int64_t>(findInventory->Column(0))),
-            .item_id = static_cast<std::uint32_t>(std::get<int64_t>(findInventory->Column(1))),
-            .quantity = std::holds_alternative<int64_t>(quantityColumn)
-                            ? static_cast<std::uint32_t>(std::get<int64_t>(quantityColumn))
-                            : 0,
-            .refine_level = hasRefineLevel
-                                ? static_cast<std::uint32_t>(std::get<int64_t>(refineLevelColumn))
-                                : 0,
-            .has_refine_level = hasRefineLevel,
-            .option_bits = static_cast<std::uint32_t>(std::get<int64_t>(findInventory->Column(4))),
-        });
-    }
+    inventory = ItemRepository::LoadAllInventory(db, characterId);
 
     return true;
 }
@@ -221,6 +196,95 @@ void Player::SaveLevel(IDatabase& db) const
     updateLevel->Step();
 }
 
+void Player::SetEquipmentSlot(std::uint32_t slot, const Item& item)
+{
+    for (PlayerEquipmentItem& entry : equipment)
+    {
+        if (entry.slot == slot)
+        {
+            entry.item = item;
+            return;
+        }
+    }
+
+    equipment.push_back(PlayerEquipmentItem{.slot = slot, .item = item});
+}
+
+void Player::ClearEquipmentSlot(std::uint32_t slot)
+{
+    std::erase_if(equipment, [slot](const PlayerEquipmentItem& entry) { return entry.slot == slot; });
+}
+
+void Player::SetInventorySlot(std::uint32_t slotIndex, const Item& item)
+{
+    for (PlayerInventoryItem& entry : inventory)
+    {
+        if (entry.slot_index == slotIndex)
+        {
+            entry.item = item;
+            return;
+        }
+    }
+
+    inventory.push_back(PlayerInventoryItem{.slot_index = slotIndex, .item = item});
+}
+
+void Player::ClearInventorySlot(std::uint32_t slotIndex)
+{
+    std::erase_if(inventory,
+                   [slotIndex](const PlayerInventoryItem& entry) { return entry.slot_index == slotIndex; });
+}
+
+void Player::SetItemSlot(std::uint32_t wireSlotId, const Item& item)
+{
+    const ItemRepository::SlotRef ref = ItemRepository::ResolveSlotRef(wireSlotId);
+
+    if (ref.kind == ItemRepository::SlotKind::Equipment)
+        SetEquipmentSlot(ref.index, item);
+    else
+        SetInventorySlot(ref.index, item);
+}
+
+void Player::ClearItemSlot(std::uint32_t wireSlotId)
+{
+    const ItemRepository::SlotRef ref = ItemRepository::ResolveSlotRef(wireSlotId);
+
+    if (ref.kind == ItemRepository::SlotKind::Equipment)
+        ClearEquipmentSlot(ref.index);
+    else
+        ClearInventorySlot(ref.index);
+}
+
+std::optional<Item> Player::GetEquipmentSlot(std::uint32_t slot) const
+{
+    for (const PlayerEquipmentItem& entry : equipment)
+    {
+        if (entry.slot == slot)
+            return entry.item;
+    }
+
+    return std::nullopt;
+}
+
+std::optional<Item> Player::GetInventorySlot(std::uint32_t slotIndex) const
+{
+    for (const PlayerInventoryItem& entry : inventory)
+    {
+        if (entry.slot_index == slotIndex)
+            return entry.item;
+    }
+
+    return std::nullopt;
+}
+
+std::optional<Item> Player::GetItemSlot(std::uint32_t wireSlotId) const
+{
+    const ItemRepository::SlotRef ref = ItemRepository::ResolveSlotRef(wireSlotId);
+
+    return ref.kind == ItemRepository::SlotKind::Equipment ? GetEquipmentSlot(ref.index)
+                                                            : GetInventorySlot(ref.index);
+}
+
 CharacterDataLoad Player::ToCharacterDataLoad(std::uint32_t epsUserFlag,
                                                std::uint32_t serverTimestamp) const
 {
@@ -271,216 +335,31 @@ InventoryItemList Player::ToInventoryItemList() const
 {
     InventoryItemList result{.total_count = 0};
 
-    for (const auto& item : equipment)
+    for (const auto& equipped : equipment)
     {
-        if (item.slot >= InventoryItemList::kBagStartSlot)
+        if (equipped.slot >= InventoryItemList::kBagStartSlot)
             continue;
 
-        result.slots[item.slot] = {
-            .item_id = item.item_id,
-            .qty_or_refine = item.refine_level,
-            .option_bits = item.option_bits,
+        result.slots[equipped.slot] = {
+            .item_id = equipped.item.item_id,
+            .qty_or_refine = equipped.item.WireQuantityOrRefine(),
+            .option_bits = equipped.item.option_bits,
         };
     }
 
-    for (const auto& item : inventory)
+    for (const auto& stored : inventory)
     {
-        const std::size_t wireSlot = InventoryItemList::kBagStartSlot + item.slot_index;
+        const std::size_t wireSlot = InventoryItemList::kBagStartSlot + stored.slot_index;
         if (wireSlot >= InventoryItemList::kTotalSlots)
             continue;
 
-        // refine_level is used as-is; a stackable item's quantity needs
-        // -1 since refine=N-1 displays as "N pcs" (see InventoryItemList.h).
-        const std::uint32_t qtyOrRefine =
-            item.has_refine_level ? item.refine_level
-                                   : (item.quantity > 0 ? item.quantity - 1 : 0);
-
         result.slots[wireSlot] = {
-            .item_id = item.item_id,
-            .qty_or_refine = qtyOrRefine,
-            .option_bits = item.option_bits,
+            .item_id = stored.item.item_id,
+            .qty_or_refine = stored.item.WireQuantityOrRefine(),
+            .option_bits = stored.item.option_bits,
         };
     }
 
     return result;
 }
 
-namespace
-{
-    enum class SlotKind
-    {
-        Equipment,
-        Inventory,
-    };
-
-    struct SlotRef
-    {
-        SlotKind kind;
-        std::int64_t index;
-    };
-
-    SlotRef ResolveSlotRef(std::uint32_t wireSlotId)
-    {
-        if (wireSlotId < InventoryItemList::kBagStartSlot)
-            return SlotRef{.kind = SlotKind::Equipment, .index = static_cast<std::int64_t>(wireSlotId)};
-
-        return SlotRef{
-            .kind = SlotKind::Inventory,
-            .index = static_cast<std::int64_t>(wireSlotId) -
-                     static_cast<std::int64_t>(InventoryItemList::kBagStartSlot),
-        };
-    }
-
-    std::optional<PlayerItemSlot> LoadInventoryRow(IDatabase& db, std::int64_t characterId,
-                                                    std::int64_t slotIndex)
-    {
-        auto stmt = db.Prepare(
-            "SELECT item_id, quantity, refine_level, item_level, option_bits "
-            "FROM inventory_slot WHERE character_id = ? AND slot_index = ?");
-        stmt->Bind(0, characterId);
-        stmt->Bind(1, slotIndex);
-
-        if (!stmt->Step())
-            return std::nullopt;
-
-        const SqlValue quantityColumn = stmt->Column(1);
-        const SqlValue refineLevelColumn = stmt->Column(2);
-        const bool hasRefineLevel = std::holds_alternative<int64_t>(refineLevelColumn);
-
-        return PlayerItemSlot{
-            .item_id = static_cast<std::uint32_t>(std::get<int64_t>(stmt->Column(0))),
-            .quantity = std::holds_alternative<int64_t>(quantityColumn)
-                            ? static_cast<std::uint32_t>(std::get<int64_t>(quantityColumn))
-                            : 0,
-            .refine_level = hasRefineLevel
-                                ? static_cast<std::uint32_t>(std::get<int64_t>(refineLevelColumn))
-                                : 0,
-            .has_refine_level = hasRefineLevel,
-            .item_level = static_cast<std::int32_t>(std::get<int64_t>(stmt->Column(3))),
-            .option_bits = static_cast<std::uint32_t>(std::get<int64_t>(stmt->Column(4))),
-        };
-    }
-
-    void SaveInventoryRow(IDatabase& db, std::int64_t characterId, std::int64_t slotIndex,
-                          const PlayerItemSlot& content)
-    {
-        // UPSERT: dest slot_index may have no row yet (content can arrive
-        // from equipment_slot, a different table).
-        auto stmt = db.Prepare(
-            "INSERT INTO inventory_slot (character_id, slot_index, item_id, quantity, refine_level, "
-            "item_level, option_bits) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(character_id, slot_index) DO UPDATE SET item_id = excluded.item_id, "
-            "quantity = excluded.quantity, refine_level = excluded.refine_level, "
-            "item_level = excluded.item_level, option_bits = excluded.option_bits");
-        stmt->Bind(0, characterId);
-        stmt->Bind(1, slotIndex);
-        stmt->Bind(2, static_cast<int64_t>(content.item_id));
-        // Write the unused side as NULL so has_refine_level round-trips.
-        stmt->Bind(3, content.has_refine_level ? SqlValue{} : SqlValue{static_cast<int64_t>(content.quantity)});
-        stmt->Bind(4, content.has_refine_level ? SqlValue{static_cast<int64_t>(content.refine_level)} : SqlValue{});
-        stmt->Bind(5, static_cast<int64_t>(content.item_level));
-        stmt->Bind(6, static_cast<int64_t>(content.option_bits));
-        stmt->Step();
-    }
-
-    void ClearInventoryRow(IDatabase& db, std::int64_t characterId, std::int64_t slotIndex)
-    {
-        auto stmt = db.Prepare("DELETE FROM inventory_slot WHERE character_id = ? AND slot_index = ?");
-        stmt->Bind(0, characterId);
-        stmt->Bind(1, slotIndex);
-        stmt->Step();
-    }
-
-    std::optional<PlayerItemSlot> LoadEquipmentRow(IDatabase& db, std::int64_t characterId,
-                                                    std::int64_t slot)
-    {
-        auto stmt = db.Prepare(
-            "SELECT item_id, refine_level, item_level, option_bits "
-            "FROM equipment_slot WHERE character_id = ? AND slot = ?");
-        stmt->Bind(0, characterId);
-        stmt->Bind(1, slot);
-
-        if (!stmt->Step())
-            return std::nullopt;
-
-        const SqlValue itemIdColumn = stmt->Column(0);
-        if (!std::holds_alternative<int64_t>(itemIdColumn))
-            return std::nullopt; // NULL item_id -- explicitly-empty slot row
-
-        const SqlValue refineLevelColumn = stmt->Column(1);
-        const bool hasRefineLevel = std::holds_alternative<int64_t>(refineLevelColumn);
-
-        return PlayerItemSlot{
-            .item_id = static_cast<std::uint32_t>(std::get<int64_t>(itemIdColumn)),
-            .quantity = 0,
-            .refine_level = hasRefineLevel
-                                ? static_cast<std::uint32_t>(std::get<int64_t>(refineLevelColumn))
-                                : 0,
-            .has_refine_level = hasRefineLevel,
-            .item_level = static_cast<std::int32_t>(std::get<int64_t>(stmt->Column(2))),
-            .option_bits = static_cast<std::uint32_t>(std::get<int64_t>(stmt->Column(3))),
-        };
-    }
-
-    void SaveEquipmentRow(IDatabase& db, std::int64_t characterId, std::int64_t slot,
-                          const PlayerItemSlot& content)
-    {
-        // UPSERT: the target row may not exist yet (equipment_slot rows
-        // aren't pre-seeded per slot), or may already exist with a NULL
-        // item_id (explicitly-empty convention -- see 0002_add_characters.sql).
-        auto stmt = db.Prepare(
-            "INSERT INTO equipment_slot (character_id, slot, item_id, refine_level, item_level, "
-            "option_bits) VALUES (?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(character_id, slot) DO UPDATE SET item_id = excluded.item_id, "
-            "refine_level = excluded.refine_level, item_level = excluded.item_level, "
-            "option_bits = excluded.option_bits");
-        stmt->Bind(0, characterId);
-        stmt->Bind(1, slot);
-        stmt->Bind(2, static_cast<int64_t>(content.item_id));
-        stmt->Bind(3, content.has_refine_level ? SqlValue{static_cast<int64_t>(content.refine_level)} : SqlValue{});
-        stmt->Bind(4, static_cast<int64_t>(content.item_level));
-        stmt->Bind(5, static_cast<int64_t>(content.option_bits));
-        stmt->Step();
-    }
-
-    void ClearEquipmentRow(IDatabase& db, std::int64_t characterId, std::int64_t slot)
-    {
-        auto stmt = db.Prepare("UPDATE equipment_slot SET item_id = NULL, refine_level = NULL "
-                                "WHERE character_id = ? AND slot = ?");
-        stmt->Bind(0, characterId);
-        stmt->Bind(1, slot);
-        stmt->Step();
-    }
-} // namespace
-
-std::optional<PlayerItemSlot> Player::LoadItemSlot(IDatabase& db, std::uint32_t wireSlotId) const
-{
-    const SlotRef ref = ResolveSlotRef(wireSlotId);
-    const auto characterId = static_cast<std::int64_t>(instance_id);
-
-    return ref.kind == SlotKind::Equipment ? LoadEquipmentRow(db, characterId, ref.index)
-                                            : LoadInventoryRow(db, characterId, ref.index);
-}
-
-void Player::SaveItemSlot(IDatabase& db, std::uint32_t wireSlotId, const PlayerItemSlot& content) const
-{
-    const SlotRef ref = ResolveSlotRef(wireSlotId);
-    const auto characterId = static_cast<std::int64_t>(instance_id);
-
-    if (ref.kind == SlotKind::Equipment)
-        SaveEquipmentRow(db, characterId, ref.index, content);
-    else
-        SaveInventoryRow(db, characterId, ref.index, content);
-}
-
-void Player::ClearItemSlot(IDatabase& db, std::uint32_t wireSlotId) const
-{
-    const SlotRef ref = ResolveSlotRef(wireSlotId);
-    const auto characterId = static_cast<std::int64_t>(instance_id);
-
-    if (ref.kind == SlotKind::Equipment)
-        ClearEquipmentRow(db, characterId, ref.index);
-    else
-        ClearInventoryRow(db, characterId, ref.index);
-}

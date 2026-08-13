@@ -4,8 +4,8 @@
 
 // item.scr/item*.scr's item_type column. Only the values the NPC
 // magic-option appraiser cares about (handlers/ItemConfirmNpc.h) are named
-// here. Type2/Type23/Type24/Type27 are unconfirmed -- named after their
-// raw value rather than a guessed meaning.
+// here. Type2/Type23/Type24/Type27's meanings aren't confirmed, so they're
+// named by raw value rather than a possibly-wrong descriptive name.
 enum class ItemType : std::int64_t
 {
     Material = 0,

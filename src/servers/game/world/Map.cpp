@@ -40,7 +40,7 @@ Map& Map::operator=(Map&& other)
     return *this;
 }
 
-void Map::AddItem(Item item)
+void Map::AddItem(GroundItem item)
 {
     std::lock_guard lock(m_itemsMutex);
     m_items.push_back(item);
@@ -50,7 +50,7 @@ bool Map::RemoveItem(std::uint32_t id)
 {
     std::lock_guard lock(m_itemsMutex);
     auto it = std::find_if(m_items.begin(), m_items.end(),
-                            [id](const Item& item) { return item.id == id; });
+                            [id](const GroundItem& item) { return item.id == id; });
     if (it == m_items.end())
         return false;
 
@@ -58,20 +58,20 @@ bool Map::RemoveItem(std::uint32_t id)
     return true;
 }
 
-std::optional<Item> Map::TryTakeItem(std::uint32_t id)
+std::optional<GroundItem> Map::TryTakeItem(std::uint32_t id)
 {
     std::lock_guard lock(m_itemsMutex);
     auto it = std::find_if(m_items.begin(), m_items.end(),
-                            [id](const Item& item) { return item.id == id; });
+                            [id](const GroundItem& item) { return item.id == id; });
     if (it == m_items.end())
         return std::nullopt;
 
-    Item taken = *it;
+    GroundItem taken = *it;
     m_items.erase(it);
     return taken;
 }
 
-std::vector<Item> Map::Items() const
+std::vector<GroundItem> Map::Items() const
 {
     std::lock_guard lock(m_itemsMutex);
     return m_items;

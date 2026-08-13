@@ -10,8 +10,9 @@
 #include "protocol/client/CharSkillUpEx.h"
 #include "protocol/server/CharSkillUpExFail.h"
 #include "protocol/server/CharSkillUpExSucc.h"
+#include "tables/GameData.h"
 #include "world/Player.h"
-#include "world/World.h"
+#include "tables/SkillTable.h"
 
 #include <iostream>
 
@@ -61,11 +62,10 @@ namespace
     // (job/prereq/max-level/character-level) and tallying its real
     // skill_points cost, before anything is mutated. job_type/prereq_*/
     // max_skill_level are constant across every skillNN.scr row for a
-    // given skill_id (verified against the real data files), so level 1's
-    // row is enough to check those and to confirm the skill_id exists at
-    // all; min_level/skill_points are checked per target level, since
-    // those genuinely vary level to level.
-    Validation ValidateSkillUpRequest(const World& world, const Player& player,
+    // given skill_id, so level 1's row is enough to check those and to
+    // confirm the skill_id exists at all; min_level/skill_points are
+    // checked per target level, since those genuinely vary level to level.
+    Validation ValidateSkillUpRequest(const SkillTable& skills, const Player& player,
                                        const std::vector<SkillLevelUpEntry>& entries)
     {
         if (entries.empty())
@@ -78,7 +78,7 @@ namespace
             if (entry.num_level_up <= 0)
                 return Fail(SkillUpFailReason::TotalSkillCountError);
 
-            const SkillRecord* baseRecord = world.FindSkillRecord(entry.skill_id, 1);
+            const SkillRecord* baseRecord = skills.Find(entry.skill_id, 1);
             if (!baseRecord)
                 return Fail(SkillUpFailReason::SkillIdNotFound);
 
@@ -98,7 +98,7 @@ namespace
             for (std::int64_t targetLevel = currentLevel + 1;
                  targetLevel <= currentLevel + entry.num_level_up; ++targetLevel)
             {
-                const SkillRecord* record = world.FindSkillRecord(entry.skill_id, targetLevel);
+                const SkillRecord* record = skills.Find(entry.skill_id, targetLevel);
                 if (!record)
                     return Fail(SkillUpFailReason::SkillIdNotFound);
 
@@ -127,7 +127,7 @@ void HandleCharSkillUpEx(const GameContext& ctx, const CharSkillUpEx& request)
     }
 
     const Validation validation =
-        ValidateSkillUpRequest(ctx.world, session->player, request.skills);
+        ValidateSkillUpRequest(ctx.data.skills, session->player, request.skills);
 
     std::cout << "Char skill up ex: " << request.skills.size() << " skill(s), valid "
               << validation.ok << ", total cost " << validation.totalCost << "\n";

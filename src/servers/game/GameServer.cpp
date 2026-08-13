@@ -7,6 +7,7 @@
 GameServer::GameServer(uint16_t port, std::span<const uint8_t> key, IDatabase& db)
     : TCPServer(port, "Game"), m_key(key), m_db(db)
 {
+    m_data.Load();
     m_world.Start();
 }
 
@@ -24,7 +25,8 @@ void GameServer::OnFrame(SOCKET clientSocket, std::span<const uint8_t> frame)
     std::cout << "Received (" << frame.size() << " bytes, payload " << packet.GetPayload().size()
               << " bytes)\n";
 
-    m_dispatcher.Dispatch(GameContext{*this, clientSocket, m_key, m_db, m_sessions, m_world}, packet);
+    m_dispatcher.Dispatch(GameContext{*this, clientSocket, m_key, m_db, m_sessions, m_world, m_data},
+                          packet);
 }
 
 void GameServer::OnClientDisconnected(SOCKET clientSocket)
