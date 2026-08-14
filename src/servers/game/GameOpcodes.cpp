@@ -32,10 +32,26 @@ namespace GameOpcode
             return "GC_CHAR_SKILL_UP_EX";
         case CG_ITEM_CONFIRM_NPC_REQUEST:
             return "CG_ITEM_CONFIRM_NPC_REQUEST";
+        case CG_STORE_OPEN:
+            return "CG_STORE_OPEN";
+        case CG_STORE_PW_MODIFY:
+            return "CG_STORE_PW_MODIFY";
+        case CG_STORE_CLOSE:
+            return "CG_STORE_CLOSE";
+        case CG_STORE_ITEM_IN:
+            return "CG_STORE_ITEM_IN";
+        case CG_STORE_ITEM_OUT:
+            return "CG_STORE_ITEM_OUT";
+        case CG_STORE_MONEY_IN:
+            return "CG_STORE_MONEY_IN";
+        case CG_STORE_MONEY_OUT:
+            return "CG_STORE_MONEY_OUT";
         case CG_ITEM_MOVE_SUCC:
             return "CG_ITEM_MOVE_SUCC";
         case GC_ITEM_MOVE_FAIL:
             return "GC_ITEM_MOVE_FAIL";
+        case GC_CHAR_MOVE:
+            return "GC_CHAR_MOVE";
         case GC_CHAR_DATA_LOAD:
             return "GC_CHAR_DATA_LOAD";
         case GC_ENTER_FAIL:
@@ -80,6 +96,26 @@ namespace GameOpcode
             return "GC_ITEM_CONFIRM_NPC_SUCC";
         case GC_ITEM_CONFIRM_NPC_FAIL:
             return "GC_ITEM_CONFIRM_NPC_FAIL";
+        case GC_STORE_OPEN_SUCC:
+            return "GC_STORE_OPEN_SUCC";
+        case GC_STORE_OPEN_FAIL:
+            return "GC_STORE_OPEN_FAIL";
+        case GC_STORE_PW_MODIFY_SUCC:
+            return "GC_STORE_PW_MODIFY_SUCC";
+        case GC_STORE_PW_MODIFY_FAIL:
+            return "GC_STORE_PW_MODIFY_FAIL";
+        case GC_STORE_CLOSE_SUCC:
+            return "GC_STORE_CLOSE_SUCC";
+        case GC_STORE_ITEM_IN:
+            return "GC_STORE_ITEM_IN";
+        case GC_STORE_ITEM_OUT:
+            return "GC_STORE_ITEM_OUT";
+        case GC_STORE_MONEY_IN_SUCC:
+            return "GC_STORE_MONEY_IN_SUCC";
+        case GC_STORE_MONEY_OUT_SUCC:
+            return "GC_STORE_MONEY_OUT_SUCC";
+        case GC_STORE_MONEY_FAIL:
+            return "GC_STORE_MONEY_FAIL";
         default:
             return "UNKNOWN";
         }

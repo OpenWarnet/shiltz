@@ -27,42 +27,42 @@ constexpr std::uint32_t kQuestRewardStartSlot = 23;
 std::vector<Item> BuildQuestRewardItems()
 {
     return {
-        Item{.item_id = 7938,
-             .refine_level = 0,
-             .has_refine_level = true,
-             .option_bits = 0x12492497},
-        Item{.item_id = 950, // Weapon
+        Item{.item_id = 16111,
              .refine_level = 0,
              .has_refine_level = true,
              .option_bits = Item::kNeverAppraised},
-        Item{.item_id = 591, // Head
+        Item{.item_id = 7095, // Weapon
              .refine_level = 0,
              .has_refine_level = true,
              .option_bits = Item::kNeverAppraised},
-        Item{.item_id = 566, // Top
+        Item{.item_id = 4848, // Wing
              .refine_level = 0,
              .has_refine_level = true,
              .option_bits = Item::kNeverAppraised},
-        Item{.item_id = 646, // Bot
+        Item{.item_id = 16119, // Top
              .refine_level = 0,
              .has_refine_level = true,
              .option_bits = Item::kNeverAppraised},
-        Item{.item_id = 615, // Shoes
+        Item{.item_id = 16115, // Bot
              .refine_level = 0,
              .has_refine_level = true,
              .option_bits = Item::kNeverAppraised},
-        Item{.item_id = 615, // Shoes
-             .refine_level = 6,
+        Item{.item_id = 16107, // Shoes
+             .refine_level = 0,
              .has_refine_level = true,
              .option_bits = Item::kNeverAppraised},
-        Item{.item_id = 566, // Top
-             .refine_level = 8,
-             .has_refine_level = true,
-             .option_bits = Item::kNeverAppraised},
-        Item{.item_id = 950, // Weapon
-             .refine_level = 12,
-             .has_refine_level = true,
-             .option_bits = Item::kNeverAppraised},
+        //Item{.item_id = 615, // Shoes
+        //     .refine_level = 6,
+        //     .has_refine_level = true,
+        //     .option_bits = Item::kNeverAppraised},
+        //Item{.item_id = 566, // Top
+        //     .refine_level = 8,
+        //     .has_refine_level = true,
+        //     .option_bits = Item::kNeverAppraised},
+        //Item{.item_id = 950, // Weapon
+        //     .refine_level = 12,
+        //     .has_refine_level = true,
+        //     .option_bits = Item::kNeverAppraised},
     };
 }
 

@@ -22,8 +22,16 @@ namespace GameOpcode
     // request, matching the client's own (inconsistent) naming.
     inline constexpr uint32_t GC_CHAR_SKILL_UP_EX = 411059;
     inline constexpr uint32_t CG_ITEM_CONFIRM_NPC_REQUEST = 412123; // 0x0649DB
+    inline constexpr uint32_t CG_STORE_OPEN = 411054;
+    inline constexpr uint32_t CG_STORE_PW_MODIFY = 411055;
+    inline constexpr uint32_t CG_STORE_CLOSE = 411056;
+    inline constexpr uint32_t CG_STORE_ITEM_IN = 411057;
+    inline constexpr uint32_t CG_STORE_ITEM_OUT = 411058;
+    inline constexpr uint32_t CG_STORE_MONEY_IN = 411060;
+    inline constexpr uint32_t CG_STORE_MONEY_OUT = 411061;
 
     // Server -> Client
+    inline constexpr uint32_t GC_CHAR_MOVE = 511000;
     inline constexpr uint32_t GC_CHAR_DATA_LOAD = 511001;
     inline constexpr uint32_t GC_ENTER_FAIL = 532050;
     inline constexpr uint32_t GC_CRT_LOAD = 511029;
@@ -51,6 +59,16 @@ namespace GameOpcode
     inline constexpr uint32_t GC_CHAR_SKILL_UP_EX_FAIL = 531102;
     inline constexpr uint32_t GC_ITEM_CONFIRM_NPC_SUCC = 531234; // 0x081B22
     inline constexpr uint32_t GC_ITEM_CONFIRM_NPC_FAIL = 531235; // 0x081B23
+    inline constexpr uint32_t GC_STORE_OPEN_SUCC = 521113;
+    inline constexpr uint32_t GC_STORE_OPEN_FAIL = 531114;
+    inline constexpr uint32_t GC_STORE_PW_MODIFY_SUCC = 521115;
+    inline constexpr uint32_t GC_STORE_PW_MODIFY_FAIL = 531116;
+    inline constexpr uint32_t GC_STORE_CLOSE_SUCC = 521117;
+    inline constexpr uint32_t GC_STORE_ITEM_IN = 521118;
+    inline constexpr uint32_t GC_STORE_ITEM_OUT = 521119;
+    inline constexpr uint32_t GC_STORE_MONEY_IN_SUCC = 521122;
+    inline constexpr uint32_t GC_STORE_MONEY_OUT_SUCC = 521123;
+    inline constexpr uint32_t GC_STORE_MONEY_FAIL = 531124;
 
     // Resolves an opcode to its constant's name, or "UNKNOWN" if not one of
     // the constants above. Used to make packet capture logs readable.

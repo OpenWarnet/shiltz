@@ -12,6 +12,7 @@
 #include "handlers/CharStatus.h"
 #include "handlers/CharSkillUp.h"
 #include "handlers/ItemConfirmNpc.h"
+#include "handlers/Store.h"
 #include "protocol/client/GameEnter.h"
 #include "protocol/client/CharMove.h"
 #include "protocol/client/ItemPickup.h"
@@ -24,6 +25,13 @@
 #include "protocol/client/CharStatusUp.h"
 #include "protocol/client/CharSkillUpEx.h"
 #include "protocol/client/ItemConfirmNpcRequest.h"
+#include "protocol/client/StoreOpen.h"
+#include "protocol/client/StorePwModify.h"
+#include "protocol/client/StoreClose.h"
+#include "protocol/client/StoreItemIn.h"
+#include "protocol/client/StoreItemOut.h"
+#include "protocol/client/StoreMoneyIn.h"
+#include "protocol/client/StoreMoneyOut.h"
 
 namespace
 {
@@ -50,6 +58,13 @@ GameDispatcher::GameDispatcher()
               When(GameOpcode::CG_ITEM_CONFIRM_NPC_REQUEST)
                   .ParseAs<ItemConfirmNpcRequest>()
                   .Then(HandleItemConfirmNpcRequest),
+              When(GameOpcode::CG_STORE_OPEN).ParseAs<StoreOpen>().Then(HandleStoreOpen),
+              When(GameOpcode::CG_STORE_PW_MODIFY).ParseAs<StorePwModify>().Then(HandleStorePwModify),
+              When(GameOpcode::CG_STORE_CLOSE).ParseAs<StoreClose>().Then(HandleStoreClose),
+              When(GameOpcode::CG_STORE_ITEM_IN).ParseAs<StoreItemIn>().Then(HandleStoreItemIn),
+              When(GameOpcode::CG_STORE_ITEM_OUT).ParseAs<StoreItemOut>().Then(HandleStoreItemOut),
+              When(GameOpcode::CG_STORE_MONEY_IN).ParseAs<StoreMoneyIn>().Then(HandleStoreMoneyIn),
+              When(GameOpcode::CG_STORE_MONEY_OUT).ParseAs<StoreMoneyOut>().Then(HandleStoreMoneyOut),
           },
       }
 {

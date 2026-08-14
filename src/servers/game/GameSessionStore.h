@@ -1,11 +1,13 @@
 #pragma once
 
+#include "repositories/BankRepository.h"
 #include "world/Player.h"
 
 #include <cstdint>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
+#include <vector>
 #include <winsock2.h>
 
 // A resolved game session: which account/character owns this connection.
@@ -25,6 +27,19 @@ struct GameSession
     std::int64_t accountId = 0;
     std::int64_t characterId = 0;
     Player player;
+
+    // Set once CG_STORE_OPEN succeeds on this connection -- the
+    // bank_accounts row this connection is authorized against, and its
+    // cached contents (kept in step with every BankRepository::Save*/
+    // Clear*ItemSlot call the same way player's equipment/inventory are --
+    // see handlers/Store.cpp). Unset means this connection hasn't opened
+    // the bank yet, so CG_STORE_ITEM_IN/OUT are rejected.
+    std::optional<std::int64_t> bankAccountId;
+    std::vector<BankRepository::SlotItem> bankItems;
+    // bank_accounts.money, mirrored the same way -- kept in step with every
+    // BankRepository::SaveMoney call (see handlers/Store.cpp's
+    // HandleStoreMoneyIn/Out).
+    std::int64_t bankMoney = 0;
 };
 
 // Maps a connected socket to its resolved GameSession. Threaded through

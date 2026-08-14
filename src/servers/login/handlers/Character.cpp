@@ -14,6 +14,7 @@
 #include "storage/IDatabase.h"
 #include "storage/Transaction.h"
 
+#include <array>
 #include <ctime>
 #include <iostream>
 #include <utility>
@@ -381,6 +382,28 @@ void HandleCreateCharacter(const LoginContext& ctx, const CreateCharacter& reque
     insertPosition->Bind(2, static_cast<int64_t>(request.loc_x));
     insertPosition->Bind(3, static_cast<int64_t>(request.loc_y));
     insertPosition->Step();
+
+    // Universal system skills (Sleep, Trade, Fishing, Refine, Martial Combo,
+    // Open Chat Room, Party, Inventory/SkillBank, Emoticon, Seller's Kiosk,
+    // Buyer's Kiosk, Duel Request -- see world/data/skill/*.scr) that every
+    // job's skill table carries identically. They aren't player-chosen, and
+    // the client gates several basic UI actions (e.g. skill 14 gates the
+    // bank-transaction permission check) on them being present, so grant
+    // them all unconditionally at creation rather than requiring the player
+    // to ever learn them.
+    constexpr std::array<int64_t, 12> kBasicSkillIds{1,  2,   3,   4,  5,  12,
+                                                       13, 14, 15, 38, 108, 109};
+    constexpr int64_t kBasicSkillLevel = 1;
+    auto insertBasicSkill = ctx.db.Prepare(
+        "INSERT INTO character_skill (character_id, skill_id, level) VALUES (?, ?, ?)");
+    for (int64_t skillId : kBasicSkillIds)
+    {
+        insertBasicSkill->Reset();
+        insertBasicSkill->Bind(0, characterId);
+        insertBasicSkill->Bind(1, skillId);
+        insertBasicSkill->Bind(2, kBasicSkillLevel);
+        insertBasicSkill->Step();
+    }
 
     createTxn.Commit();
 

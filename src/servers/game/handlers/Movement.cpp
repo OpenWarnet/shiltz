@@ -6,6 +6,7 @@
 #include "common/PayloadWriter.h"
 #include "common/TCPServer.h"
 #include "protocol/client/CharMove.h"
+#include "protocol/server/CharMoveUpdate.h"
 #include "protocol/server/CrtLoad.h"
 #include "protocol/server/ViewRemoveAll.h"
 #include "tables/GameData.h"
@@ -100,8 +101,25 @@ void HandleMovement(const GameContext& ctx, const CharMove& request)
 
     session->player.x = static_cast<std::int32_t>(request.x);
     session->player.y = static_cast<std::int32_t>(request.y);
-    session->player.direction = static_cast<std::int32_t>(request.direction);
+    session->player.direction = static_cast<std::int32_t>(request.move_direction);
     session->player.known_zones = newZones;
 
     ctx.sessions.Set(ctx.clientSocket, *session);
+
+    // Speed is this connection's own derived stat, not an echo of
+    // CharMove::speed -- see protocol/server/CharMoveUpdate.h.
+    CharMoveUpdate moveResponse{
+        .user_instance_id = session->player.instance_id,
+        .direction = request.move_direction,
+        .x = request.x,
+        .y = request.y,
+        .speed = static_cast<std::uint32_t>(request.speed),
+        .stop_direction = static_cast<std::uint32_t>(request.stop_direction),
+    };
+
+    PayloadWriter moveWriter;
+    moveResponse.Serialize(moveWriter);
+
+    GamePacket movePacket(GameOpcode::GC_CHAR_MOVE, moveWriter.Data());
+    ctx.server.SendTo(ctx.clientSocket, movePacket.Serialize(ctx.key));
 }
