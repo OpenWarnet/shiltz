@@ -3,6 +3,7 @@
 #include "ItemTable.h"
 #include "LevelTable.h"
 #include "MonsterTable.h"
+#include "QuestTable.h"
 #include "SellerTable.h"
 #include "SetOptionTable.h"
 #include "SkillTable.h"
@@ -26,4 +27,5 @@ public:
     LevelTable levels;
     SkillTable skills;
     StatusTable statusRates;
+    QuestTable quests;
 };

@@ -30,6 +30,8 @@ namespace GameOpcode
     inline constexpr uint32_t CG_STORE_ITEM_OUT = 411058;
     inline constexpr uint32_t CG_STORE_MONEY_IN = 411060;
     inline constexpr uint32_t CG_STORE_MONEY_OUT = 411061;
+    inline constexpr uint32_t CG_EMOTION = 411074; // 0x0645C2
+    inline constexpr uint32_t CG_ITEM_DELETE = 411454; // 0x06473E
 
     // Server -> Client
     inline constexpr uint32_t GC_CHAR_MOVE = 511000;
@@ -47,6 +49,7 @@ namespace GameOpcode
     inline constexpr uint32_t GC_INVENTORY_ITEM_LIST = 511591;
     inline constexpr uint32_t GC_CHAR_EXIT_SUCC = 522010;
     inline constexpr uint32_t GC_QUEST_SUCC = 521064;
+    inline constexpr uint32_t GC_QUEST_FAIL = 531065;
     inline constexpr uint32_t GC_VIEW_REMOVE_ALL = 511041;
     inline constexpr uint32_t GC_TRADE_BUY_SUCC = 521052;
     inline constexpr uint32_t GC_TRADE_SELL_SUCC = 521054;
@@ -71,6 +74,8 @@ namespace GameOpcode
     inline constexpr uint32_t GC_STORE_MONEY_IN_SUCC = 521122;
     inline constexpr uint32_t GC_STORE_MONEY_OUT_SUCC = 521123;
     inline constexpr uint32_t GC_STORE_MONEY_FAIL = 531124;
+    inline constexpr uint32_t GC_EMOTION_SUCC = 521464; // 0x07F4F8
+    inline constexpr uint32_t GC_ITEM_DELETE_SUCC = 521462; // 0x07F4F6
 
     // Resolves an opcode to its constant's name, or "UNKNOWN" if not one of
     // the constants above. Used to make packet capture logs readable.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Item.h"
+#include "protocol/server/CharacterDataLoad.h" // CharacterQuestFlags
 
 #include <cstdint>
 #include <optional>
@@ -9,7 +10,6 @@
 #include <vector>
 
 class IDatabase;
-struct CharacterDataLoad;
 struct InventoryItemList;
 
 struct PlayerRawStats
@@ -117,6 +117,11 @@ struct Player
 
     std::vector<PlayerEquipmentItem> equipment;
     std::vector<PlayerInventoryItem> inventory;
+
+    // Quest dialog flags -- backs quest.scr's has_flag/set_flag columns
+    // (see handlers/Quest.cpp) and is sent to the client as-is on CG_ENTER
+    // (see ToCharacterDataLoad below).
+    CharacterQuestFlags quest_flags;
 
     // Populates this Player from characterId's DB rows. False if no such
     // character exists.

@@ -5,10 +5,12 @@
 #include "GameSessionStore.h"
 #include "common/PayloadWriter.h"
 #include "common/TCPServer.h"
+#include "protocol/client/ItemDelete.h"
 #include "protocol/client/ItemDrop.h"
 #include "protocol/client/ItemMove.h"
 #include "protocol/client/ItemPickup.h"
 #include "protocol/server/InventoryItemList.h"
+#include "protocol/server/ItemDeleteSuccess.h"
 #include "protocol/server/ItemDropSuccess.h"
 #include "protocol/server/ItemMapNew.h"
 #include "protocol/server/ItemMapRemove.h"
@@ -350,6 +352,52 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
     auto succData = succWriter.Data();
 
     GamePacket succPacket(GameOpcode::GC_ITEM_DROP_SUCC, succData);
+    auto succPayload = succPacket.Serialize(ctx.key);
+
+    ctx.server.SendTo(ctx.clientSocket, succPayload);
+}
+
+void HandleItemDelete(const GameContext& ctx, const ItemDelete& request)
+{
+    std::cout << "Item delete: slot_id " << request.slot_id << "\n";
+
+    auto session = ctx.sessions.Get(ctx.clientSocket);
+    if (!session)
+    {
+        std::cout << "Rejecting CG_ITEM_DELETE: socket has no resolved character (never entered)\n";
+        return;
+    }
+
+    const int64_t characterId = session->characterId;
+
+    // slot_id is the same wire-relative slot convention as ItemMove's
+    // source_slot_id/dest_slot_id -- ItemRepository::ClearItemSlot resolves
+    // the equipment/inventory split itself, no manual bag-offset conversion
+    // needed here.
+    auto slotContent = session->player.GetItemSlot(request.slot_id);
+    if (!slotContent)
+    {
+        std::cout << "Rejecting CG_ITEM_DELETE: slot_id " << request.slot_id << " is empty\n";
+        return;
+    }
+
+    const std::uint32_t itemId = slotContent->item_id;
+
+    DatabaseTransaction txn(ctx.db);
+    ItemRepository::ClearItemSlot(ctx.db, characterId, request.slot_id);
+    txn.Commit();
+
+    session->player.ClearItemSlot(request.slot_id);
+    ctx.sessions.Set(ctx.clientSocket, *session);
+
+    std::cout << "Deleted item_id " << itemId << " from slot_id " << request.slot_id << "\n";
+
+    PayloadWriter succWriter;
+    ItemDeleteSuccess succResponse{.slot_id = request.slot_id};
+    succResponse.Serialize(succWriter);
+    auto succData = succWriter.Data();
+
+    GamePacket succPacket(GameOpcode::GC_ITEM_DELETE_SUCC, succData);
     auto succPayload = succPacket.Serialize(ctx.key);
 
     ctx.server.SendTo(ctx.clientSocket, succPayload);

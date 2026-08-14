@@ -48,6 +48,10 @@ namespace GameOpcode
             return "CG_STORE_MONEY_IN";
         case CG_STORE_MONEY_OUT:
             return "CG_STORE_MONEY_OUT";
+        case CG_EMOTION:
+            return "CG_EMOTION";
+        case CG_ITEM_DELETE:
+            return "CG_ITEM_DELETE";
         case CG_ITEM_MOVE_SUCC:
             return "CG_ITEM_MOVE_SUCC";
         case GC_ITEM_MOVE_FAIL:
@@ -72,6 +76,8 @@ namespace GameOpcode
             return "GC_CHAR_EXIT_SUCC";
         case GC_QUEST_SUCC:
             return "GC_QUEST_SUCC";
+        case GC_QUEST_FAIL:
+            return "GC_QUEST_FAIL";
         case GC_VIEW_REMOVE_ALL:
             return "GC_VIEW_REMOVE_ALL";
         case GC_TRADE_BUY_SUCC:
@@ -120,6 +126,10 @@ namespace GameOpcode
             return "GC_STORE_MONEY_OUT_SUCC";
         case GC_STORE_MONEY_FAIL:
             return "GC_STORE_MONEY_FAIL";
+        case GC_EMOTION_SUCC:
+            return "GC_EMOTION_SUCC";
+        case GC_ITEM_DELETE_SUCC:
+            return "GC_ITEM_DELETE_SUCC";
         default:
             return "UNKNOWN";
         }

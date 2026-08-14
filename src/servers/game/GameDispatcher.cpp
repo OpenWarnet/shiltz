@@ -13,10 +13,12 @@
 #include "handlers/CharSkillUp.h"
 #include "handlers/ItemConfirmNpc.h"
 #include "handlers/Store.h"
+#include "handlers/Emotion.h"
 #include "protocol/client/GameEnter.h"
 #include "protocol/client/CharMove.h"
 #include "protocol/client/ItemPickup.h"
 #include "protocol/client/ItemMove.h"
+#include "protocol/client/ItemDelete.h"
 #include "protocol/client/ItemDrop.h"
 #include "protocol/client/ItemTradeBuy.h"
 #include "protocol/client/ItemTradeSell.h"
@@ -33,6 +35,7 @@
 #include "protocol/client/StoreItemOut.h"
 #include "protocol/client/StoreMoneyIn.h"
 #include "protocol/client/StoreMoneyOut.h"
+#include "protocol/client/Emotion.h"
 
 namespace
 {
@@ -50,6 +53,7 @@ GameDispatcher::GameDispatcher()
               When(GameOpcode::CG_ITEM_PICKUP).ParseAs<ItemPickup>().Then(HandleItemPickup),
               When(GameOpcode::CG_ITEM_MOVE).ParseAs<ItemMove>().Then(HandleItemMove),
               When(GameOpcode::CG_ITEM_DROP).ParseAs<ItemDrop>().Then(HandleItemDrop),
+              When(GameOpcode::CG_ITEM_DELETE).ParseAs<ItemDelete>().Then(HandleItemDelete),
               When(GameOpcode::CG_QUEST_RESULT).ParseAs<QuestResult>().Then(HandleQuestResult),
               When(GameOpcode::CG_ITEM_TRADE_BUY).ParseAs<ItemTradeBuy>().Then(HandleItemTradeBuy),
               When(GameOpcode::CG_ITEM_TRADE_SELL).ParseAs<ItemTradeSell>().Then(HandleItemTradeSell),
@@ -67,6 +71,7 @@ GameDispatcher::GameDispatcher()
               When(GameOpcode::CG_STORE_ITEM_OUT).ParseAs<StoreItemOut>().Then(HandleStoreItemOut),
               When(GameOpcode::CG_STORE_MONEY_IN).ParseAs<StoreMoneyIn>().Then(HandleStoreMoneyIn),
               When(GameOpcode::CG_STORE_MONEY_OUT).ParseAs<StoreMoneyOut>().Then(HandleStoreMoneyOut),
+              When(GameOpcode::CG_EMOTION).ParseAs<Emotion>().Then(HandleEmotion),
           },
       }
 {

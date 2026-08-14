@@ -3,6 +3,7 @@
 #include "protocol/server/CharacterDataLoad.h"
 #include "protocol/server/InventoryItemList.h"
 #include "repositories/ItemRepository.h"
+#include "repositories/QuestFlagRepository.h"
 #include "storage/IDatabase.h"
 
 #include <variant>
@@ -102,6 +103,8 @@ bool Player::LoadFromDB(IDatabase& db, std::int64_t characterId)
     }
 
     inventory = ItemRepository::LoadAllInventory(db, characterId);
+
+    quest_flags = QuestFlagRepository::LoadAll(db, characterId);
 
     return true;
 }
@@ -312,6 +315,7 @@ CharacterDataLoad Player::ToCharacterDataLoad(std::uint32_t epsUserFlag,
         .skill_points = skills.unallocated_sp,
         .enforced_points = skills.unallocated_ep,
         .hair_type = hairstyle_id,
+        .quest_flags = quest_flags,
         .char_name = name,
         .server_timestamp = serverTimestamp,
         .face_type = face_id,

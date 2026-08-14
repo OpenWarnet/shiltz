@@ -30,4 +30,5 @@ void GameData::Load()
     levels.Load(DataDir() / "level.scr");
     statusRates.Load(DataDir() / "status.scr");
     skills.Load(SkillDataDir());
+    quests.Load(DataDir() / "quest.scr");
 }
