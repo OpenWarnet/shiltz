@@ -22,6 +22,7 @@ namespace GameOpcode
     // request, matching the client's own (inconsistent) naming.
     inline constexpr uint32_t GC_CHAR_SKILL_UP_EX = 411059;
     inline constexpr uint32_t CG_ITEM_CONFIRM_NPC_REQUEST = 412123; // 0x0649DB
+    inline constexpr uint32_t CG_STORE_CREATE = 411053;
     inline constexpr uint32_t CG_STORE_OPEN = 411054;
     inline constexpr uint32_t CG_STORE_PW_MODIFY = 411055;
     inline constexpr uint32_t CG_STORE_CLOSE = 411056;
@@ -59,6 +60,7 @@ namespace GameOpcode
     inline constexpr uint32_t GC_CHAR_SKILL_UP_EX_FAIL = 531102;
     inline constexpr uint32_t GC_ITEM_CONFIRM_NPC_SUCC = 531234; // 0x081B22
     inline constexpr uint32_t GC_ITEM_CONFIRM_NPC_FAIL = 531235; // 0x081B23
+    inline constexpr uint32_t GC_STORE_CREATE_SUCC = 521111;
     inline constexpr uint32_t GC_STORE_OPEN_SUCC = 521113;
     inline constexpr uint32_t GC_STORE_OPEN_FAIL = 531114;
     inline constexpr uint32_t GC_STORE_PW_MODIFY_SUCC = 521115;

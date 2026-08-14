@@ -28,7 +28,7 @@ struct Item
     bool has_refine_level = false;
 
     std::int32_t item_level = 0;
-    std::uint64_t option_bits = kNeverAppraised;
+    std::uint64_t option_bits = 0;
 
     // Wire's dual-purpose slot field: refine_level as-is for an equippable,
     // else quantity - 1 for a stackable (a stack of N displays as N, backed

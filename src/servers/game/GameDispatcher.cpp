@@ -25,6 +25,7 @@
 #include "protocol/client/CharStatusUp.h"
 #include "protocol/client/CharSkillUpEx.h"
 #include "protocol/client/ItemConfirmNpcRequest.h"
+#include "protocol/client/StoreCreate.h"
 #include "protocol/client/StoreOpen.h"
 #include "protocol/client/StorePwModify.h"
 #include "protocol/client/StoreClose.h"
@@ -58,6 +59,7 @@ GameDispatcher::GameDispatcher()
               When(GameOpcode::CG_ITEM_CONFIRM_NPC_REQUEST)
                   .ParseAs<ItemConfirmNpcRequest>()
                   .Then(HandleItemConfirmNpcRequest),
+              When(GameOpcode::CG_STORE_CREATE).ParseAs<StoreCreate>().Then(HandleStoreCreate),
               When(GameOpcode::CG_STORE_OPEN).ParseAs<StoreOpen>().Then(HandleStoreOpen),
               When(GameOpcode::CG_STORE_PW_MODIFY).ParseAs<StorePwModify>().Then(HandleStorePwModify),
               When(GameOpcode::CG_STORE_CLOSE).ParseAs<StoreClose>().Then(HandleStoreClose),

@@ -31,10 +31,14 @@ namespace BankRepository
         Item item;
     };
 
-    // Looks up accountId's bank_accounts row for this server. No creation
-    // path here -- a missing row is a hard CG_STORE_OPEN failure (see
-    // handlers/Store.cpp); account provisioning happens elsewhere.
+    // Looks up accountId's bank_accounts row for this server.
     std::optional<Account> FindAccount(IDatabase& db, std::int64_t accountId);
+
+    // Provisions a new bank_accounts row for accountId on this server,
+    // starting at money = 0. Caller (handlers/Store.cpp's HandleStoreCreate)
+    // is responsible for checking FindAccount() first -- this doesn't guard
+    // against a duplicate row.
+    Account CreateAccount(IDatabase& db, std::int64_t accountId, const std::string& password);
 
     // Persists bank_accounts.money alone -- called by handlers/Store.cpp's
     // money-transfer handlers, which never touch bank_items.

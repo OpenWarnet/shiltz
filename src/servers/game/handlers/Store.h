@@ -2,6 +2,7 @@
 
 #include "GameDispatcher.h"
 
+struct StoreCreate;
 struct StoreOpen;
 struct StorePwModify;
 struct StoreClose;
@@ -10,6 +11,7 @@ struct StoreItemIn;
 struct StoreMoneyOut;
 struct StoreMoneyIn;
 
+void HandleStoreCreate(const GameContext& ctx, const StoreCreate& request);
 void HandleStoreOpen(const GameContext& ctx, const StoreOpen& request);
 void HandleStorePwModify(const GameContext& ctx, const StorePwModify& request);
 void HandleStoreClose(const GameContext& ctx, const StoreClose& request);

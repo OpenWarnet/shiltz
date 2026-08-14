@@ -21,6 +21,22 @@ std::optional<Account> FindAccount(IDatabase& db, std::int64_t accountId)
     };
 }
 
+Account CreateAccount(IDatabase& db, std::int64_t accountId, const std::string& password)
+{
+    auto stmt = db.Prepare(
+        "INSERT INTO bank_accounts (account_id, server_id, password, money) VALUES (?, ?, ?, 0)");
+    stmt->Bind(0, accountId);
+    stmt->Bind(1, kServerId);
+    stmt->Bind(2, password);
+    stmt->Step();
+
+    return Account{
+        .id = db.LastInsertRowId(),
+        .password = password,
+        .money = 0,
+    };
+}
+
 void SaveMoney(IDatabase& db, std::int64_t bankAccountId, std::int64_t money)
 {
     auto stmt = db.Prepare("UPDATE bank_accounts SET money = ? WHERE id = ?");

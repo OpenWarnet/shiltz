@@ -6,6 +6,7 @@
 #include "common/PayloadWriter.h"
 #include "common/TCPServer.h"
 #include "protocol/client/StoreClose.h"
+#include "protocol/client/StoreCreate.h"
 #include "protocol/client/StoreItemIn.h"
 #include "protocol/client/StoreItemOut.h"
 #include "protocol/client/StoreMoneyIn.h"
@@ -14,6 +15,7 @@
 #include "protocol/client/StorePwModify.h"
 #include "protocol/server/InventoryItemList.h"
 #include "protocol/server/StoreCloseSucc.h"
+#include "protocol/server/StoreCreateSucc.h"
 #include "protocol/server/StoreItemInSuccess.h"
 #include "protocol/server/StoreItemOutSuccess.h"
 #include "protocol/server/StoreMoneyFail.h"
@@ -83,14 +85,46 @@ void ClearBankSlot(GameSession& session, std::uint32_t slotId)
 }
 } // namespace
 
+void HandleStoreCreate(const GameContext& ctx, const StoreCreate& request)
+{
+    std::cout << "Store create request\n"; // password intentionally not logged
+
+    auto session = ctx.sessions.Get(ctx.clientSocket);
+    if (!session)
+    {
+        std::cout << "Rejecting CG_STORE_CREATE: socket has no resolved character (never entered)\n";
+        return;
+    }
+
+    // No GC_STORE_CREATE fail variant on the wire -- same silent-drop policy
+    // as HandleStoreItemOut/In. Refuse to stomp an existing bank_accounts
+    // row (and its password/contents) rather than silently re-provisioning it.
+    if (BankRepository::FindAccount(ctx.db, session->accountId))
+    {
+        std::cout << "Rejecting CG_STORE_CREATE: bank_accounts row already exists for account "
+                  << session->accountId << "\n";
+        return;
+    }
+
+    auto account = BankRepository::CreateAccount(ctx.db, session->accountId, request.password);
+
+    std::cout << "Created bank account " << account.id << " for account " << session->accountId << "\n";
+
+    PayloadWriter writer;
+    StoreCreateSucc{}.Serialize(writer);
+
+    GamePacket packet(GameOpcode::GC_STORE_CREATE_SUCC, writer.Data());
+    ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+}
+
 void HandleStoreOpen(const GameContext& ctx, const StoreOpen& request)
 {
     std::cout << "Store open request\n"; // password intentionally not logged
 
-    auto sendFail = [&]
+    auto sendFail = [&](std::int32_t reason = 1)
     {
         PayloadWriter failWriter;
-        StoreOpenFail{}.Serialize(failWriter);
+        StoreOpenFail{.reason = reason}.Serialize(failWriter);
 
         GamePacket failPacket(GameOpcode::GC_STORE_OPEN_FAIL, failWriter.Data());
         ctx.server.SendTo(ctx.clientSocket, failPacket.Serialize(ctx.key));
@@ -108,7 +142,7 @@ void HandleStoreOpen(const GameContext& ctx, const StoreOpen& request)
     {
         std::cout << "Rejecting CG_STORE_OPEN: no bank_accounts row for account " << session->accountId
                   << "\n";
-        sendFail();
+        sendFail(2);
         return;
     }
 

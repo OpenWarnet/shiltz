@@ -32,6 +32,8 @@ namespace GameOpcode
             return "GC_CHAR_SKILL_UP_EX";
         case CG_ITEM_CONFIRM_NPC_REQUEST:
             return "CG_ITEM_CONFIRM_NPC_REQUEST";
+        case CG_STORE_CREATE:
+            return "CG_STORE_CREATE";
         case CG_STORE_OPEN:
             return "CG_STORE_OPEN";
         case CG_STORE_PW_MODIFY:
@@ -96,6 +98,8 @@ namespace GameOpcode
             return "GC_ITEM_CONFIRM_NPC_SUCC";
         case GC_ITEM_CONFIRM_NPC_FAIL:
             return "GC_ITEM_CONFIRM_NPC_FAIL";
+        case GC_STORE_CREATE_SUCC:
+            return "GC_STORE_CREATE_SUCC";
         case GC_STORE_OPEN_SUCC:
             return "GC_STORE_OPEN_SUCC";
         case GC_STORE_OPEN_FAIL:
