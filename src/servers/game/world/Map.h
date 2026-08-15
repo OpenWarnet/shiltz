@@ -3,6 +3,7 @@
 #include "Creature.h"
 #include "GroundItem.h"
 
+#include <chrono>
 #include <cstdint>
 #include <mutex>
 #include <optional>
@@ -67,6 +68,12 @@ public:
     // bounds. This is a player's current field of view; not yet shaped by
     // facing direction.
     std::vector<std::pair<std::int32_t, std::int32_t>> ZonesAround(std::int32_t x, std::int32_t y) const;
+
+    // Advances this map's simulation by `delta`. Called once per world tick
+    // from World::Tick, on the tick thread only -- a no-op for now (no
+    // respawns/regen/AI exist yet), but this is where that per-map logic
+    // will hang once it does.
+    void Tick(std::chrono::milliseconds delta);
 
 private:
     mutable std::mutex m_itemsMutex;

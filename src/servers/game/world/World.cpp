@@ -79,3 +79,9 @@ std::uint32_t World::AllocateCreatureInstanceId()
 {
     return m_nextCreatureInstanceId++;
 }
+
+void World::Tick(std::chrono::milliseconds delta)
+{
+    for (auto& [serverMapId, map] : m_maps)
+        map.Tick(delta);
+}

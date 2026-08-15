@@ -99,6 +99,11 @@ const std::vector<Creature>& Map::CreaturesInZone(std::int32_t zoneX, std::int32
     return m_creatureGrid[ZoneIndex(zoneX, zoneY)];
 }
 
+void Map::Tick(std::chrono::milliseconds /*delta*/)
+{
+    // Nothing to simulate yet -- extension point for respawns, regen, AI.
+}
+
 std::vector<std::pair<std::int32_t, std::int32_t>> Map::ZonesAround(std::int32_t x, std::int32_t y) const
 {
     std::vector<std::pair<std::int32_t, std::int32_t>> zones;

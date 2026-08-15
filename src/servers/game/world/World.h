@@ -2,6 +2,7 @@
 
 #include "Map.h"
 
+#include <chrono>
 #include <cstdint>
 #include <unordered_map>
 
@@ -36,6 +37,11 @@ public:
     // itself uses, and just increments; good enough until creatures can
     // despawn and ids need to be reclaimed.
     std::uint32_t AllocateCreatureInstanceId();
+
+    // Advances the whole simulation by `delta` -- called once per tick from
+    // GameServer's tick thread (see GameServer::RunTickLoop), never from a
+    // per-connection thread. Fans out to every loaded Map's own Tick().
+    void Tick(std::chrono::milliseconds delta);
 
 private:
     std::unordered_map<std::int64_t, Map> m_maps;
