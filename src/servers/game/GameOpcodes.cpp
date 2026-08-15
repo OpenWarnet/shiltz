@@ -130,6 +130,8 @@ namespace GameOpcode
             return "GC_EMOTION_SUCC";
         case GC_ITEM_DELETE_SUCC:
             return "GC_ITEM_DELETE_SUCC";
+        case GC_SERVER_CHANGE:
+            return "GC_SERVER_CHANGE";
         default:
             return "UNKNOWN";
         }

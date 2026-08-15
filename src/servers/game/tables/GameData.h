@@ -8,11 +8,13 @@
 #include "SetOptionTable.h"
 #include "SkillTable.h"
 #include "StatusTable.h"
+#include "WarpTable.h"
 
 // Owns every static, .scr-derived game-data table -- items, monsters,
-// sellers, set-option bonuses, level exp requirements, skills, and
-// status.scr rates. Loaded once at process startup (see Load()) and never
-// mutated afterward, so callers only ever need a `const GameData&`.
+// sellers, set-option bonuses, level exp requirements, skills, status.scr
+// rates, and warp destinations. Loaded once at process startup (see Load())
+// and never mutated afterward, so callers only ever need a `const
+// GameData&`.
 class GameData
 {
 public:
@@ -28,4 +30,5 @@ public:
     SkillTable skills;
     StatusTable statusRates;
     QuestTable quests;
+    WarpTable warps;
 };

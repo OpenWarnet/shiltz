@@ -47,7 +47,7 @@ QuestActionRecord BuildRecord(const std::vector<std::string>& row)
     q.reward_exp = ScrTable::ParseInt64(at(28));
     q.reward_fame = ScrTable::ParseInt64(at(29));
     // indices 30-33 (reserved_12..15) skipped.
-    q.teleport_map_id = ScrTable::ParseInt64(at(34));
+    q.warp_id = ScrTable::ParseInt64(at(34));
     q.change_job_id = ScrTable::ParseInt64(at(35));
     q.add_skill_ids = ScrTable::ParseInt64(at(36));
     q.revival_point_id = ScrTable::ParseInt64(at(37));

@@ -76,6 +76,7 @@ namespace GameOpcode
     inline constexpr uint32_t GC_STORE_MONEY_FAIL = 531124;
     inline constexpr uint32_t GC_EMOTION_SUCC = 521464; // 0x07F4F8
     inline constexpr uint32_t GC_ITEM_DELETE_SUCC = 521462; // 0x07F4F6
+    inline constexpr uint32_t GC_SERVER_CHANGE = 511086; // 0x7CC6E
 
     // Resolves an opcode to its constant's name, or "UNKNOWN" if not one of
     // the constants above. Used to make packet capture logs readable.

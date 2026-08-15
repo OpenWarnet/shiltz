@@ -12,11 +12,13 @@
 #include "protocol/server/InventoryItemList.h"
 #include "protocol/server/QuestFail.h"
 #include "protocol/server/QuestSucc.h"
+#include "protocol/server/ServerChange.h"
 #include "repositories/ItemRepository.h"
 #include "repositories/QuestFlagRepository.h"
 #include "storage/Transaction.h"
 #include "tables/GameData.h"
 #include "tables/ItemTable.h"
+#include "tables/WarpTable.h"
 #include "world/Player.h"
 
 #include <iostream>
@@ -257,14 +259,68 @@ std::vector<QuestSuccItem> GrantRewardItem(const GameContext& ctx, GameSession& 
     return granted;
 }
 
+// Tells the client which game server/port to (re)connect to after a warp.
+// Sent even though this warp doesn't actually move the player to a
+// different physical server -- it's the packet the client expects
+// following a location change, so it always names *this* game server.
+// sessionId must be this connection's own GameSession::sessionId -- the
+// client's reconnect CG_ENTER carries it back as-is, and Session.cpp's
+// HandleEnter rejects anything that isn't a real `session` table row (see
+// ServerChange.h).
+void SendServerChange(const GameContext& ctx, std::int64_t sessionId)
+{
+    // Same dev game-server IP/port GameHandover.cpp (login server) hands
+    // the client via GameConnectSuccess -- there's no shared config between
+    // the two processes, so this is kept in sync by hand; update both if
+    // either changes. server_port is confirmed against real captures to
+    // always be 1818, regardless of server_ip/channel_id (see
+    // ServerChange.h).
+    ServerChange response{
+        .server_ip = "45.58.9.172",
+        .session_id = static_cast<std::uint32_t>(sessionId),
+        .server_port = 1818,
+    };
+
+    PayloadWriter writer;
+    response.Serialize(writer);
+
+    GamePacket packet(GameOpcode::GC_SERVER_CHANGE, writer.Data());
+    ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+}
+
+// Moves the player to warp.scr's server_map_id/x/y for warpId, writing
+// through to `character_position` immediately (Player::SaveToDB) rather
+// than waiting for some other save path to pick up the position change --
+// same immediacy as the money/exp/fame writes alongside it in
+// ApplyConsequences. No-op if warpId is 0 (nothing to warp to) or unknown.
+void ApplyWarp(const GameContext& ctx, GameSession& session, std::int64_t warpId)
+{
+    if (warpId == 0)
+        return;
+
+    const WarpRecord* record = ctx.data.warps.Find(warpId);
+    if (!record)
+    {
+        std::cout << "Quest reward: unknown warp_id " << warpId << " -- skipping\n";
+        return;
+    }
+
+    Player& player = session.player;
+
+    player.map_id = static_cast<std::uint32_t>(record->server_map_id);
+    player.x = static_cast<std::int32_t>(record->x);
+    player.y = static_cast<std::int32_t>(record->y);
+    player.SaveToDB(ctx.db);
+
+    SendServerChange(ctx, session.sessionId);
+}
+
 void LogUnhandledConsequences(const QuestConsequences& q)
 {
-    // These need their own server-side mechanism/packet (map transfer,
-    // job-change confirmation, skill grant, revival-point registration) --
-    // not something GC_QUEST_SUCC alone can express. Parsed so the data is
+    // These need their own server-side mechanism/packet (job-change
+    // confirmation, skill grant, revival-point registration) -- not
+    // something GC_QUEST_SUCC alone can express. Parsed so the data is
     // available once that lands, but not applied yet.
-    if (q.teleport_map_id != 0)
-        std::cout << "Quest consequence not yet handled: teleport_map_id " << q.teleport_map_id << "\n";
     if (q.change_job_id != 0)
         std::cout << "Quest consequence not yet handled: change_job_id " << q.change_job_id << "\n";
     if (q.add_skill_ids != 0)
@@ -312,6 +368,8 @@ QuestSucc ApplyConsequences(const GameContext& ctx, GameSession& session, const 
         player.fame += static_cast<std::uint32_t>(q.reward_fame);
         player.SaveFame(ctx.db);
     }
+
+    ApplyWarp(ctx, session, q.warp_id);
 
     txn.Commit();
 

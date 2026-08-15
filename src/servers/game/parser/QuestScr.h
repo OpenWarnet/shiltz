@@ -52,7 +52,10 @@ struct QuestConsequences
 
     // Need a different server-side technique/packet than plain GC_QUEST_SUCC
     // (see handlers/Quest.cpp) -- not applied yet, just parsed and logged.
-    std::int64_t teleport_map_id = 0;
+    // Joins against warp.scr's positional WarpRecord::warp_id (see
+    // parser/WarpScr.h and tables/WarpTable.h) to resolve the actual
+    // server_map_id/x/y to warp the player to.
+    std::int64_t warp_id = 0;
     std::int64_t change_job_id = 0;
     std::int64_t add_skill_ids = 0;
     std::int64_t revival_point_id = 0;

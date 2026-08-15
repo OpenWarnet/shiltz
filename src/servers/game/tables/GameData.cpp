@@ -31,4 +31,5 @@ void GameData::Load()
     statusRates.Load(DataDir() / "status.scr");
     skills.Load(SkillDataDir());
     quests.Load(DataDir() / "quest.scr");
+    warps.Load(DataDir() / "warp.scr");
 }
