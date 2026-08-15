@@ -101,7 +101,12 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
         sendFail();
         return;
     }
-    player.known_zones = ctx.world.GetMap().ZonesAround(player.x, player.y);
+    // Null if player.map_id isn't a map.scr id this World loaded -- the
+    // zone/creature lookups below stay empty in that case (known_zones is
+    // default-empty, so the CreaturesInZone loop below never runs).
+    Map* map = ctx.world.GetMap(player.map_id);
+    if (map)
+        player.known_zones = map->ZonesAround(player.x, player.y);
     RecalculateDerivedStats(player, ctx.data.items, ctx.data.setOptions, ctx.data.statusRates);
 
     GameSession session{
@@ -139,7 +144,7 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
 
     for (const auto& [zoneX, zoneY] : session.player.known_zones)
     {
-        for (const auto& creature : ctx.world.GetMap().CreaturesInZone(zoneX, zoneY))
+        for (const auto& creature : map->CreaturesInZone(zoneX, zoneY))
         {
             const MonsterRecord* monsterRecord = ctx.data.monsters.Find(creature.monster_id);
 

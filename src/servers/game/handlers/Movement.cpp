@@ -34,8 +34,13 @@ void HandleMovement(const GameContext& ctx, const CharMove& request)
         return;
     }
 
-    const auto newZones = ctx.world.GetMap().ZonesAround(static_cast<std::int32_t>(request.x),
-                                                          static_cast<std::int32_t>(request.y));
+    // Null if session->player.map_id isn't a map.scr id this World loaded --
+    // zone/creature updates stay empty in that case (see Session.cpp's
+    // HandleEnter for the same guard on the initial CG_ENTER).
+    Map* map = ctx.world.GetMap(session->player.map_id);
+    const auto newZones = map ? map->ZonesAround(static_cast<std::int32_t>(request.x),
+                                                  static_cast<std::int32_t>(request.y))
+                               : std::vector<std::pair<std::int32_t, std::int32_t>>{};
     const auto& oldZones = session->player.known_zones;
 
     CrtLoad crtLoadResponse;
@@ -44,7 +49,7 @@ void HandleMovement(const GameContext& ctx, const CharMove& request)
         if (Contains(oldZones, zone))
             continue;
 
-        for (const auto& creature : ctx.world.GetMap().CreaturesInZone(zone.first, zone.second))
+        for (const auto& creature : map->CreaturesInZone(zone.first, zone.second))
         {
             const MonsterRecord* monsterRecord = ctx.data.monsters.Find(creature.monster_id);
 
@@ -81,7 +86,7 @@ void HandleMovement(const GameContext& ctx, const CharMove& request)
         if (Contains(newZones, zone))
             continue;
 
-        for (const auto& creature : ctx.world.GetMap().CreaturesInZone(zone.first, zone.second))
+        for (const auto& creature : map->CreaturesInZone(zone.first, zone.second))
         {
             removeResponse.creature_ids.push_back(creature.instance_id);
         }

@@ -48,10 +48,18 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
     const auto slotIndex = static_cast<std::uint32_t>(static_cast<int64_t>(request.slot_id) -
                                                         static_cast<int64_t>(InventoryItemList::kBagStartSlot));
 
+    Map* map = ctx.world.GetMap(session->player.map_id);
+    if (!map)
+    {
+        std::cout << "Rejecting CG_ITEM_PICKUP: character on unknown map_id "
+                  << session->player.map_id << "\n";
+        return;
+    }
+
     // Atomically claim the ground item so two players racing the same
     // pickup can't both grant it to themselves. Claimed before the DB
     // write, so a failed write loses the item rather than duplicating it.
-    auto groundItem = ctx.world.GetMap().TryTakeItem(request.id);
+    auto groundItem = map->TryTakeItem(request.id);
     if (!groundItem)
     {
         std::cout << "Rejecting CG_ITEM_PICKUP: no ground item with id " << request.id << "\n";
@@ -79,7 +87,7 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
                       << existing->item_id << ", not " << itemId << " -- ignoring\n";
             // Put the claimed item back rather than dropping it -- this is
             // a normal rejection (stale client state), not a failure.
-            ctx.world.GetMap().AddItem(*groundItem);
+            map->AddItem(*groundItem);
             return;
         }
 
@@ -253,6 +261,14 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
         return;
     }
 
+    Map* map = ctx.world.GetMap(session->player.map_id);
+    if (!map)
+    {
+        std::cout << "Rejecting CG_ITEM_DROP: character on unknown map_id "
+                  << session->player.map_id << "\n";
+        return;
+    }
+
     const int64_t characterId = session->characterId;
     // Same wire-relative -> bag-relative conversion as HandleItemPickup --
     // see the comment there.
@@ -328,7 +344,7 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
     std::uniform_int_distribution<std::uint32_t> distrib(1, 1000000);
     const std::uint32_t groundId = distrib(gen);
 
-    ctx.world.GetMap().AddItem(GroundItem{
+    map->AddItem(GroundItem{
         .id = groundId,
         .x = dropX,
         .y = dropY,

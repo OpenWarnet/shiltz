@@ -114,6 +114,8 @@ add_executable (
 	"parser/StatusScr.cpp"
 	"parser/WarpScr.h"
 	"parser/WarpScr.cpp"
+	"parser/MapScr.h"
+	"parser/MapScr.cpp"
 	"protocol/client/GameEnter.h"
 	"protocol/client/GameEnter.cpp"
 	"protocol/client/CharMove.h"
