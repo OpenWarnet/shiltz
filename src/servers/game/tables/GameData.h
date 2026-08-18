@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AiMonTable.h"
 #include "ItemTable.h"
 #include "LevelTable.h"
 #include "MonsterTable.h"
@@ -12,9 +13,9 @@
 
 // Owns every static, .scr-derived game-data table -- items, monsters,
 // sellers, set-option bonuses, level exp requirements, skills, status.scr
-// rates, and warp destinations. Loaded once at process startup (see Load())
-// and never mutated afterward, so callers only ever need a `const
-// GameData&`.
+// rates, monster AI scripts, and warp destinations. Loaded once at process
+// startup (see Load()) and never mutated afterward, so callers only ever
+// need a `const GameData&`.
 class GameData
 {
 public:
@@ -31,4 +32,5 @@ public:
     StatusTable statusRates;
     QuestTable quests;
     WarpTable warps;
+    AiMonTable aiScripts;
 };

@@ -21,23 +21,30 @@ namespace
         record.id = At(record.fields, 0);
         record.level = At(record.fields, 2);
         record.hp = At(record.fields, 3);
-        record.movement_speed = At(record.fields, 4);
+        record.wander_step_count = At(record.fields, 4);
         record.attack_range = At(record.fields, 5);
         record.element = At(record.fields, 6);
-        record.critical_hit = At(record.fields, 7);
+        record.critical_hit_chance = At(record.fields, 7);
         record.critical_hit_defense = At(record.fields, 8);
         record.hit_rate = At(record.fields, 9);
         record.evasion_rate = At(record.fields, 10);
         record.attack = At(record.fields, 11);
         record.defense = At(record.fields, 12);
-        record.exp = At(record.fields, 13);
+        record.exp_reward = At(record.fields, 13);
         record.loot_id = At(record.fields, 14);
+        record.ai_id = At(record.fields, 15);
         record.category = At(record.fields, 16);
         record.model_id = At(record.fields, 19);
         record.talk_id = At(record.fields, 21);
         record.seller_id = At(record.fields, 22);
-        record.respawn_time = At(record.fields, 26);
-        record.aggro_range = At(record.fields, 28);
+        record.pack_flag = At(record.fields, 23);
+        record.secondary_ai_id = At(record.fields, 24);
+        record.unique_spawn_flag = At(record.fields, 25);
+        record.buff_gold_reward = At(record.fields, 26);
+        record.respawn_time = At(record.fields, 27);
+        record.spawn_scatter_range = At(record.fields, 28);
+        record.call_for_help_range = At(record.fields, 29);
+        record.link_flag = At(record.fields, 30);
 
         return record;
     }
