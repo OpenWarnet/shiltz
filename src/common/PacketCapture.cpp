@@ -3,18 +3,27 @@
 #include "HexDump.h"
 
 #include <chrono>
+#include <condition_variable>
 #include <ctime>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <mutex>
 #include <sstream>
+#include <thread>
 
 namespace
 {
-    std::mutex g_mutex;
-    std::ofstream g_packetsLog;
-    std::ofstream g_unhandledLog;
+    struct QueuedEntry
+    {
+        PacketCapture::Direction dir;
+        SOCKET clientSocket;
+        uint32_t opcode;
+        std::string opcodeName;
+        std::vector<uint8_t> payload;
+        bool unhandled;
+    };
 
     std::string Timestamp()
     {
@@ -60,6 +69,83 @@ namespace
         file << FormatHexDump(payload) << '\n';
         file.flush();
     }
+
+    // Owns the two log files and the background thread that writes to them.
+    // Log* calls just push a copy onto m_queue and return; Run() drains it
+    // and does the actual (locked, flushed) disk I/O off the caller's thread.
+    // Declared after g_packetsLog/g_unhandledLog below so it's destroyed
+    // first (reverse construction order), guaranteeing the writer thread is
+    // stopped and joined -- so no pending write can touch the streams --
+    // before those streams themselves are destroyed.
+    class LogWriter
+    {
+    public:
+        void Start() { m_thread = std::thread([this] { Run(); }); }
+
+        void Push(QueuedEntry entry)
+        {
+            {
+                std::lock_guard lock(m_mutex);
+                m_queue.push_back(std::move(entry));
+            }
+            m_cv.notify_one();
+        }
+
+        ~LogWriter()
+        {
+            {
+                std::lock_guard lock(m_mutex);
+                m_stop = true;
+            }
+            m_cv.notify_one();
+            if (m_thread.joinable())
+            {
+                m_thread.join();
+            }
+        }
+
+    private:
+        void Run();
+
+        std::mutex m_mutex;
+        std::condition_variable m_cv;
+        std::deque<QueuedEntry> m_queue;
+        std::thread m_thread;
+        bool m_stop = false;
+    };
+
+    std::ofstream g_packetsLog;
+    std::ofstream g_unhandledLog;
+    LogWriter g_writer;
+
+    void LogWriter::Run()
+    {
+        std::deque<QueuedEntry> batch;
+        while (true)
+        {
+            {
+                std::unique_lock lock(m_mutex);
+                m_cv.wait(lock, [this] { return m_stop || !m_queue.empty(); });
+                if (m_queue.empty() && m_stop)
+                {
+                    return;
+                }
+                batch.swap(m_queue);
+            }
+
+            for (const auto& entry : batch)
+            {
+                WriteEntry(g_packetsLog, entry.dir, entry.clientSocket, entry.opcode, entry.opcodeName,
+                           entry.payload, entry.unhandled);
+                if (entry.unhandled)
+                {
+                    WriteEntry(g_unhandledLog, PacketCapture::Direction::Inbound, entry.clientSocket,
+                               entry.opcode, entry.opcodeName, entry.payload, true);
+                }
+            }
+            batch.clear();
+        }
+    }
 }
 
 namespace PacketCapture
@@ -68,23 +154,23 @@ namespace PacketCapture
     {
         std::filesystem::create_directories("logs");
 
-        std::lock_guard lock(g_mutex);
         g_packetsLog.open("logs/" + serverName + "_packets.log", std::ios::app);
         g_unhandledLog.open("logs/" + serverName + "_unhandled.log", std::ios::app);
+
+        g_writer.Start();
     }
 
     void LogHandled(Direction dir, SOCKET clientSocket, uint32_t opcode,
                      std::string_view opcodeName, std::span<const uint8_t> payload)
     {
-        std::lock_guard lock(g_mutex);
-        WriteEntry(g_packetsLog, dir, clientSocket, opcode, opcodeName, payload, false);
+        g_writer.Push(QueuedEntry{dir, clientSocket, opcode, std::string(opcodeName),
+                                   std::vector<uint8_t>(payload.begin(), payload.end()), false});
     }
 
     void LogUnhandled(SOCKET clientSocket, uint32_t opcode, std::string_view opcodeName,
                        std::span<const uint8_t> payload)
     {
-        std::lock_guard lock(g_mutex);
-        WriteEntry(g_packetsLog, Direction::Inbound, clientSocket, opcode, opcodeName, payload, true);
-        WriteEntry(g_unhandledLog, Direction::Inbound, clientSocket, opcode, opcodeName, payload, true);
+        g_writer.Push(QueuedEntry{Direction::Inbound, clientSocket, opcode, std::string(opcodeName),
+                                   std::vector<uint8_t>(payload.begin(), payload.end()), true});
     }
 }

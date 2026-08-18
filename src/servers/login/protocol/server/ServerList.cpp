@@ -12,7 +12,7 @@ void ServerList::Serialize(PayloadWriter& writer) const
     }
 }
 
-void Server::Serialize(PayloadWriter& writer) const
+void ServerListEntry::Serialize(PayloadWriter& writer) const
 {
     writer.WriteString(name, 16);
     writer.Write(static_cast<uint32_t>(channel_players.size()));

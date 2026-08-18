@@ -4,7 +4,7 @@
 #include "GamePacket.h"
 #include "GameSessionStore.h"
 #include "common/PayloadWriter.h"
-#include "common/TCPServer.h"
+#include "common/Server.h"
 #include "enums/ItemConfirmFailReason.h"
 #include "enums/ItemType.h"
 #include "parser/ItemScr.h"
@@ -202,6 +202,11 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
         return;
     }
 
+    // Everything below is blocking SQLite work -- run it on the DB pool
+    // instead of the connection's reactor thread. request/session are
+    // copied by value so they stay valid once this handler returns;
+    // server.SendTo() is safe to call from any thread.
+    boost::asio::post(ctx.dbPool, [ctx, request, session]() mutable {
     const int64_t characterId = session->characterId;
 
     std::random_device rd;
@@ -323,4 +328,5 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
 
     GamePacket packet(GameOpcode::GC_ITEM_CONFIRM_NPC_SUCC, writer.Data());
     ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+    });
 }

@@ -4,7 +4,7 @@
 #include "LoginSessionStore.h"
 #include "LoginPacket.h"
 #include "common/PayloadWriter.h"
-#include "common/TCPServer.h"
+#include "common/Server.h"
 #include "protocol/client/Login.h"
 #include "protocol/server/LoginFail.h"
 #include "protocol/server/ServerList.h"
@@ -48,41 +48,50 @@ void HandleLogin(const LoginContext& ctx, const Login& login)
     std::cout << "Build: " << login.build << "\n";
     std::cout << "Username: " << login.username << "\n";
 
-    PayloadWriter writer;
-    auto accountId = EnsureAccount(ctx.db, login.username, login.password);
-    if (!accountId)
-    {
-        LoginFail failure{.reason = 1};
-        failure.Serialize(writer);
-        auto failData = writer.Data();
+    // EnsureAccount and the session insert below are blocking SQLite calls
+    // -- run them on the DB pool instead of the connection's reactor
+    // thread. ctx is cheap to copy (its reference members alias
+    // LoginServer's long-lived state) and login is copied so both stay
+    // valid once this handler returns. server.SendTo() is safe to call
+    // from any thread -- it queues onto the connection's own strand
+    // internally -- so the reply is sent straight from the pool thread.
+    boost::asio::post(ctx.dbPool, [ctx, login]() {
+        PayloadWriter writer;
+        auto accountId = EnsureAccount(ctx.db, login.username, login.password);
+        if (!accountId)
+        {
+            LoginFail failure{.reason = 1};
+            failure.Serialize(writer);
+            auto failData = writer.Data();
 
-        LoginPacket responsePacket(LoginOpcode::LC_LOGIN_FAIL, failData);
+            LoginPacket responsePacket(LoginOpcode::LC_LOGIN_FAIL, failData);
+            auto response = responsePacket.Serialize(ctx.key);
+
+            ctx.server.SendTo(ctx.clientSocket, response);
+            return;
+        }
+
+        ctx.sessions.SetAccountId(ctx.clientSocket, *accountId);
+
+        // Complements the in-memory LoginSessionStore with a durable row
+        // the game server can later resolve back to an account_id -- see
+        // HandleGameServerConnection.
+        auto insertSession = ctx.db.Prepare("INSERT INTO session (account_id) VALUES (?)");
+        insertSession->Bind(0, *accountId);
+        insertSession->Step();
+
+        ctx.sessions.SetSessionId(ctx.clientSocket, ctx.db.LastInsertRowId());
+
+        ServerList list{.servers{{.name = "1server", .channel_players{1, 2, 3}}}};
+        list.Serialize(writer);
+        auto serverData = writer.Data();
+
+        // TODO: Somehow it doesn't matter what I sent, this will not change the Server Select UI.
+        LoginPacket responsePacket(LoginOpcode::LC_LOGIN_SUCCESS, serverData);
         auto response = responsePacket.Serialize(ctx.key);
 
         ctx.server.SendTo(ctx.clientSocket, response);
-        return;
-    }
-
-    ctx.sessions.SetAccountId(ctx.clientSocket, *accountId);
-
-    // Complements the in-memory LoginSessionStore with a durable row the
-    // game server can later resolve back to an account_id -- see
-    // HandleGameServerConnection.
-    auto insertSession = ctx.db.Prepare("INSERT INTO session (account_id) VALUES (?)");
-    insertSession->Bind(0, *accountId);
-    insertSession->Step();
-
-    ctx.sessions.SetSessionId(ctx.clientSocket, ctx.db.LastInsertRowId());
-
-    ServerList list{.servers{{.name = "1server", .channel_players{1, 2, 3}}}};
-    list.Serialize(writer);
-    auto serverData = writer.Data();
-
-    // TODO: Somehow it doesn't matter what I sent, this will not change the Server Select UI.
-    LoginPacket responsePacket(LoginOpcode::LC_LOGIN_SUCCESS, serverData);
-    auto response = responsePacket.Serialize(ctx.key);
-
-    ctx.server.SendTo(ctx.clientSocket, response);
+    });
 }
 
 void HandleUserSystemSpecInfo(const LoginContext&)

@@ -6,7 +6,7 @@
 
 class PayloadWriter;
 
-struct Server
+struct ServerListEntry
 {
     std::string name;
 
@@ -17,7 +17,7 @@ struct Server
 
 struct ServerList
 {
-    std::vector<Server> servers;
+    std::vector<ServerListEntry> servers;
 
     void Serialize(PayloadWriter& writer) const;
 };

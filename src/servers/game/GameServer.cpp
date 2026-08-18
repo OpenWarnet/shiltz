@@ -16,45 +16,44 @@ namespace
 } // namespace
 
 GameServer::GameServer(uint16_t port, std::span<const uint8_t> key, IDatabase& db)
-    : TCPServer(port, "Game"), m_key(key), m_db(db)
+    : Server(port, "Game"), m_key(key), m_db(db),
+      m_worldStrand(boost::asio::any_io_executor(IoContext().get_executor())), m_tickTimer(IoContext()),
+      m_dbPool(1)
 {
     m_data.Load();
     m_world.Start();
 
-    m_ticking = true;
-    m_tickThread = std::thread([this] { RunTickLoop(); });
+    m_lastTick = std::chrono::steady_clock::now();
+    ScheduleTick();
 }
 
 GameServer::~GameServer()
 {
-    m_ticking = false;
-    if (m_tickThread.joinable())
-        m_tickThread.join();
-
+    m_tickTimer.cancel();
     m_world.Shutdown();
 }
 
-void GameServer::RunTickLoop()
+void GameServer::ScheduleTick()
 {
-    auto last = std::chrono::steady_clock::now();
-    int ticksSinceHeartbeat = 0;
-
-    while (m_ticking)
-    {
-        std::this_thread::sleep_for(kTickInterval);
+    m_tickTimer.expires_after(kTickInterval);
+    m_tickTimer.async_wait(boost::asio::bind_executor(m_worldStrand, [this](boost::system::error_code ec) {
+        if (ec)
+            return; // cancelled (shutdown) or timer destroyed
 
         const auto now = std::chrono::steady_clock::now();
-        const auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(now - last);
-        last = now;
+        const auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_lastTick);
+        m_lastTick = now;
 
         m_world.Tick(delta);
 
-        if (++ticksSinceHeartbeat >= kTicksPerHeartbeat)
+        if (++m_ticksSinceHeartbeat >= kTicksPerHeartbeat)
         {
-            ticksSinceHeartbeat = 0;
+            m_ticksSinceHeartbeat = 0;
             std::cout << "World tick alive\n";
         }
-    }
+
+        ScheduleTick();
+    }));
 }
 
 void GameServer::OnFrame(SOCKET clientSocket, std::span<const uint8_t> frame)
@@ -66,8 +65,8 @@ void GameServer::OnFrame(SOCKET clientSocket, std::span<const uint8_t> frame)
     std::cout << "Received (" << frame.size() << " bytes, payload " << packet.GetPayload().size()
               << " bytes)\n";
 
-    m_dispatcher.Dispatch(GameContext{*this, clientSocket, m_key, m_db, m_sessions, m_world, m_data},
-                          packet);
+    m_dispatcher.Dispatch(
+        GameContext{*this, clientSocket, m_key, m_db, m_sessions, m_world, m_data, m_dbPool}, packet);
 }
 
 void GameServer::OnClientDisconnected(SOCKET clientSocket)

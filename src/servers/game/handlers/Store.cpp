@@ -4,7 +4,7 @@
 #include "GamePacket.h"
 #include "GameSessionStore.h"
 #include "common/PayloadWriter.h"
-#include "common/TCPServer.h"
+#include "common/Server.h"
 #include "protocol/client/StoreClose.h"
 #include "protocol/client/StoreCreate.h"
 #include "protocol/client/StoreItemIn.h"
@@ -96,6 +96,11 @@ void HandleStoreCreate(const GameContext& ctx, const StoreCreate& request)
         return;
     }
 
+    // Everything below is blocking SQLite work -- run it on the DB pool
+    // instead of the connection's reactor thread. request/session are
+    // copied by value so they stay valid once this handler returns;
+    // server.SendTo() is safe to call from any thread.
+    boost::asio::post(ctx.dbPool, [ctx, request, session]() {
     // No GC_STORE_CREATE fail variant on the wire -- same silent-drop policy
     // as HandleStoreItemOut/In. Refuse to stomp an existing bank_accounts
     // row (and its password/contents) rather than silently re-provisioning it.
@@ -115,13 +120,14 @@ void HandleStoreCreate(const GameContext& ctx, const StoreCreate& request)
 
     GamePacket packet(GameOpcode::GC_STORE_CREATE_SUCC, writer.Data());
     ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+    });
 }
 
 void HandleStoreOpen(const GameContext& ctx, const StoreOpen& request)
 {
     std::cout << "Store open request\n"; // password intentionally not logged
 
-    auto sendFail = [&](std::int32_t reason = 1)
+    auto sendFail = [ctx](std::int32_t reason = 1)
     {
         PayloadWriter failWriter;
         StoreOpenFail{.reason = reason}.Serialize(failWriter);
@@ -137,6 +143,11 @@ void HandleStoreOpen(const GameContext& ctx, const StoreOpen& request)
         return;
     }
 
+    // Everything below is blocking SQLite work -- run it on the DB pool
+    // instead of the connection's reactor thread. request/session/sendFail
+    // are copied by value so they stay valid once this handler returns;
+    // server.SendTo() is safe to call from any thread.
+    boost::asio::post(ctx.dbPool, [ctx, request, session, sendFail]() mutable {
     auto account = BankRepository::FindAccount(ctx.db, session->accountId);
     if (!account)
     {
@@ -179,13 +190,14 @@ void HandleStoreOpen(const GameContext& ctx, const StoreOpen& request)
 
     std::cout << "Opened bank account " << account->id << " for character " << session->characterId
               << "\n";
+    });
 }
 
 void HandleStorePwModify(const GameContext& ctx, const StorePwModify& request)
 {
     std::cout << "Store password modify request\n"; // passwords intentionally not logged
 
-    auto sendFail = [&]
+    auto sendFail = [ctx]
     {
         PayloadWriter failWriter;
         StorePwModifyFail{}.Serialize(failWriter);
@@ -201,6 +213,11 @@ void HandleStorePwModify(const GameContext& ctx, const StorePwModify& request)
         return;
     }
 
+    // Everything below is blocking SQLite work -- run it on the DB pool
+    // instead of the connection's reactor thread. request/session/sendFail
+    // are copied by value so they stay valid once this handler returns;
+    // server.SendTo() is safe to call from any thread.
+    boost::asio::post(ctx.dbPool, [ctx, request, session, sendFail]() {
     // Independently re-resolves the bank_accounts row from account_id --
     // doesn't require CG_STORE_OPEN to have already succeeded on this
     // connection, the same way HandleStoreOpen does its own lookup rather
@@ -231,6 +248,7 @@ void HandleStorePwModify(const GameContext& ctx, const StorePwModify& request)
 
     GamePacket packet(GameOpcode::GC_STORE_PW_MODIFY_SUCC, writer.Data());
     ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+    });
 }
 
 void HandleStoreClose(const GameContext& ctx, const StoreClose& request)
@@ -288,6 +306,11 @@ void HandleStoreItemOut(const GameContext& ctx, const StoreItemOut& request)
         return;
     }
 
+    // Everything below is blocking SQLite work -- run it on the DB pool
+    // instead of the connection's reactor thread. request/session are
+    // copied by value so they stay valid once this handler returns;
+    // server.SendTo() is safe to call from any thread.
+    boost::asio::post(ctx.dbPool, [ctx, request, session]() mutable {
     if (!session->bankAccountId)
     {
         std::cout << "Rejecting CG_STORE_ITEM_OUT: bank not open on this connection\n";
@@ -415,6 +438,7 @@ void HandleStoreItemOut(const GameContext& ctx, const StoreItemOut& request)
 
     GamePacket packet(GameOpcode::GC_STORE_ITEM_OUT, writer.Data());
     ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+    });
 }
 
 void HandleStoreItemIn(const GameContext& ctx, const StoreItemIn& request)
@@ -444,6 +468,11 @@ void HandleStoreItemIn(const GameContext& ctx, const StoreItemIn& request)
         return;
     }
 
+    // Everything below is blocking SQLite work -- run it on the DB pool
+    // instead of the connection's reactor thread. request/session are
+    // copied by value so they stay valid once this handler returns;
+    // server.SendTo() is safe to call from any thread.
+    boost::asio::post(ctx.dbPool, [ctx, request, session]() mutable {
     if (!session->bankAccountId)
     {
         std::cout << "Rejecting CG_STORE_ITEM_IN: bank not open on this connection\n";
@@ -548,13 +577,14 @@ void HandleStoreItemIn(const GameContext& ctx, const StoreItemIn& request)
 
     GamePacket packet(GameOpcode::GC_STORE_ITEM_IN, writer.Data());
     ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+    });
 }
 
 void HandleStoreMoneyOut(const GameContext& ctx, const StoreMoneyOut& request)
 {
     std::cout << "Store money out: amount " << request.amount << "\n";
 
-    auto sendFail = [&]
+    auto sendFail = [ctx]
     {
         PayloadWriter failWriter;
         StoreMoneyFail{}.Serialize(failWriter);
@@ -578,6 +608,11 @@ void HandleStoreMoneyOut(const GameContext& ctx, const StoreMoneyOut& request)
         return;
     }
 
+    // Everything below is blocking SQLite work -- run it on the DB pool
+    // instead of the connection's reactor thread. request/session/sendFail
+    // are copied by value so they stay valid once this handler returns;
+    // server.SendTo() is safe to call from any thread.
+    boost::asio::post(ctx.dbPool, [ctx, request, session, sendFail]() mutable {
     if (!session->bankAccountId)
     {
         std::cout << "Rejecting CG_STORE_MONEY_OUT: bank not open on this connection\n";
@@ -620,13 +655,14 @@ void HandleStoreMoneyOut(const GameContext& ctx, const StoreMoneyOut& request)
 
     GamePacket packet(GameOpcode::GC_STORE_MONEY_OUT_SUCC, writer.Data());
     ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+    });
 }
 
 void HandleStoreMoneyIn(const GameContext& ctx, const StoreMoneyIn& request)
 {
     std::cout << "Store money in: amount " << request.amount << "\n";
 
-    auto sendFail = [&]
+    auto sendFail = [ctx]
     {
         PayloadWriter failWriter;
         StoreMoneyFail{}.Serialize(failWriter);
@@ -650,6 +686,11 @@ void HandleStoreMoneyIn(const GameContext& ctx, const StoreMoneyIn& request)
         return;
     }
 
+    // Everything below is blocking SQLite work -- run it on the DB pool
+    // instead of the connection's reactor thread. request/session/sendFail
+    // are copied by value so they stay valid once this handler returns;
+    // server.SendTo() is safe to call from any thread.
+    boost::asio::post(ctx.dbPool, [ctx, request, session, sendFail]() mutable {
     if (!session->bankAccountId)
     {
         std::cout << "Rejecting CG_STORE_MONEY_IN: bank not open on this connection\n";
@@ -691,4 +732,5 @@ void HandleStoreMoneyIn(const GameContext& ctx, const StoreMoneyIn& request)
 
     GamePacket packet(GameOpcode::GC_STORE_MONEY_IN_SUCC, writer.Data());
     ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+    });
 }

@@ -4,7 +4,7 @@
 #include "GamePacket.h"
 #include "GameSessionStore.h"
 #include "common/PayloadWriter.h"
-#include "common/TCPServer.h"
+#include "common/Server.h"
 #include "protocol/client/CharMove.h"
 #include "protocol/server/CharMoveUpdate.h"
 #include "protocol/server/CrtLoad.h"

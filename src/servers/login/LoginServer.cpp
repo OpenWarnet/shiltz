@@ -6,7 +6,7 @@
 
 LoginServer::LoginServer(uint16_t port, std::span<const uint8_t> key,
                           std::span<const uint8_t> noncePayload, IDatabase& db)
-    : TCPServer(port, "Login"), m_key(key), m_noncePayload(noncePayload), m_db(db)
+    : Server(port, "Login"), m_key(key), m_noncePayload(noncePayload), m_db(db), m_dbPool(1)
 {
 }
 
@@ -29,5 +29,5 @@ void LoginServer::OnFrame(SOCKET clientSocket, std::span<const uint8_t> frame)
     std::cout << "Received (" << frame.size() << " bytes, payload " << packet.GetPayload().size()
               << " bytes)\n";
 
-    m_dispatcher.Dispatch(LoginContext{*this, clientSocket, m_key, m_db, m_sessions}, packet);
+    m_dispatcher.Dispatch(LoginContext{*this, clientSocket, m_key, m_db, m_sessions, m_dbPool}, packet);
 }

@@ -4,7 +4,7 @@
 #include "LoginPacket.h"
 #include "LoginSessionStore.h"
 #include "common/PayloadWriter.h"
-#include "common/TCPServer.h"
+#include "common/Server.h"
 #include "protocol/client/CreateCharacter.h"
 #include "protocol/client/ServerSelect.h"
 #include "protocol/client/SetCharacterMap.h"
@@ -42,6 +42,11 @@ void HandleGetCharacterList(const LoginContext& ctx, const ServerSelect& select)
         return;
     }
 
+    // Everything below is blocking SQLite work -- run it on the DB pool
+    // instead of the connection's reactor thread. select/accountId are
+    // copied by value so they stay valid once this handler returns;
+    // server.SendTo() is safe to call from any thread.
+    boost::asio::post(ctx.dbPool, [ctx, select, accountId = *accountId]() {
     const int64_t now = static_cast<int64_t>(std::time(nullptr));
 
     // Sweep characters whose deletion grace period has elapsed before listing,
@@ -60,7 +65,7 @@ void HandleGetCharacterList(const LoginContext& ctx, const ServerSelect& select)
             std::string(
                 "DELETE FROM equipment_slot WHERE character_id IN (SELECT id FROM character WHERE ") +
             kExpiredWhere + ")");
-        deleteExpiredEquipment->Bind(0, *accountId);
+        deleteExpiredEquipment->Bind(0, accountId);
         deleteExpiredEquipment->Bind(1, static_cast<int64_t>(select.server_id));
         deleteExpiredEquipment->Bind(2, now);
         deleteExpiredEquipment->Step();
@@ -69,14 +74,14 @@ void HandleGetCharacterList(const LoginContext& ctx, const ServerSelect& select)
             std::string(
                 "DELETE FROM character_position WHERE character_id IN (SELECT id FROM character WHERE ") +
             kExpiredWhere + ")");
-        deleteExpiredPositions->Bind(0, *accountId);
+        deleteExpiredPositions->Bind(0, accountId);
         deleteExpiredPositions->Bind(1, static_cast<int64_t>(select.server_id));
         deleteExpiredPositions->Bind(2, now);
         deleteExpiredPositions->Step();
 
         auto deleteExpiredCharacters =
             ctx.db.Prepare(std::string("DELETE FROM character WHERE ") + kExpiredWhere);
-        deleteExpiredCharacters->Bind(0, *accountId);
+        deleteExpiredCharacters->Bind(0, accountId);
         deleteExpiredCharacters->Bind(1, static_cast<int64_t>(select.server_id));
         deleteExpiredCharacters->Bind(2, now);
         deleteExpiredCharacters->Step();
@@ -89,7 +94,7 @@ void HandleGetCharacterList(const LoginContext& ctx, const ServerSelect& select)
     auto findCharacters = ctx.db.Prepare(
         "SELECT id, name, slot, level, job_id, gender, hairstyle_id, face_id, scheduled_deletion_at "
         "FROM character WHERE account_id = ? AND server_id = ? ORDER BY slot");
-    findCharacters->Bind(0, *accountId);
+    findCharacters->Bind(0, accountId);
     findCharacters->Bind(1, static_cast<int64_t>(select.server_id));
 
     while (findCharacters->Step())
@@ -185,11 +190,12 @@ void HandleGetCharacterList(const LoginContext& ctx, const ServerSelect& select)
     auto response = responsePacket.Serialize(ctx.key);
 
     ctx.server.SendTo(ctx.clientSocket, response);
+    });
 }
 
 void HandleDeleteCharacter(const LoginContext& ctx, const GenericCharacterPayload& request)
 {
-    auto sendFail = [&]
+    auto sendFail = [ctx, request]
     {
         PayloadWriter failWriter;
         GenericCharacterPayload failResponse{.server_id = request.server_id,
@@ -211,9 +217,12 @@ void HandleDeleteCharacter(const LoginContext& ctx, const GenericCharacterPayloa
         return;
     }
 
+    // Everything below is blocking SQLite work -- run it on the DB pool
+    // instead of the connection's reactor thread.
+    boost::asio::post(ctx.dbPool, [ctx, request, accountId = *accountId, sendFail]() {
     auto findCharacter =
         ctx.db.Prepare("SELECT id FROM character WHERE account_id = ? AND server_id = ? AND name = ?");
-    findCharacter->Bind(0, *accountId);
+    findCharacter->Bind(0, accountId);
     findCharacter->Bind(1, static_cast<int64_t>(request.server_id));
     findCharacter->Bind(2, request.char_name);
 
@@ -243,11 +252,12 @@ void HandleDeleteCharacter(const LoginContext& ctx, const GenericCharacterPayloa
     auto responsePayload = responsePacket.Serialize(ctx.key);
 
     ctx.server.SendTo(ctx.clientSocket, responsePayload);
+    });
 }
 
 void HandleCancelDeleteCharacter(const LoginContext& ctx, const GenericCharacterPayload& request)
 {
-    auto sendFail = [&]
+    auto sendFail = [ctx, request]
     {
         PayloadWriter failWriter;
         GenericCharacterPayload failResponse{.server_id = request.server_id,
@@ -269,9 +279,12 @@ void HandleCancelDeleteCharacter(const LoginContext& ctx, const GenericCharacter
         return;
     }
 
+    // Everything below is blocking SQLite work -- run it on the DB pool
+    // instead of the connection's reactor thread.
+    boost::asio::post(ctx.dbPool, [ctx, request, accountId = *accountId, sendFail]() {
     auto findCharacter =
         ctx.db.Prepare("SELECT id FROM character WHERE account_id = ? AND server_id = ? AND name = ?");
-    findCharacter->Bind(0, *accountId);
+    findCharacter->Bind(0, accountId);
     findCharacter->Bind(1, static_cast<int64_t>(request.server_id));
     findCharacter->Bind(2, request.char_name);
 
@@ -297,11 +310,12 @@ void HandleCancelDeleteCharacter(const LoginContext& ctx, const GenericCharacter
     auto responsePayload = responsePacket.Serialize(ctx.key);
 
     ctx.server.SendTo(ctx.clientSocket, responsePayload);
+    });
 }
 
 void HandleCreateCharacter(const LoginContext& ctx, const CreateCharacter& request)
 {
-    auto sendFail = [&]
+    auto sendFail = [ctx, request]
     {
         PayloadWriter failWriter;
         CreateCharacterFail{}.Serialize(failWriter);
@@ -329,6 +343,9 @@ void HandleCreateCharacter(const LoginContext& ctx, const CreateCharacter& reque
         return;
     }
 
+    // Everything below is blocking SQLite work -- run it on the DB pool
+    // instead of the connection's reactor thread.
+    boost::asio::post(ctx.dbPool, [ctx, request, accountId = *accountId, sendFail]() {
     auto findExisting = ctx.db.Prepare("SELECT 1 FROM character WHERE server_id = ? AND name = ?");
     findExisting->Bind(0, static_cast<int64_t>(request.server_id));
     findExisting->Bind(1, request.char_name);
@@ -354,7 +371,7 @@ void HandleCreateCharacter(const LoginContext& ctx, const CreateCharacter& reque
         "(account_id, server_id, slot, name, gender, hairstyle_id, face_id, job_id, level, "
         " stats_str, stats_int, stats_dex, stats_con, stats_men, stats_sen, money) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    insertCharacter->Bind(0, *accountId);
+    insertCharacter->Bind(0, accountId);
     insertCharacter->Bind(1, static_cast<int64_t>(request.server_id));
     insertCharacter->Bind(2, static_cast<int64_t>(request.slot));
     insertCharacter->Bind(3, request.char_name);
@@ -417,11 +434,12 @@ void HandleCreateCharacter(const LoginContext& ctx, const CreateCharacter& reque
     auto responsePayload = responsePacket.Serialize(ctx.key);
 
     ctx.server.SendTo(ctx.clientSocket, responsePayload);
+    });
 }
 
 void HandleUpdateCharacterLocation(const LoginContext& ctx, const SetCharacterMap& request)
 {
-    auto sendFail = [&]
+    auto sendFail = [ctx, request]
     {
         PayloadWriter failWriter;
         GenericCharacterPayload failResponse{.server_id = request.server_id,
@@ -443,9 +461,12 @@ void HandleUpdateCharacterLocation(const LoginContext& ctx, const SetCharacterMa
         return;
     }
 
+    // Everything below is blocking SQLite work -- run it on the DB pool
+    // instead of the connection's reactor thread.
+    boost::asio::post(ctx.dbPool, [ctx, request, accountId = *accountId, sendFail]() {
     auto findCharacter =
         ctx.db.Prepare("SELECT id FROM character WHERE account_id = ? AND server_id = ? AND name = ?");
-    findCharacter->Bind(0, *accountId);
+    findCharacter->Bind(0, accountId);
     findCharacter->Bind(1, static_cast<int64_t>(request.server_id));
     findCharacter->Bind(2, request.char_name);
 
@@ -478,4 +499,5 @@ void HandleUpdateCharacterLocation(const LoginContext& ctx, const SetCharacterMa
     auto responsePayload = responsePacket.Serialize(ctx.key);
 
     ctx.server.SendTo(ctx.clientSocket, responsePayload);
+    });
 }

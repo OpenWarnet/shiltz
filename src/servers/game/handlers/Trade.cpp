@@ -4,7 +4,7 @@
 #include "GamePacket.h"
 #include "GameSessionStore.h"
 #include "common/PayloadWriter.h"
-#include "common/TCPServer.h"
+#include "common/Server.h"
 #include "protocol/client/ItemTradeBuy.h"
 #include "protocol/client/ItemTradeSell.h"
 #include "protocol/server/InventoryItemList.h"
@@ -28,7 +28,7 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
               << request.item_buy_index << ", amount " << request.amount << ", slot_id " << request.slot_id
               << ", creature_instance_id " << request.creature_instance_id << "\n";
 
-    auto sendFail = [&]
+    auto sendFail = [ctx, request]
     {
         PayloadWriter failWriter;
         TradeBuyFail{}.Serialize(failWriter);
@@ -55,6 +55,11 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
         return;
     }
 
+    // Everything below is blocking SQLite work -- run it on the DB pool
+    // instead of the connection's reactor thread. request/session/sendFail
+    // are copied by value so they stay valid once this handler returns;
+    // server.SendTo() is safe to call from any thread.
+    boost::asio::post(ctx.dbPool, [ctx, request, session, sendFail]() mutable {
     const SellerRecord* seller = ctx.data.sellers.Find(request.shop_id);
     if (!seller)
     {
@@ -168,6 +173,7 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
     auto payload = packet.Serialize(ctx.key);
 
     ctx.server.SendTo(ctx.clientSocket, payload);
+    });
 }
 
 void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
@@ -175,7 +181,7 @@ void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
     std::cout << "Item trade sell: slot_id " << request.slot_id << ", count " << request.count
               << ", instance_id " << request.instance_id << "\n";
 
-    auto sendFail = [&]
+    auto sendFail = [ctx, request]
     {
         PayloadWriter failWriter;
         TradeSellFail{}.Serialize(failWriter);
@@ -202,6 +208,11 @@ void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
         return;
     }
 
+    // Everything below is blocking SQLite work -- run it on the DB pool
+    // instead of the connection's reactor thread. request/session/sendFail
+    // are copied by value so they stay valid once this handler returns;
+    // server.SendTo() is safe to call from any thread.
+    boost::asio::post(ctx.dbPool, [ctx, request, session, sendFail]() mutable {
     const int64_t characterId = session->characterId;
     // Same wire-relative -> bag-relative conversion as HandleItemPickup/HandleItemDrop.
     const auto slotIndex = static_cast<std::uint32_t>(static_cast<int64_t>(request.slot_id) -
@@ -300,4 +311,5 @@ void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
     auto payload = packet.Serialize(ctx.key);
 
     ctx.server.SendTo(ctx.clientSocket, payload);
+    });
 }

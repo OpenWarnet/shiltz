@@ -4,7 +4,7 @@
 #include "GamePacket.h"
 #include "GameSessionStore.h"
 #include "common/PayloadWriter.h"
-#include "common/TCPServer.h"
+#include "common/Server.h"
 #include "enums/ItemType.h"
 #include "enums/QuestFailReason.h"
 #include "parser/QuestScr.h"
@@ -431,16 +431,26 @@ void HandleQuestResult(const GameContext& ctx, const QuestResult& request)
         return;
     }
 
-    QuestSucc response = ApplyConsequences(ctx, *session, record->consequences);
-    ctx.sessions.Set(ctx.clientSocket, *session);
+    // ApplyConsequences does blocking SQLite work -- run it on the DB pool
+    // instead of the connection's reactor thread. session is copied by
+    // value (ApplyConsequences mutates it in place) and record is a stable
+    // pointer into ctx.data (read-only, safe from any thread) so both stay
+    // valid once this handler returns; server.SendTo() (used directly here
+    // and by SendServerChange inside ApplyConsequences/ApplyWarp) is safe
+    // to call from any thread.
+    GameSession sessionCopy = *session;
+    boost::asio::post(ctx.dbPool, [ctx, sessionCopy, record]() mutable {
+        QuestSucc response = ApplyConsequences(ctx, sessionCopy, record->consequences);
+        ctx.sessions.Set(ctx.clientSocket, sessionCopy);
 
-    std::cout << "Sending GC_QUEST_SUCC: " << response.items.size() << " item(s), money "
-              << response.money << ", fame " << response.fame << ", exp " << response.exp
-              << ", ap " << response.ap << ", hp " << response.hp << "\n";
+        std::cout << "Sending GC_QUEST_SUCC: " << response.items.size() << " item(s), money "
+                  << response.money << ", fame " << response.fame << ", exp " << response.exp
+                  << ", ap " << response.ap << ", hp " << response.hp << "\n";
 
-    PayloadWriter writer;
-    response.Serialize(writer);
+        PayloadWriter writer;
+        response.Serialize(writer);
 
-    GamePacket packet(GameOpcode::GC_QUEST_SUCC, writer.Data());
-    ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+        GamePacket packet(GameOpcode::GC_QUEST_SUCC, writer.Data());
+        ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+    });
 }

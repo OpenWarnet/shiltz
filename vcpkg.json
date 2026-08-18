@@ -2,6 +2,7 @@
   "builtin-baseline": "c1d80d9cb071c3f4a98c67c1196b137cc5b72918",
   "dependencies": [
     "cryptopp",
-    "sqlite3"
+    "sqlite3",
+    "boost-asio"
   ]
 }

@@ -50,8 +50,8 @@ add_executable (
 	"${CMAKE_SOURCE_DIR}/src/common/Dispatcher.h"
 	"${CMAKE_SOURCE_DIR}/src/common/PayloadWriter.h"
 	"${CMAKE_SOURCE_DIR}/src/common/PayloadReader.h"
-	"${CMAKE_SOURCE_DIR}/src/common/TCPServer.h"
-	"${CMAKE_SOURCE_DIR}/src/common/TCPServer.cpp"
+	"${CMAKE_SOURCE_DIR}/src/common/Server.h"
+	"${CMAKE_SOURCE_DIR}/src/common/Server.cpp"
 	"${CMAKE_SOURCE_DIR}/src/common/HexDump.h"
 	"${CMAKE_SOURCE_DIR}/src/common/PacketCapture.h"
 	"${CMAKE_SOURCE_DIR}/src/common/PacketCapture.cpp"
@@ -69,11 +69,15 @@ target_include_directories(login PRIVATE
     ${CMAKE_SOURCE_DIR}/src
 )
 
-target_compile_definitions(login PRIVATE SHILTZ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+target_compile_definitions(login PRIVATE
+	SHILTZ_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+	WIN32_LEAN_AND_MEAN
+	_WIN32_WINNT=0x0601)
 
 find_package(cryptopp CONFIG REQUIRED)
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
-target_link_libraries(login PRIVATE cryptopp::cryptopp unofficial::sqlite3::sqlite3)
+find_package(boost_asio CONFIG REQUIRED)
+target_link_libraries(login PRIVATE cryptopp::cryptopp unofficial::sqlite3::sqlite3 Boost::asio ws2_32 mswsock)
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET login PROPERTY CXX_STANDARD 20)

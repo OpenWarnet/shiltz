@@ -4,7 +4,7 @@
 #include "LoginPacket.h"
 #include "LoginSessionStore.h"
 #include "common/PayloadWriter.h"
-#include "common/TCPServer.h"
+#include "common/Server.h"
 #include "protocol/client/GameConnect.h"
 #include "protocol/server/GameConnectSuccess.h"
 

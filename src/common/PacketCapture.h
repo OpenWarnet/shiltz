@@ -12,8 +12,11 @@
 // whichever opcode needs a handler built next.
 //
 // Init() must be called once at process start (see login.cpp/game.cpp).
-// Log* calls are safe from any thread -- each connection is serviced on its
-// own thread (see TCPServer::ServiceClient).
+// Log* calls are safe from any thread -- dispatch can run on any thread in
+// Server's reactor pool. They only enqueue a copy of the entry and return
+// immediately; the actual (locked, flushed) file write happens on a
+// dedicated background thread, so a slow disk never stalls whichever
+// thread is dispatching a packet.
 namespace PacketCapture
 {
     enum class Direction

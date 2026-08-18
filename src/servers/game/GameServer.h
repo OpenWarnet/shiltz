@@ -2,17 +2,16 @@
 
 #include "GameDispatcher.h"
 #include "GameSessionStore.h"
-#include "common/TCPServer.h"
+#include "common/Server.h"
 #include "storage/IDatabase.h"
 #include "tables/GameData.h"
 #include "world/World.h"
 
-#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <span>
-#include <thread>
 
-class GameServer : public TCPServer
+class GameServer : public Server
 {
 public:
     GameServer(uint16_t port, std::span<const uint8_t> key, IDatabase& db);
@@ -23,12 +22,13 @@ protected:
     void OnClientDisconnected(SOCKET clientSocket) override;
 
 private:
-    // Runs on m_tickThread: sleeps in fixed 100ms slices and calls
-    // m_world.Tick() with the actual elapsed time each time it wakes, until
-    // m_ticking is cleared (see the destructor). Independent of the
-    // per-connection threads TCPServer spawns -- the simulation advances on
-    // its own schedule regardless of client traffic.
-    void RunTickLoop();
+    // Re-arms m_tickTimer and, on the world strand, advances m_world.Tick()
+    // by the actual elapsed time -- replaces the old dedicated tick thread
+    // with a steady_timer posted on the io_context, serialized against
+    // itself (never overlaps) by m_worldStrand. Independent of any
+    // particular connection's strand -- the simulation advances on its own
+    // schedule regardless of client traffic.
+    void ScheduleTick();
 
     GameDispatcher m_dispatcher;
     std::span<const uint8_t> m_key;
@@ -37,6 +37,14 @@ private:
     GameData m_data;
     World m_world;
 
-    std::atomic<bool> m_ticking{false};
-    std::thread m_tickThread;
+    Server::Strand m_worldStrand;
+    boost::asio::steady_timer m_tickTimer;
+    std::chrono::steady_clock::time_point m_lastTick;
+    int m_ticksSinceHeartbeat = 0;
+
+    // Dedicated worker for blocking IDatabase (SQLite) calls a handler
+    // wants off the reactor pool's threads -- see GameContext::dbPool. One
+    // thread is enough: both servers only ever hold a single sqlite3*
+    // connection each, so a bigger pool wouldn't add real concurrency.
+    boost::asio::thread_pool m_dbPool;
 };

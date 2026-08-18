@@ -4,7 +4,7 @@
 #include "GamePacket.h"
 #include "GameSessionStore.h"
 #include "common/PayloadWriter.h"
-#include "common/TCPServer.h"
+#include "common/Server.h"
 #include "parser/LevelScr.h"
 #include "protocol/client/LevelUpCheck.h"
 #include "protocol/server/LevelUpFail.h"
@@ -50,40 +50,9 @@ void HandleLevelUpCheck(const GameContext& ctx, const LevelUpCheck& request)
         leveledUp = true;
     }
 
-    PayloadWriter writer;
-
-    if (leveledUp)
+    if (!leveledUp)
     {
-        session->player.level = level;
-        session->player.exp = exp;
-        session->player.stats.raw.unallocated_stat_points +=
-            static_cast<std::uint32_t>(statPointsGained);
-        session->player.skills.unallocated_sp += static_cast<std::uint32_t>(spGained);
-        ctx.sessions.Set(ctx.clientSocket, *session);
-
-        session->player.SaveLevel(ctx.db);
-        session->player.SaveRawStats(ctx.db);
-        session->player.SaveSkillPoints(ctx.db);
-
-        LevelUpSucc response{
-            .level = level,
-            .unallocated_stat_points =
-                static_cast<std::int32_t>(session->player.stats.raw.unallocated_stat_points),
-            .unallocated_sp = static_cast<std::int32_t>(session->player.skills.unallocated_sp),
-            .unallocated_ep = static_cast<std::int32_t>(session->player.skills.unallocated_ep),
-            .current_exp = exp,
-        };
-        std::cout << "Sending GC_LEVEL_UP_SUCC: level " << response.level
-                  << ", unallocated_stat_points " << response.unallocated_stat_points
-                  << ", unallocated_sp " << response.unallocated_sp << ", current_exp "
-                  << response.current_exp << "\n";
-        response.Serialize(writer);
-
-        GamePacket packet(GameOpcode::GC_LEVEL_UP_SUCC, writer.Data());
-        ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
-    }
-    else
-    {
+        PayloadWriter writer;
         LevelUpFail response{
             .level = level,
             .exp = static_cast<std::int32_t>(exp),
@@ -94,5 +63,43 @@ void HandleLevelUpCheck(const GameContext& ctx, const LevelUpCheck& request)
 
         GamePacket packet(GameOpcode::GC_LEVEL_UP_FAIL, writer.Data());
         ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+        return;
     }
+
+    session->player.level = level;
+    session->player.exp = exp;
+    session->player.stats.raw.unallocated_stat_points += static_cast<std::uint32_t>(statPointsGained);
+    session->player.skills.unallocated_sp += static_cast<std::uint32_t>(spGained);
+    ctx.sessions.Set(ctx.clientSocket, *session);
+
+    // SaveLevel/SaveRawStats/SaveSkillPoints are blocking SQLite calls --
+    // run them on the DB pool instead of the connection's reactor thread.
+    // ctx and a copy of the (already-updated) player are captured by value
+    // so both stay valid once this handler returns; server.SendTo() is
+    // safe to call from any thread -- it queues onto the connection's own
+    // strand internally -- so the reply is sent straight from the pool
+    // thread once the writes land.
+    Player player = session->player;
+    boost::asio::post(ctx.dbPool, [ctx, player, level, exp]() {
+        player.SaveLevel(ctx.db);
+        player.SaveRawStats(ctx.db);
+        player.SaveSkillPoints(ctx.db);
+
+        PayloadWriter writer;
+        LevelUpSucc response{
+            .level = level,
+            .unallocated_stat_points = static_cast<std::int32_t>(player.stats.raw.unallocated_stat_points),
+            .unallocated_sp = static_cast<std::int32_t>(player.skills.unallocated_sp),
+            .unallocated_ep = static_cast<std::int32_t>(player.skills.unallocated_ep),
+            .current_exp = exp,
+        };
+        std::cout << "Sending GC_LEVEL_UP_SUCC: level " << response.level
+                  << ", unallocated_stat_points " << response.unallocated_stat_points
+                  << ", unallocated_sp " << response.unallocated_sp << ", current_exp "
+                  << response.current_exp << "\n";
+        response.Serialize(writer);
+
+        GamePacket packet(GameOpcode::GC_LEVEL_UP_SUCC, writer.Data());
+        ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+    });
 }

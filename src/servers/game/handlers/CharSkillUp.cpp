@@ -4,7 +4,7 @@
 #include "GamePacket.h"
 #include "GameSessionStore.h"
 #include "common/PayloadWriter.h"
-#include "common/TCPServer.h"
+#include "common/Server.h"
 #include "enums/SkillUpFailReason.h"
 #include "parser/SkillScr.h"
 #include "protocol/client/CharSkillUpEx.h"
@@ -132,23 +132,41 @@ void HandleCharSkillUpEx(const GameContext& ctx, const CharSkillUpEx& request)
     std::cout << "Char skill up ex: " << request.skills.size() << " skill(s), valid "
               << validation.ok << ", total cost " << validation.totalCost << "\n";
 
-    PayloadWriter writer;
-
-    if (validation.ok)
+    if (!validation.ok)
     {
-        PlayerSkills& skills = session->player.skills;
+        PayloadWriter writer;
+        CharSkillUpExFail response{.reason = static_cast<std::int32_t>(validation.failReason)};
+        std::cout << "Sending GC_CHAR_SKILL_UP_EX_FAIL: reason " << response.reason << "\n";
+        response.Serialize(writer);
 
-        for (const auto& entry : request.skills)
-            ApplySkillLevelUp(skills, entry);
+        GamePacket packet(GameOpcode::GC_CHAR_SKILL_UP_EX_FAIL, writer.Data());
+        ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+        return;
+    }
 
-        skills.unallocated_sp -= static_cast<std::uint32_t>(validation.totalCost);
-        ctx.sessions.Set(ctx.clientSocket, *session);
-        session->player.SaveSkillPoints(ctx.db);
-        session->player.SaveSkillLevels(ctx.db);
+    PlayerSkills& skills = session->player.skills;
 
+    for (const auto& entry : request.skills)
+        ApplySkillLevelUp(skills, entry);
+
+    skills.unallocated_sp -= static_cast<std::uint32_t>(validation.totalCost);
+    ctx.sessions.Set(ctx.clientSocket, *session);
+
+    // SaveSkillPoints/SaveSkillLevels are blocking SQLite calls -- run them
+    // on the DB pool instead of the connection's reactor thread. player is
+    // copied by value so it stays valid once this handler returns;
+    // server.SendTo() is safe to call from any thread.
+    Player player = session->player;
+    const std::int32_t remainingSp = static_cast<std::int32_t>(skills.unallocated_sp);
+    const std::int32_t remainingEp = static_cast<std::int32_t>(skills.unallocated_ep);
+    boost::asio::post(ctx.dbPool, [ctx, player, remainingSp, remainingEp]() {
+        player.SaveSkillPoints(ctx.db);
+        player.SaveSkillLevels(ctx.db);
+
+        PayloadWriter writer;
         CharSkillUpExSucc response{
-            .remaining_sp = static_cast<std::int32_t>(skills.unallocated_sp),
-            .remaining_ep = static_cast<std::int32_t>(skills.unallocated_ep),
+            .remaining_sp = remainingSp,
+            .remaining_ep = remainingEp,
         };
         std::cout << "Sending GC_CHAR_SKILL_UP_EX_SUCC: remaining_sp " << response.remaining_sp
                   << ", remaining_ep " << response.remaining_ep << "\n";
@@ -156,14 +174,5 @@ void HandleCharSkillUpEx(const GameContext& ctx, const CharSkillUpEx& request)
 
         GamePacket packet(GameOpcode::GC_CHAR_SKILL_UP_EX_SUCC, writer.Data());
         ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
-    }
-    else
-    {
-        CharSkillUpExFail response{.reason = static_cast<std::int32_t>(validation.failReason)};
-        std::cout << "Sending GC_CHAR_SKILL_UP_EX_FAIL: reason " << response.reason << "\n";
-        response.Serialize(writer);
-
-        GamePacket packet(GameOpcode::GC_CHAR_SKILL_UP_EX_FAIL, writer.Data());
-        ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
-    }
+    });
 }

@@ -4,7 +4,7 @@
 #include "GamePacket.h"
 #include "GameSessionStore.h"
 #include "common/PayloadWriter.h"
-#include "common/TCPServer.h"
+#include "common/Server.h"
 #include "protocol/client/ItemDelete.h"
 #include "protocol/client/ItemDrop.h"
 #include "protocol/client/ItemMove.h"
@@ -38,6 +38,12 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
         return;
     }
 
+    // Everything below touches World/Map state and/or blocking SQLite
+    // calls -- run it on the DB pool instead of the connection's reactor
+    // thread. Map access is safe from any thread (its own mutexes), and
+    // GameSessionStore already has its own mutex too; request/session are
+    // copied by value so they stay valid once this handler returns.
+    boost::asio::post(ctx.dbPool, [ctx, request, session]() mutable {
     const int64_t characterId = session->characterId;
     // Client-side slot_id is wire-relative (bag slots start at
     // InventoryItemList::kBagStartSlot, per GC_INVENTORY_ITEM_LIST's
@@ -143,6 +149,7 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
     auto removePayload = removePacket.Serialize(ctx.key);
 
     ctx.server.SendTo(ctx.clientSocket, removePayload);
+    });
 }
 
 void HandleItemMove(const GameContext& ctx, const ItemMove& request)
@@ -150,7 +157,7 @@ void HandleItemMove(const GameContext& ctx, const ItemMove& request)
     std::cout << "Item move: source_slot_id " << request.source_slot_id << ", dest_slot_id "
               << request.dest_slot_id << "\n";
 
-    auto sendFail = [&]
+    auto sendFail = [ctx, request]
     {
         PayloadWriter failWriter;
         ItemMoveFail{.source_slot_id = request.source_slot_id}.Serialize(failWriter);
@@ -170,6 +177,11 @@ void HandleItemMove(const GameContext& ctx, const ItemMove& request)
         return;
     }
 
+    // Everything below is blocking SQLite work -- run it on the DB pool
+    // instead of the connection's reactor thread. request/session/sendFail
+    // are copied by value so they stay valid once this handler returns;
+    // server.SendTo() is safe to call from any thread.
+    boost::asio::post(ctx.dbPool, [ctx, request, session, sendFail]() mutable {
     const int64_t characterId = session->characterId;
 
     // The two writes below must be all-or-nothing, or a crash between them
@@ -242,6 +254,7 @@ void HandleItemMove(const GameContext& ctx, const ItemMove& request)
     auto responsePayload = responsePacket.Serialize(ctx.key);
 
     ctx.server.SendTo(ctx.clientSocket, responsePayload);
+    });
 }
 
 void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
@@ -261,6 +274,12 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
         return;
     }
 
+    // Everything below touches World/Map state and/or blocking SQLite
+    // calls -- run it on the DB pool instead of the connection's reactor
+    // thread. request/session are copied by value so they stay valid once
+    // this handler returns; server.SendTo() is safe to call from any
+    // thread.
+    boost::asio::post(ctx.dbPool, [ctx, request, session]() mutable {
     Map* map = ctx.world.GetMap(session->player.map_id);
     if (!map)
     {
@@ -371,6 +390,7 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
     auto succPayload = succPacket.Serialize(ctx.key);
 
     ctx.server.SendTo(ctx.clientSocket, succPayload);
+    });
 }
 
 void HandleItemDelete(const GameContext& ctx, const ItemDelete& request)
@@ -384,6 +404,11 @@ void HandleItemDelete(const GameContext& ctx, const ItemDelete& request)
         return;
     }
 
+    // Everything below is blocking SQLite work -- run it on the DB pool
+    // instead of the connection's reactor thread. request/session are
+    // copied by value so they stay valid once this handler returns;
+    // server.SendTo() is safe to call from any thread.
+    boost::asio::post(ctx.dbPool, [ctx, request, session]() mutable {
     const int64_t characterId = session->characterId;
 
     // slot_id is the same wire-relative slot convention as ItemMove's
@@ -417,4 +442,5 @@ void HandleItemDelete(const GameContext& ctx, const ItemDelete& request)
     auto succPayload = succPacket.Serialize(ctx.key);
 
     ctx.server.SendTo(ctx.clientSocket, succPayload);
+    });
 }

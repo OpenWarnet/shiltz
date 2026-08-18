@@ -4,7 +4,7 @@
 #include "GamePacket.h"
 #include "GameSessionStore.h"
 #include "common/PayloadWriter.h"
-#include "common/TCPServer.h"
+#include "common/Server.h"
 #include "protocol/client/GameEnter.h"
 #include "protocol/server/CharExitSucc.h"
 #include "protocol/server/CharacterDataLoad.h"
@@ -27,7 +27,7 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
     std::cout << "Username: " << request.username << "\n";
     // Password intentionally not logged.
 
-    auto sendFail = [&]
+    auto sendFail = [ctx]
     {
         PayloadWriter failWriter;
         EnterFail{}.Serialize(failWriter);
@@ -39,6 +39,15 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
         ctx.server.SendTo(ctx.clientSocket, failPayload);
     };
 
+    // Everything below is blocking SQLite work (three lookups plus
+    // Player::LoadFromDB) -- run it on the DB pool instead of the
+    // connection's reactor thread. request is copied by value so it stays
+    // valid once this handler returns; server.SendTo() is safe to call
+    // from any thread. The World/Map reads further down are safe to run
+    // here too -- Map's state is protected by its own mutexes (or, for the
+    // creature grid, safe because it's read-only after load), not confined
+    // to any particular thread.
+    boost::asio::post(ctx.dbPool, [ctx, request, sendFail]() {
     auto findSession = ctx.db.Prepare("SELECT account_id FROM session WHERE id = ?");
     findSession->Bind(0, static_cast<int64_t>(request.session_id));
 
@@ -166,6 +175,7 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
     auto crtLoadPayload = crtLoadPacket.Serialize(ctx.key);
 
     ctx.server.SendTo(ctx.clientSocket, crtLoadPayload);
+    });
 }
 
 void HandleCgPlayStart(const GameContext&)
@@ -183,24 +193,32 @@ void HandleCgExit(const GameContext& ctx)
     // before the session (and with it the only in-memory copy of where the
     // character actually is) goes away.
     auto session = ctx.sessions.Get(ctx.clientSocket);
-    if (session)
-    {
-        session->player.SaveToDB(ctx.db);
-    }
 
-    // Release the session/character claim immediately on exit-to-character-
-    // select, rather than waiting for the socket to fully disconnect.
-    ctx.sessions.Remove(ctx.clientSocket);
+    // SaveToDB is a blocking SQLite call -- run it, and the claim release
+    // that must only happen once it's durable (see GameSessionStore.h on
+    // why the claim guards against two connections racing on the same DB
+    // rows), on the DB pool instead of the connection's reactor thread.
+    // server.SendTo() is safe to call from any thread.
+    boost::asio::post(ctx.dbPool, [ctx, session]() {
+        if (session)
+        {
+            session->player.SaveToDB(ctx.db);
+        }
 
-    PayloadWriter exitWriter;
-    CharExitSucc exitResponse{
-        .unused = 0,
-    };
-    exitResponse.Serialize(exitWriter);
-    auto exitData = exitWriter.Data();
+        // Release the session/character claim immediately on exit-to-character-
+        // select, rather than waiting for the socket to fully disconnect.
+        ctx.sessions.Remove(ctx.clientSocket);
 
-    GamePacket exitPacket(GameOpcode::GC_CHAR_EXIT_SUCC, exitData);
-    auto exitPayload = exitPacket.Serialize(ctx.key);
+        PayloadWriter exitWriter;
+        CharExitSucc exitResponse{
+            .unused = 0,
+        };
+        exitResponse.Serialize(exitWriter);
+        auto exitData = exitWriter.Data();
 
-    ctx.server.SendTo(ctx.clientSocket, exitPayload);
+        GamePacket exitPacket(GameOpcode::GC_CHAR_EXIT_SUCC, exitData);
+        auto exitPayload = exitPacket.Serialize(ctx.key);
+
+        ctx.server.SendTo(ctx.clientSocket, exitPayload);
+    });
 }

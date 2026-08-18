@@ -4,7 +4,7 @@
 #include "GamePacket.h"
 #include "GameSessionStore.h"
 #include "common/PayloadWriter.h"
-#include "common/TCPServer.h"
+#include "common/Server.h"
 #include "enums/StatId.h"
 #include "protocol/client/CharStatusUp.h"
 #include "protocol/server/CharStatusUpFail.h"
@@ -59,32 +59,9 @@ void HandleCharStatusUp(const GameContext& ctx, const CharStatusUp& request)
         rawStat && request.amount > 0 &&
         raw.unallocated_stat_points >= static_cast<std::uint32_t>(request.amount);
 
-    PayloadWriter writer;
-
-    if (canAfford)
+    if (!canAfford)
     {
-        *rawStat += static_cast<std::uint32_t>(request.amount);
-        raw.unallocated_stat_points -= static_cast<std::uint32_t>(request.amount);
-        RecalculateDerivedStats(session->player, ctx.data.items, ctx.data.setOptions, ctx.data.statusRates);
-        ctx.sessions.Set(ctx.clientSocket, *session);
-        session->player.SaveRawStats(ctx.db);
-
-        CharStatusUpSucc response{
-            .stat_id = request.stat_id,
-            .current_stat_point = static_cast<std::int32_t>(*rawStat),
-            .unallocated_point_remaining = static_cast<std::int32_t>(raw.unallocated_stat_points),
-        };
-        std::cout << "Sending GC_CHAR_STATUS_UP_SUCC: stat_id " << response.stat_id
-                  << ", current_stat_point " << response.current_stat_point
-                  << ", unallocated_point_remaining " << response.unallocated_point_remaining
-                  << "\n";
-        response.Serialize(writer);
-
-        GamePacket packet(GameOpcode::GC_CHAR_STATUS_UP_SUCC, writer.Data());
-        ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
-    }
-    else
-    {
+        PayloadWriter writer;
         CharStatusUpFail response{
             .unallocated_point_remaining = static_cast<std::int32_t>(raw.unallocated_stat_points),
         };
@@ -94,5 +71,38 @@ void HandleCharStatusUp(const GameContext& ctx, const CharStatusUp& request)
 
         GamePacket packet(GameOpcode::GC_CHAR_STATUS_UP_FAIL, writer.Data());
         ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+        return;
     }
+
+    *rawStat += static_cast<std::uint32_t>(request.amount);
+    raw.unallocated_stat_points -= static_cast<std::uint32_t>(request.amount);
+    RecalculateDerivedStats(session->player, ctx.data.items, ctx.data.setOptions, ctx.data.statusRates);
+    ctx.sessions.Set(ctx.clientSocket, *session);
+
+    // SaveRawStats is a blocking SQLite call -- run it on the DB pool
+    // instead of the connection's reactor thread. player is copied by
+    // value so it stays valid once this handler returns; server.SendTo()
+    // is safe to call from any thread.
+    Player player = session->player;
+    const std::int32_t statId = request.stat_id;
+    const std::int32_t currentStatPoint = static_cast<std::int32_t>(*rawStat);
+    const std::int32_t remaining = static_cast<std::int32_t>(raw.unallocated_stat_points);
+    boost::asio::post(ctx.dbPool, [ctx, player, statId, currentStatPoint, remaining]() {
+        player.SaveRawStats(ctx.db);
+
+        PayloadWriter writer;
+        CharStatusUpSucc response{
+            .stat_id = statId,
+            .current_stat_point = currentStatPoint,
+            .unallocated_point_remaining = remaining,
+        };
+        std::cout << "Sending GC_CHAR_STATUS_UP_SUCC: stat_id " << response.stat_id
+                  << ", current_stat_point " << response.current_stat_point
+                  << ", unallocated_point_remaining " << response.unallocated_point_remaining
+                  << "\n";
+        response.Serialize(writer);
+
+        GamePacket packet(GameOpcode::GC_CHAR_STATUS_UP_SUCC, writer.Data());
+        ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+    });
 }
