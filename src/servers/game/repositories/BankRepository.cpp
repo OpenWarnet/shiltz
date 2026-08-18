@@ -37,12 +37,29 @@ Account CreateAccount(IDatabase& db, std::int64_t accountId, const std::string& 
     };
 }
 
-void SaveMoney(IDatabase& db, std::int64_t bankAccountId, std::int64_t money)
+std::optional<std::int64_t> TrySpendMoney(IDatabase& db, std::int64_t bankAccountId,
+                                           std::int64_t amount)
 {
-    auto stmt = db.Prepare("UPDATE bank_accounts SET money = ? WHERE id = ?");
-    stmt->Bind(0, money);
+    auto stmt = db.Prepare(
+        "UPDATE bank_accounts SET money = money - ? WHERE id = ? AND money >= ? RETURNING money");
+    stmt->Bind(0, amount);
+    stmt->Bind(1, bankAccountId);
+    stmt->Bind(2, amount);
+
+    if (!stmt->Step())
+        return std::nullopt;
+
+    return std::get<int64_t>(stmt->Column(0));
+}
+
+std::int64_t AddMoney(IDatabase& db, std::int64_t bankAccountId, std::int64_t amount)
+{
+    auto stmt =
+        db.Prepare("UPDATE bank_accounts SET money = money + ? WHERE id = ? RETURNING money");
+    stmt->Bind(0, amount);
     stmt->Bind(1, bankAccountId);
     stmt->Step();
+    return std::get<int64_t>(stmt->Column(0));
 }
 
 void SavePassword(IDatabase& db, std::int64_t bankAccountId, const std::string& password)
@@ -89,49 +106,82 @@ std::vector<SlotItem> LoadAllItems(IDatabase& db, std::int64_t bankAccountId)
     return result;
 }
 
-void SaveItemSlot(IDatabase& db, std::int64_t bankAccountId, std::uint32_t slotId, const Item& item)
+namespace
 {
-    auto findExisting =
-        db.Prepare("SELECT id FROM bank_items WHERE bank_accounts_id = ? AND slot_id = ?");
-    findExisting->Bind(0, bankAccountId);
-    findExisting->Bind(1, static_cast<int64_t>(slotId));
-
-    const SqlValue quantityValue =
-        item.has_refine_level ? SqlValue{} : SqlValue{static_cast<int64_t>(item.quantity)};
-    const SqlValue refineLevelValue =
-        item.has_refine_level ? SqlValue{static_cast<int64_t>(item.refine_level)} : SqlValue{};
-
-    if (findExisting->Step())
-    {
-        const int64_t rowId = std::get<int64_t>(findExisting->Column(0));
-
-        auto update = db.Prepare("UPDATE bank_items SET item_id = ?, quantity = ?, refine_level = ?, "
-                                  "option_bits = ? WHERE id = ?");
-        update->Bind(0, static_cast<int64_t>(item.item_id));
-        update->Bind(1, quantityValue);
-        update->Bind(2, refineLevelValue);
-        update->Bind(3, static_cast<int64_t>(item.option_bits));
-        update->Bind(4, rowId);
-        update->Step();
-        return;
-    }
-
-    auto insert = db.Prepare("INSERT INTO bank_items (bank_accounts_id, slot_id, item_id, quantity, "
-                              "refine_level, option_bits) VALUES (?, ?, ?, ?, ?, ?)");
-    insert->Bind(0, bankAccountId);
-    insert->Bind(1, static_cast<int64_t>(slotId));
-    insert->Bind(2, static_cast<int64_t>(item.item_id));
-    insert->Bind(3, quantityValue);
-    insert->Bind(4, refineLevelValue);
-    insert->Bind(5, static_cast<int64_t>(item.option_bits));
-    insert->Step();
+// Same convention as ItemRepository.cpp's Expected* helpers -- NULL for an
+// empty expected slot.
+SqlValue ExpectedItemId(const std::optional<Item>& expected)
+{
+    return expected ? SqlValue{static_cast<int64_t>(expected->item_id)} : SqlValue{};
 }
 
-void ClearItemSlot(IDatabase& db, std::int64_t bankAccountId, std::uint32_t slotId)
+SqlValue ExpectedQuantity(const std::optional<Item>& expected)
 {
-    auto stmt = db.Prepare("DELETE FROM bank_items WHERE bank_accounts_id = ? AND slot_id = ?");
+    if (!expected || expected->has_refine_level)
+        return SqlValue{};
+    return SqlValue{static_cast<int64_t>(expected->quantity)};
+}
+
+SqlValue ExpectedRefineLevel(const std::optional<Item>& expected)
+{
+    if (!expected || !expected->has_refine_level)
+        return SqlValue{};
+    return SqlValue{static_cast<int64_t>(expected->refine_level)};
+}
+
+// option_bits is a NOT NULL column (default 0 when empty), so the guard
+// compares against 0 rather than NULL for an empty expected slot.
+SqlValue ExpectedOptionBits(const std::optional<Item>& expected)
+{
+    return SqlValue{static_cast<int64_t>(expected ? expected->option_bits : 0)};
+}
+} // namespace
+
+bool SaveItemSlot(IDatabase& db, std::int64_t bankAccountId, std::uint32_t slotId,
+                   const std::optional<Item>& expectedPrevious, const Item& item)
+{
+    // Upserts via ux_bank_items_account_slot -- see BankRepository.h.
+    auto stmt = db.Prepare(
+        "INSERT INTO bank_items (bank_accounts_id, slot_id, item_id, quantity, refine_level, "
+        "option_bits) VALUES (?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(bank_accounts_id, slot_id) DO UPDATE SET item_id = excluded.item_id, "
+        "quantity = excluded.quantity, refine_level = excluded.refine_level, "
+        "option_bits = excluded.option_bits "
+        "WHERE bank_items.item_id IS ? AND bank_items.quantity IS ? "
+        "AND bank_items.refine_level IS ? AND bank_items.option_bits IS ? "
+        "RETURNING item_id");
     stmt->Bind(0, bankAccountId);
     stmt->Bind(1, static_cast<int64_t>(slotId));
-    stmt->Step();
+    stmt->Bind(2, static_cast<int64_t>(item.item_id));
+    stmt->Bind(3,
+               item.has_refine_level ? SqlValue{} : SqlValue{static_cast<int64_t>(item.quantity)});
+    stmt->Bind(4, item.has_refine_level ? SqlValue{static_cast<int64_t>(item.refine_level)}
+                                        : SqlValue{});
+    stmt->Bind(5, static_cast<int64_t>(item.option_bits));
+    stmt->Bind(6, ExpectedItemId(expectedPrevious));
+    stmt->Bind(7, ExpectedQuantity(expectedPrevious));
+    stmt->Bind(8, ExpectedRefineLevel(expectedPrevious));
+    stmt->Bind(9, ExpectedOptionBits(expectedPrevious));
+    return stmt->Step();
+}
+
+bool ClearItemSlot(IDatabase& db, std::int64_t bankAccountId, std::uint32_t slotId,
+                    const std::optional<Item>& expectedPrevious)
+{
+    // Row stays and item_id goes to NULL rather than being deleted -- same
+    // reasoning as ItemRepository::ClearInventorySlot.
+    auto stmt = db.Prepare(
+        "UPDATE bank_items SET item_id = NULL, quantity = NULL, refine_level = NULL, "
+        "option_bits = 0 "
+        "WHERE bank_accounts_id = ? AND slot_id = ? AND item_id IS ? AND quantity IS ? "
+        "AND refine_level IS ? AND option_bits IS ? "
+        "RETURNING slot_id");
+    stmt->Bind(0, bankAccountId);
+    stmt->Bind(1, static_cast<int64_t>(slotId));
+    stmt->Bind(2, ExpectedItemId(expectedPrevious));
+    stmt->Bind(3, ExpectedQuantity(expectedPrevious));
+    stmt->Bind(4, ExpectedRefineLevel(expectedPrevious));
+    stmt->Bind(5, ExpectedOptionBits(expectedPrevious));
+    return stmt->Step();
 }
 } // namespace BankRepository

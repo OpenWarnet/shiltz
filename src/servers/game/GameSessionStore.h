@@ -37,7 +37,7 @@ struct GameSession
     std::optional<std::int64_t> bankAccountId;
     std::vector<BankRepository::SlotItem> bankItems;
     // bank_accounts.money, mirrored the same way -- kept in step with every
-    // BankRepository::SaveMoney call (see handlers/Store.cpp's
+    // BankRepository::TrySpendMoney/AddMoney call (see handlers/Store.cpp's
     // HandleStoreMoneyIn/Out).
     std::int64_t bankMoney = 0;
 };

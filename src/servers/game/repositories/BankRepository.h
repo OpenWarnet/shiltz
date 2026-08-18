@@ -40,9 +40,15 @@ namespace BankRepository
     // against a duplicate row.
     Account CreateAccount(IDatabase& db, std::int64_t accountId, const std::string& password);
 
-    // Persists bank_accounts.money alone -- called by handlers/Store.cpp's
-    // money-transfer handlers, which never touch bank_items.
-    void SaveMoney(IDatabase& db, std::int64_t bankAccountId, std::int64_t money);
+    // Relative, same reasoning as CharacterRepository::TrySpendMoney/
+    // AddMoney -- two pipelined writes for the same bank account (see
+    // GameSessionStore.h) compose correctly instead of one clobbering the
+    // other. TrySpendMoney only applies if current money >= amount; nullopt
+    // (no write applied) means insufficient, and the caller must treat that
+    // as a real-time rejection.
+    std::optional<std::int64_t> TrySpendMoney(IDatabase& db, std::int64_t bankAccountId,
+                                               std::int64_t amount);
+    std::int64_t AddMoney(IDatabase& db, std::int64_t bankAccountId, std::int64_t amount);
 
     // Persists bank_accounts.password alone -- called by
     // handlers/Store.cpp's HandleStorePwModify.
@@ -50,10 +56,16 @@ namespace BankRepository
 
     std::vector<SlotItem> LoadAllItems(IDatabase& db, std::int64_t bankAccountId);
 
-    // Upserts by (bank_accounts_id, slot_id) -- bank_items has no unique
-    // index on that pair, so this reads the row first rather than relying
-    // on an ON CONFLICT upsert (see ItemRepository::SaveInventorySlot for
-    // the table that does have one).
-    void SaveItemSlot(IDatabase& db, std::int64_t bankAccountId, std::uint32_t slotId, const Item& item);
-    void ClearItemSlot(IDatabase& db, std::int64_t bankAccountId, std::uint32_t slotId);
+    // Compare-and-swap, same shape and reasoning as
+    // ItemRepository::SaveInventorySlot/ClearInventorySlot --
+    // expectedPrevious is what the caller's cache believes is in the slot
+    // (nullopt = believes it's empty); the write only applies if the DB's
+    // actual current content still matches. Returns false (no write
+    // applied) on a mismatch. Upserts by (bank_accounts_id, slot_id) via
+    // ux_bank_items_account_slot (see 0015_item_slot_cas_support.sql) --
+    // bank_items didn't have a natural conflict target before that.
+    bool SaveItemSlot(IDatabase& db, std::int64_t bankAccountId, std::uint32_t slotId,
+                       const std::optional<Item>& expectedPrevious, const Item& item);
+    bool ClearItemSlot(IDatabase& db, std::int64_t bankAccountId, std::uint32_t slotId,
+                        const std::optional<Item>& expectedPrevious);
 } // namespace BankRepository

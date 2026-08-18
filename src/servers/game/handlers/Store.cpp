@@ -25,6 +25,7 @@
 #include "protocol/server/StorePwModifyFail.h"
 #include "protocol/server/StorePwModifySucc.h"
 #include "repositories/BankRepository.h"
+#include "repositories/CharacterRepository.h"
 #include "repositories/ItemRepository.h"
 #include "storage/Transaction.h"
 #include "world/Item.h"
@@ -396,20 +397,42 @@ void HandleStoreItemOut(const GameContext& ctx, const StoreItemOut& request)
     // it for free.
     DatabaseTransaction txn(ctx.db);
 
-    ItemRepository::SaveInventorySlot(ctx.db, characterId, inventorySlotIndex, updatedInventory);
+    if (!ItemRepository::SaveInventorySlot(ctx.db, characterId, inventorySlotIndex, existingInventory,
+                                            updatedInventory))
+    {
+        std::cout << "Rejecting CG_STORE_ITEM_OUT: inventory slot_index " << inventorySlotIndex
+                  << " changed concurrently\n";
+        return;
+    }
 
-    if (bankSlotCleared)
-        BankRepository::ClearItemSlot(ctx.db, bankAccountId, request.bank_slot_id);
-    else
-        BankRepository::SaveItemSlot(ctx.db, bankAccountId, request.bank_slot_id, remainingBank);
+    const bool bankWriteOk =
+        bankSlotCleared
+            ? BankRepository::ClearItemSlot(ctx.db, bankAccountId, request.bank_slot_id, bankContent)
+            : BankRepository::SaveItemSlot(ctx.db, bankAccountId, request.bank_slot_id, bankContent,
+                                            remainingBank);
+    if (!bankWriteOk)
+    {
+        std::cout << "Rejecting CG_STORE_ITEM_OUT: bank_slot_id " << request.bank_slot_id
+                  << " changed concurrently\n";
+        return;
+    }
 
-    session->player.money -= kWithdrawalFee;
-    session->player.SaveMoney(ctx.db);
+    // Authoritative fee check against the DB's *current* money -- the
+    // session->player.money precheck above could be stale under the
+    // pipelined-request race (see CharacterRepository.h).
+    auto newPlayerMoney = CharacterRepository::TrySpendMoney(ctx.db, characterId, kWithdrawalFee);
+    if (!newPlayerMoney)
+    {
+        std::cout << "Rejecting CG_STORE_ITEM_OUT: character " << characterId
+                  << " can't afford the " << kWithdrawalFee << " withdrawal fee (stale cache)\n";
+        return;
+    }
 
     txn.Commit();
 
     // Only mirror into the cache / session store once the transaction is
     // actually durable -- see the equivalent comment in ItemConfirmNpc.cpp.
+    session->player.money = *newPlayerMoney;
     session->player.SetInventorySlot(inventorySlotIndex, updatedInventory);
     if (bankSlotCleared)
         ClearBankSlot(*session, request.bank_slot_id);
@@ -541,12 +564,25 @@ void HandleStoreItemIn(const GameContext& ctx, const StoreItemIn& request)
     // Same all-or-nothing reasoning as HandleStoreItemOut, minus the fee.
     DatabaseTransaction txn(ctx.db);
 
-    BankRepository::SaveItemSlot(ctx.db, bankAccountId, request.bank_slot_id, updatedBank);
+    if (!BankRepository::SaveItemSlot(ctx.db, bankAccountId, request.bank_slot_id, existingBank,
+                                       updatedBank))
+    {
+        std::cout << "Rejecting CG_STORE_ITEM_IN: bank_slot_id " << request.bank_slot_id
+                  << " changed concurrently\n";
+        return;
+    }
 
-    if (inventorySlotCleared)
-        ItemRepository::ClearInventorySlot(ctx.db, characterId, inventorySlotIndex);
-    else
-        ItemRepository::SaveInventorySlot(ctx.db, characterId, inventorySlotIndex, remainingInventory);
+    const bool inventoryWriteOk =
+        inventorySlotCleared
+            ? ItemRepository::ClearInventorySlot(ctx.db, characterId, inventorySlotIndex, existingInventory)
+            : ItemRepository::SaveInventorySlot(ctx.db, characterId, inventorySlotIndex, existingInventory,
+                                                 remainingInventory);
+    if (!inventoryWriteOk)
+    {
+        std::cout << "Rejecting CG_STORE_ITEM_IN: inventory slot_index " << inventorySlotIndex
+                  << " changed concurrently\n";
+        return;
+    }
 
     txn.Commit();
 
@@ -629,28 +665,37 @@ void HandleStoreMoneyOut(const GameContext& ctx, const StoreMoneyOut& request)
     }
 
     const std::int64_t bankAccountId = *session->bankAccountId;
-    const std::int64_t newBankMoney = session->bankMoney - request.amount;
-    const std::int64_t newPlayerMoney = session->player.money + request.amount;
 
     // The bank debit and the wallet credit must land together, or a crash
-    // between them creates or destroys money.
+    // between them creates or destroys money. Authoritative check against
+    // the DB's *current* bank balance -- the session->bankMoney precheck
+    // above could be stale under the pipelined-request race (see
+    // CharacterRepository.h).
     DatabaseTransaction txn(ctx.db);
 
-    BankRepository::SaveMoney(ctx.db, bankAccountId, newBankMoney);
+    auto newBankMoney = BankRepository::TrySpendMoney(ctx.db, bankAccountId, request.amount);
+    if (!newBankMoney)
+    {
+        std::cout << "Rejecting CG_STORE_MONEY_OUT: bank account " << bankAccountId
+                  << " has insufficient money for " << request.amount << " (stale cache)\n";
+        sendFail();
+        return;
+    }
 
-    session->player.money = newPlayerMoney;
-    session->player.SaveMoney(ctx.db);
+    const std::int64_t newPlayerMoney =
+        CharacterRepository::AddMoney(ctx.db, session->characterId, request.amount);
 
     txn.Commit();
 
-    session->bankMoney = newBankMoney;
+    session->bankMoney = *newBankMoney;
+    session->player.money = newPlayerMoney;
     ctx.sessions.Set(ctx.clientSocket, *session);
 
     std::cout << "Withdrew " << request.amount << " money from bank account " << bankAccountId
-              << " (bank now " << newBankMoney << ", player now " << newPlayerMoney << ")\n";
+              << " (bank now " << *newBankMoney << ", player now " << newPlayerMoney << ")\n";
 
     PayloadWriter writer;
-    StoreMoneySucc response = BuildStoreMoneySucc(newPlayerMoney, newBankMoney);
+    StoreMoneySucc response = BuildStoreMoneySucc(newPlayerMoney, *newBankMoney);
     response.Serialize(writer);
 
     GamePacket packet(GameOpcode::GC_STORE_MONEY_OUT_SUCC, writer.Data());
@@ -707,27 +752,33 @@ void HandleStoreMoneyIn(const GameContext& ctx, const StoreMoneyIn& request)
     }
 
     const std::int64_t bankAccountId = *session->bankAccountId;
-    const std::int64_t newPlayerMoney = session->player.money - request.amount;
-    const std::int64_t newBankMoney = session->bankMoney + request.amount;
 
-    // Same all-or-nothing reasoning as HandleStoreMoneyOut.
+    // Same all-or-nothing reasoning as HandleStoreMoneyOut, and same
+    // authoritative-check-against-current-DB-state reasoning.
     DatabaseTransaction txn(ctx.db);
 
-    BankRepository::SaveMoney(ctx.db, bankAccountId, newBankMoney);
+    auto newPlayerMoney = CharacterRepository::TrySpendMoney(ctx.db, session->characterId, request.amount);
+    if (!newPlayerMoney)
+    {
+        std::cout << "Rejecting CG_STORE_MONEY_IN: character " << session->characterId
+                  << " has insufficient money for " << request.amount << " (stale cache)\n";
+        sendFail();
+        return;
+    }
 
-    session->player.money = newPlayerMoney;
-    session->player.SaveMoney(ctx.db);
+    const std::int64_t newBankMoney = BankRepository::AddMoney(ctx.db, bankAccountId, request.amount);
 
     txn.Commit();
 
+    session->player.money = *newPlayerMoney;
     session->bankMoney = newBankMoney;
     ctx.sessions.Set(ctx.clientSocket, *session);
 
     std::cout << "Deposited " << request.amount << " money into bank account " << bankAccountId
-              << " (bank now " << newBankMoney << ", player now " << newPlayerMoney << ")\n";
+              << " (bank now " << newBankMoney << ", player now " << *newPlayerMoney << ")\n";
 
     PayloadWriter writer;
-    StoreMoneySucc response = BuildStoreMoneySucc(newPlayerMoney, newBankMoney);
+    StoreMoneySucc response = BuildStoreMoneySucc(*newPlayerMoney, newBankMoney);
     response.Serialize(writer);
 
     GamePacket packet(GameOpcode::GC_STORE_MONEY_IN_SUCC, writer.Data());

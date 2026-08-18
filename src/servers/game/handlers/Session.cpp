@@ -194,7 +194,7 @@ void HandleCgExit(const GameContext& ctx)
     // character actually is) goes away.
     auto session = ctx.sessions.Get(ctx.clientSocket);
 
-    // SaveToDB is a blocking SQLite call -- run it, and the claim release
+    // SavePosition is a blocking SQLite call -- run it, and the claim release
     // that must only happen once it's durable (see GameSessionStore.h on
     // why the claim guards against two connections racing on the same DB
     // rows), on the DB pool instead of the connection's reactor thread.
@@ -202,7 +202,7 @@ void HandleCgExit(const GameContext& ctx)
     boost::asio::post(ctx.dbPool, [ctx, session]() {
         if (session)
         {
-            session->player.SaveToDB(ctx.db);
+            session->player.SavePosition(ctx.db);
         }
 
         // Release the session/character claim immediately on exit-to-character-

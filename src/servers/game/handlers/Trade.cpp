@@ -12,6 +12,7 @@
 #include "protocol/server/TradeBuySucc.h"
 #include "protocol/server/TradeSellFail.h"
 #include "protocol/server/TradeSellSucc.h"
+#include "repositories/CharacterRepository.h"
 #include "repositories/ItemRepository.h"
 #include "storage/Transaction.h"
 #include "tables/GameData.h"
@@ -140,15 +141,34 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
                   << updated.quantity << ")\n";
     }
 
-    ItemRepository::SaveInventorySlot(ctx.db, characterId, slotIndex, updated);
+    // Authoritative debit -- checked atomically against the DB's *current*
+    // money rather than the cached session->player.money read above, which
+    // could be stale under the pipelined-request race (see
+    // CharacterRepository.h).
+    auto newMoney = CharacterRepository::TrySpendMoney(ctx.db, characterId, totalCost);
+    if (!newMoney)
+    {
+        std::cout << "Rejecting CG_ITEM_TRADE_BUY: character " << characterId
+                  << " has insufficient money for " << totalCost << " (stale cache)\n";
+        sendFail();
+        return;
+    }
 
-    session->player.money -= totalCost;
-    session->player.SaveMoney(ctx.db);
+    // Guarded write: fails if some other pipelined request changed this
+    // slot between the cache read above and now -- see ItemRepository.h.
+    if (!ItemRepository::SaveInventorySlot(ctx.db, characterId, slotIndex, existing, updated))
+    {
+        std::cout << "Rejecting CG_ITEM_TRADE_BUY: slot_index " << slotIndex
+                  << " changed concurrently\n";
+        sendFail();
+        return;
+    }
 
     txn.Commit();
 
     // Only mirror into the cache / session store once the transaction is
     // actually durable -- see the equivalent comment in ItemConfirmNpc.cpp.
+    session->player.money = *newMoney;
     session->player.SetInventorySlot(slotIndex, updated);
     ctx.sessions.Set(ctx.clientSocket, *session);
 
@@ -246,6 +266,9 @@ void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
     bool slotCleared = true;
     Item remainingItem;
 
+    // Guarded write: fails if some other pipelined request changed this
+    // slot between the cache read above and now -- see ItemRepository.h.
+    bool slotWriteOk;
     if (!existing->has_refine_level)
     {
         const std::uint32_t currentQuantity = existing->quantity;
@@ -256,7 +279,7 @@ void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
 
         if (toSell >= currentQuantity)
         {
-            ItemRepository::ClearInventorySlot(ctx.db, characterId, slotIndex);
+            slotWriteOk = ItemRepository::ClearInventorySlot(ctx.db, characterId, slotIndex, existing);
         }
         else
         {
@@ -264,7 +287,8 @@ void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
 
             remainingItem = *existing;
             remainingItem.quantity = remainingCount;
-            ItemRepository::SaveInventorySlot(ctx.db, characterId, slotIndex, remainingItem);
+            slotWriteOk =
+                ItemRepository::SaveInventorySlot(ctx.db, characterId, slotIndex, existing, remainingItem);
             slotCleared = false;
         }
     }
@@ -272,11 +296,19 @@ void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
     {
         // Equippable-style item (refine_level, not stackable) -- selling
         // always removes the whole thing, regardless of requested count.
-        ItemRepository::ClearInventorySlot(ctx.db, characterId, slotIndex);
+        slotWriteOk = ItemRepository::ClearInventorySlot(ctx.db, characterId, slotIndex, existing);
     }
 
-    session->player.money += item->sell_price * static_cast<std::int64_t>(soldCount);
-    session->player.SaveMoney(ctx.db);
+    if (!slotWriteOk)
+    {
+        std::cout << "Rejecting CG_ITEM_TRADE_SELL: slot_index " << slotIndex
+                  << " changed concurrently\n";
+        sendFail();
+        return;
+    }
+
+    const std::int64_t newMoney = CharacterRepository::AddMoney(
+        ctx.db, characterId, item->sell_price * static_cast<std::int64_t>(soldCount));
 
     txn.Commit();
 
@@ -286,6 +318,7 @@ void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
         session->player.ClearInventorySlot(slotIndex);
     else
         session->player.SetInventorySlot(slotIndex, remainingItem);
+    session->player.money = newMoney;
     ctx.sessions.Set(ctx.clientSocket, *session);
 
     std::cout << "Sold " << soldCount << "x item_id " << itemId << " from slot_index " << slotIndex

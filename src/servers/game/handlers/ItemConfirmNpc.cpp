@@ -11,6 +11,7 @@
 #include "protocol/client/ItemConfirmNpcRequest.h"
 #include "protocol/server/ItemConfirmNpcFail.h"
 #include "protocol/server/ItemConfirmNpcSucc.h"
+#include "repositories/CharacterRepository.h"
 #include "repositories/ItemRepository.h"
 #include "storage/Transaction.h"
 #include "tables/GameData.h"
@@ -275,15 +276,26 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
             continue;
         }
 
-        runningFee += fee;
+        const Item original = *content;
+        Item appraised = original;
+        appraised.option_bits = RollOptionBits(*itemRecord, rng);
 
-        content->option_bits = RollOptionBits(*itemRecord, rng);
-        ItemRepository::SaveItemSlot(ctx.db, characterId, slotId, *content);
-        appraisedItems.push_back(AppraisedSlot{.slot_id = slotId, .item = *content});
+        // Guarded against this slot's own last-known content -- see
+        // ItemRepository.h. Only count the fee for slots that actually
+        // wrote -- a concurrently-changed slot is skipped like any other
+        // per-slot gate failure above, not charged for.
+        if (!ItemRepository::SaveItemSlot(ctx.db, characterId, slotId, original, appraised))
+        {
+            std::cout << "slot " << slotId << " changed concurrently -- skipping\n";
+            continue;
+        }
+
+        runningFee += fee;
+        appraisedItems.push_back(AppraisedSlot{.slot_id = slotId, .item = appraised});
 
         results.push_back(ItemConfirmNpcResult{
             .slot_id = slotId,
-            .option_bits = content->option_bits,
+            .option_bits = appraised.option_bits,
         });
     }
 
@@ -306,14 +318,30 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
     // Fee is deducted once for the whole request, not per slot. Written
     // inside the same transaction as the appraised slots above, so a
     // partway failure rolls back the fee along with them rather than
-    // charging for appraisals that never landed.
-    session->player.money -= runningFee;
-    session->player.SaveMoney(ctx.db);
+    // charging for appraisals that never landed. Checked against the DB's
+    // *current* money -- the session->player.money prechecks above could be
+    // stale under the pipelined-request race (see CharacterRepository.h).
+    auto newMoney = CharacterRepository::TrySpendMoney(ctx.db, characterId, runningFee);
+    if (!newMoney)
+    {
+        std::cout << "Rejecting CG_ITEM_CONFIRM_NPC_REQUEST: character " << characterId
+                  << " has insufficient money for total_fee " << runningFee << " (stale cache)\n";
+
+        ItemConfirmNpcFail response{
+            .result_code = static_cast<std::int32_t>(ItemConfirmFailReason::NoSlotsAppraised),
+        };
+        response.Serialize(writer);
+
+        GamePacket packet(GameOpcode::GC_ITEM_CONFIRM_NPC_FAIL, writer.Data());
+        ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+        return;
+    }
 
     txn.Commit();
 
     // Only mirror into the cache / session store once the transaction is
     // actually durable -- see the comment on appraisedItems above.
+    session->player.money = *newMoney;
     for (const AppraisedSlot& appraised : appraisedItems)
         session->player.SetItemSlot(appraised.slot_id, appraised.item);
     ctx.sessions.Set(ctx.clientSocket, *session);

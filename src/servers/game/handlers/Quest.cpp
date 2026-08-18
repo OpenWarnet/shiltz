@@ -13,6 +13,7 @@
 #include "protocol/server/QuestFail.h"
 #include "protocol/server/QuestSucc.h"
 #include "protocol/server/ServerChange.h"
+#include "repositories/CharacterRepository.h"
 #include "repositories/ItemRepository.h"
 #include "repositories/QuestFlagRepository.h"
 #include "storage/Transaction.h"
@@ -188,10 +189,12 @@ std::vector<QuestSuccItem> GrantRewardItem(const GameContext& ctx, GameSession& 
     if (IsStackableItemType(record->item_type))
     {
         auto bagIndex = FindStackableBagSlot(session.player, wireItemId);
+        std::optional<Item> existing;
         std::uint32_t existingQuantity = 0;
         if (bagIndex)
         {
-            existingQuantity = session.player.GetInventorySlot(*bagIndex)->quantity;
+            existing = session.player.GetInventorySlot(*bagIndex);
+            existingQuantity = existing->quantity;
         }
         else
         {
@@ -210,7 +213,15 @@ std::vector<QuestSuccItem> GrantRewardItem(const GameContext& ctx, GameSession& 
             .has_refine_level = false,
         };
 
-        ItemRepository::SaveInventorySlot(ctx.db, characterId, *bagIndex, stacked);
+        // Guarded against this slot's own last-known content -- see
+        // ItemRepository.h. A concurrently-changed slot just skips this
+        // reward, same as "no free bag slot" above.
+        if (!ItemRepository::SaveInventorySlot(ctx.db, characterId, *bagIndex, existing, stacked))
+        {
+            std::cout << "Quest reward: bag slot " << *bagIndex << " changed concurrently -- skipping item_id "
+                      << itemId << "\n";
+            return granted;
+        }
         session.player.SetInventorySlot(*bagIndex, stacked);
 
         granted.push_back(QuestSuccItem{
@@ -243,7 +254,15 @@ std::vector<QuestSuccItem> GrantRewardItem(const GameContext& ctx, GameSession& 
             .option_bits = Item::kNeverAppraised,
         };
 
-        ItemRepository::SaveInventorySlot(ctx.db, characterId, *bagIndex, equipped);
+        // bagIndex just came from FindFreeBagSlot, so the expected previous
+        // content is "empty" -- see ItemRepository.h.
+        if (!ItemRepository::SaveInventorySlot(ctx.db, characterId, *bagIndex, std::nullopt, equipped))
+        {
+            std::cout << "Quest reward: bag slot " << *bagIndex
+                      << " changed concurrently -- stopping grant of item_id " << itemId << " (granted "
+                      << i << "/" << units << ")\n";
+            break;
+        }
         session.player.SetInventorySlot(*bagIndex, equipped);
 
         granted.push_back(QuestSuccItem{
@@ -289,7 +308,7 @@ void SendServerChange(const GameContext& ctx, std::int64_t sessionId)
 }
 
 // Moves the player to warp.scr's server_map_id/x/y for warpId, writing
-// through to `character_position` immediately (Player::SaveToDB) rather
+// through to `character_position` immediately (Player::SavePosition) rather
 // than waiting for some other save path to pick up the position change --
 // same immediacy as the money/exp/fame writes alongside it in
 // ApplyConsequences. No-op if warpId is 0 (nothing to warp to) or unknown.
@@ -310,7 +329,7 @@ void ApplyWarp(const GameContext& ctx, GameSession& session, std::int64_t warpId
     player.map_id = static_cast<std::uint32_t>(record->server_map_id);
     player.x = static_cast<std::int32_t>(record->x);
     player.y = static_cast<std::int32_t>(record->y);
-    player.SaveToDB(ctx.db);
+    player.SavePosition(ctx.db);
 
     SendServerChange(ctx, session.sessionId);
 }
@@ -330,12 +349,31 @@ void LogUnhandledConsequences(const QuestConsequences& q)
                   << "\n";
 }
 
-QuestSucc ApplyConsequences(const GameContext& ctx, GameSession& session, const QuestConsequences& q)
+// nullopt if q.set_flag names a one-time quest already claimed by an
+// earlier pipelined turn-in -- see QuestFlagRepository::TryClaimFlag.
+// Nothing is granted in that case (the transaction is left uncommitted and
+// rolls back on return).
+std::optional<QuestSucc> ApplyConsequences(const GameContext& ctx, GameSession& session,
+                                            const QuestConsequences& q)
 {
     Player& player = session.player;
     const std::int64_t characterId = session.characterId;
 
     DatabaseTransaction txn(ctx.db);
+
+    // Claim the one-time-quest gate first, before granting anything -- see
+    // QuestFlagRepository::TryClaimFlag. Quests with no set_flag (0) have no
+    // such gate and always re-apply their consequences.
+    if (q.set_flag != 0)
+    {
+        if (!QuestFlagRepository::TryClaimFlag(ctx.db, characterId, q.set_flag))
+        {
+            std::cout << "Quest set_flag " << q.set_flag
+                      << " already claimed -- rejecting duplicate turn-in\n";
+            return std::nullopt;
+        }
+        player.quest_flags.Set(static_cast<std::uint32_t>(q.set_flag), true);
+    }
 
     std::vector<QuestSuccItem> items;
     for (auto& item : GrantRewardItem(ctx, session, q.reward_item_0, q.reward_item_0_count))
@@ -345,29 +383,15 @@ QuestSucc ApplyConsequences(const GameContext& ctx, GameSession& session, const 
     for (auto& item : GrantRewardItem(ctx, session, q.reward_item_2, q.reward_item_2_count))
         items.push_back(item);
 
-    if (q.set_flag != 0)
-    {
-        QuestFlagRepository::SetFlag(ctx.db, characterId, q.set_flag);
-        player.quest_flags.Set(static_cast<std::uint32_t>(q.set_flag), true);
-    }
-
     if (q.reward_cegel != 0)
-    {
-        player.money += q.reward_cegel;
-        player.SaveMoney(ctx.db);
-    }
+        player.money = CharacterRepository::AddMoney(ctx.db, characterId, q.reward_cegel);
 
     if (q.reward_exp != 0)
-    {
-        player.exp += q.reward_exp;
-        player.SaveLevel(ctx.db); // exp only here -- level is untouched
-    }
+        player.exp = CharacterRepository::AddExp(ctx.db, characterId, q.reward_exp);
 
     if (q.reward_fame != 0)
-    {
-        player.fame += static_cast<std::uint32_t>(q.reward_fame);
-        player.SaveFame(ctx.db);
-    }
+        player.fame =
+            CharacterRepository::AddFame(ctx.db, characterId, static_cast<std::uint32_t>(q.reward_fame));
 
     ApplyWarp(ctx, session, q.warp_id);
 
@@ -440,15 +464,21 @@ void HandleQuestResult(const GameContext& ctx, const QuestResult& request)
     // to call from any thread.
     GameSession sessionCopy = *session;
     boost::asio::post(ctx.dbPool, [ctx, sessionCopy, record]() mutable {
-        QuestSucc response = ApplyConsequences(ctx, sessionCopy, record->consequences);
+        std::optional<QuestSucc> response = ApplyConsequences(ctx, sessionCopy, record->consequences);
+        if (!response)
+        {
+            SendQuestFail(ctx);
+            return;
+        }
+
         ctx.sessions.Set(ctx.clientSocket, sessionCopy);
 
-        std::cout << "Sending GC_QUEST_SUCC: " << response.items.size() << " item(s), money "
-                  << response.money << ", fame " << response.fame << ", exp " << response.exp
-                  << ", ap " << response.ap << ", hp " << response.hp << "\n";
+        std::cout << "Sending GC_QUEST_SUCC: " << response->items.size() << " item(s), money "
+                  << response->money << ", fame " << response->fame << ", exp " << response->exp
+                  << ", ap " << response->ap << ", hp " << response->hp << "\n";
 
         PayloadWriter writer;
-        response.Serialize(writer);
+        response->Serialize(writer);
 
         GamePacket packet(GameOpcode::GC_QUEST_SUCC, writer.Data());
         ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));

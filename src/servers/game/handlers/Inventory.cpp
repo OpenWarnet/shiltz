@@ -118,7 +118,14 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
         std::cout << "Added item_id " << itemId << " at slot_index " << slotIndex << "\n";
     }
 
-    ItemRepository::SaveInventorySlot(ctx.db, characterId, slotIndex, updated);
+    if (!ItemRepository::SaveInventorySlot(ctx.db, characterId, slotIndex, existing, updated))
+    {
+        std::cout << "Rejecting CG_ITEM_PICKUP: slot_index " << slotIndex << " changed concurrently\n";
+        // Put the claimed item back rather than dropping it -- same
+        // reasoning as the item_id-mismatch rejection above.
+        map->AddItem(*groundItem);
+        return;
+    }
 
     txn.Commit();
 
@@ -199,14 +206,50 @@ void HandleItemMove(const GameContext& ctx, const ItemMove& request)
         return;
     }
 
+    // Guarded against each slot's own last-known content -- see
+    // ItemRepository.h. Both writes must succeed or neither is kept
+    // (short-circuits before the second on failure; either way txn rolls
+    // back below on early return).
+    bool writeOk;
     if (sourceContent && destContent)
     {
         // Both occupied -- swap contents. Can't swap by relocating a
         // primary key across tables the way same-table moves used to, so
         // this always writes full content both ways instead.
-        ItemRepository::SaveItemSlot(ctx.db, characterId, request.source_slot_id, *destContent);
-        ItemRepository::SaveItemSlot(ctx.db, characterId, request.dest_slot_id, *sourceContent);
+        writeOk = ItemRepository::SaveItemSlot(ctx.db, characterId, request.source_slot_id, sourceContent,
+                                                *destContent) &&
+                  ItemRepository::SaveItemSlot(ctx.db, characterId, request.dest_slot_id, destContent,
+                                                *sourceContent);
+    }
+    else if (sourceContent)
+    {
+        // dest is empty -- move source's content there and clear source.
+        writeOk = ItemRepository::SaveItemSlot(ctx.db, characterId, request.dest_slot_id, destContent,
+                                                *sourceContent) &&
+                  ItemRepository::ClearItemSlot(ctx.db, characterId, request.source_slot_id, sourceContent);
+    }
+    else
+    {
+        // source is empty, dest occupied -- move the other way.
+        writeOk = ItemRepository::SaveItemSlot(ctx.db, characterId, request.source_slot_id, sourceContent,
+                                                *destContent) &&
+                  ItemRepository::ClearItemSlot(ctx.db, characterId, request.dest_slot_id, destContent);
+    }
 
+    if (!writeOk)
+    {
+        std::cout << "Rejecting CG_ITEM_MOVE: source_slot_id " << request.source_slot_id
+                  << " or dest_slot_id " << request.dest_slot_id << " changed concurrently\n";
+        sendFail();
+        return;
+    }
+
+    txn.Commit();
+
+    // Only mirror into the cache / session store once the transaction is
+    // actually durable -- see the equivalent comment in ItemConfirmNpc.cpp.
+    if (sourceContent && destContent)
+    {
         session->player.SetItemSlot(request.source_slot_id, *destContent);
         session->player.SetItemSlot(request.dest_slot_id, *sourceContent);
 
@@ -215,10 +258,6 @@ void HandleItemMove(const GameContext& ctx, const ItemMove& request)
     }
     else if (sourceContent)
     {
-        // dest is empty -- move source's content there and clear source.
-        ItemRepository::SaveItemSlot(ctx.db, characterId, request.dest_slot_id, *sourceContent);
-        ItemRepository::ClearItemSlot(ctx.db, characterId, request.source_slot_id);
-
         session->player.SetItemSlot(request.dest_slot_id, *sourceContent);
         session->player.ClearItemSlot(request.source_slot_id);
 
@@ -227,18 +266,12 @@ void HandleItemMove(const GameContext& ctx, const ItemMove& request)
     }
     else
     {
-        // source is empty, dest occupied -- move the other way.
-        ItemRepository::SaveItemSlot(ctx.db, characterId, request.source_slot_id, *destContent);
-        ItemRepository::ClearItemSlot(ctx.db, characterId, request.dest_slot_id);
-
         session->player.SetItemSlot(request.source_slot_id, *destContent);
         session->player.ClearItemSlot(request.dest_slot_id);
 
         std::cout << "Moved dest_slot_id " << request.dest_slot_id << " to empty source_slot_id "
                   << request.source_slot_id << "\n";
     }
-
-    txn.Commit();
 
     ctx.sessions.Set(ctx.clientSocket, *session);
 
@@ -314,6 +347,9 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
     // empty (fully dropped, or an equippable item, which always drops
     // whole).
     std::uint32_t remainingQuantity = 0;
+    bool slotCleared;
+    Item remainingItem;
+    bool writeOk;
 
     if (!slotContent->has_refine_level)
     {
@@ -324,19 +360,19 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
         const std::uint32_t toDrop = std::min<std::uint32_t>(request.quantity, currentQuantity);
         droppedItem.quantity = toDrop;
 
-        if (toDrop >= currentQuantity)
+        slotCleared = toDrop >= currentQuantity;
+        if (slotCleared)
         {
-            ItemRepository::ClearInventorySlot(ctx.db, characterId, slotIndex);
-            session->player.ClearInventorySlot(slotIndex);
+            writeOk = ItemRepository::ClearInventorySlot(ctx.db, characterId, slotIndex, slotContent);
         }
         else
         {
             remainingQuantity = currentQuantity - toDrop;
 
-            Item remaining = *slotContent;
-            remaining.quantity = remainingQuantity;
-            ItemRepository::SaveInventorySlot(ctx.db, characterId, slotIndex, remaining);
-            session->player.SetInventorySlot(slotIndex, remaining);
+            remainingItem = *slotContent;
+            remainingItem.quantity = remainingQuantity;
+            writeOk =
+                ItemRepository::SaveInventorySlot(ctx.db, characterId, slotIndex, slotContent, remainingItem);
         }
     }
     else
@@ -344,12 +380,24 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
         // Equippable-style item (refine_level, not stackable) -- dropping
         // always removes the whole thing, regardless of requested quantity.
         droppedItem.quantity = 1;
-        ItemRepository::ClearInventorySlot(ctx.db, characterId, slotIndex);
-        session->player.ClearInventorySlot(slotIndex);
+        slotCleared = true;
+        writeOk = ItemRepository::ClearInventorySlot(ctx.db, characterId, slotIndex, slotContent);
+    }
+
+    if (!writeOk)
+    {
+        std::cout << "Rejecting CG_ITEM_DROP: slot_index " << slotIndex << " changed concurrently\n";
+        return;
     }
 
     txn.Commit();
 
+    // Only mirror into the cache / session store once the transaction is
+    // actually durable -- see the equivalent comment in ItemConfirmNpc.cpp.
+    if (slotCleared)
+        session->player.ClearInventorySlot(slotIndex);
+    else
+        session->player.SetInventorySlot(slotIndex, remainingItem);
     ctx.sessions.Set(ctx.clientSocket, *session);
 
     // Player::x/y is kept live by HandleMovement on every CG_MOVE, unlike
@@ -425,7 +473,11 @@ void HandleItemDelete(const GameContext& ctx, const ItemDelete& request)
     const std::uint32_t itemId = slotContent->item_id;
 
     DatabaseTransaction txn(ctx.db);
-    ItemRepository::ClearItemSlot(ctx.db, characterId, request.slot_id);
+    if (!ItemRepository::ClearItemSlot(ctx.db, characterId, request.slot_id, slotContent))
+    {
+        std::cout << "Rejecting CG_ITEM_DELETE: slot_id " << request.slot_id << " changed concurrently\n";
+        return;
+    }
     txn.Commit();
 
     session->player.ClearItemSlot(request.slot_id);

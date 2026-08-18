@@ -127,14 +127,14 @@ struct Player
     // character exists.
     bool LoadFromDB(IDatabase& db, std::int64_t characterId);
 
-    void SaveToDB(IDatabase& db) const; // position only -- see LoadFromDB.
+    // Persists `map_id`/`x`/`y` alone.
+    void SavePosition(IDatabase& db) const;
 
-    // Persists `money` alone, so callers that only changed money (e.g.
-    // Trade.cpp) don't also rewrite position.
-    void SaveMoney(IDatabase& db) const;
-
-    // Persists `fame` alone.
-    void SaveFame(IDatabase& db) const;
+    // money/fame have no Player-level Save* wrapper -- every caller now
+    // goes through CharacterRepository::TrySpendMoney/AddMoney/AddFame
+    // directly (relative, guarded writes; see CharacterRepository.h) and
+    // mirrors the DB's confirmed result into `money`/`fame` itself, rather
+    // than flushing a value already mutated in-place here.
 
     // Persists `hp` and `ap` together -- both are touched together by quest
     // rewards (see handlers/Quest.cpp), so one narrow update covers both
