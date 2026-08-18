@@ -17,14 +17,14 @@
 // OpcodeBinder<Context, Packet>. Every dispatched frame is also routed
 // through PacketCapture so devs have a decrypted, opcode-named record of
 // traffic -- including opcodes with no handler yet.
-template <typename Context, typename Packet> class Dispatcher
+template <typename Context, typename Packet, typename OpcodeT> class Dispatcher
 {
 public:
     using HandlerFn = std::function<void(const Context&, const Packet&)>;
-    using NameResolverFn = std::function<std::string_view(uint32_t)>;
+    using NameResolverFn = std::function<std::string_view(OpcodeT)>;
 
     Dispatcher(NameResolverFn opcodeNameResolver,
-               std::initializer_list<std::pair<const uint32_t, HandlerFn>> handlers)
+               std::initializer_list<std::pair<const OpcodeT, HandlerFn>> handlers)
         : m_opcodeNameResolver(std::move(opcodeNameResolver)), m_handlers(handlers)
     {
     }
@@ -36,18 +36,19 @@ public:
 
         if (it == m_handlers.end())
         {
-            PacketCapture::LogUnhandled(ctx.clientSocket, packet.GetCode(), name, packet.GetPayload());
-            std::cout << "Received unknown packet code: " << std::hex << packet.GetCode() << std::dec
-                      << "\n";
+            PacketCapture::LogUnhandled(ctx.clientSocket, static_cast<uint32_t>(packet.GetCode()), name,
+                                         packet.GetPayload());
+            std::cout << "Received unknown packet code: " << std::hex
+                      << static_cast<uint32_t>(packet.GetCode()) << std::dec << "\n";
             return;
         }
 
         PacketCapture::LogHandled(PacketCapture::Direction::Inbound, ctx.clientSocket,
-                                   packet.GetCode(), name, packet.GetPayload());
+                                   static_cast<uint32_t>(packet.GetCode()), name, packet.GetPayload());
         it->second(ctx, packet);
     }
 
 private:
     NameResolverFn m_opcodeNameResolver;
-    std::unordered_map<uint32_t, HandlerFn> m_handlers;
+    std::unordered_map<OpcodeT, HandlerFn> m_handlers;
 };

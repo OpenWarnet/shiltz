@@ -1,5 +1,6 @@
 #pragma once
 
+#include "GameOpcodes.h"
 #include "common/Dispatcher.h"
 
 #include <boost/asio/thread_pool.hpp>
@@ -35,7 +36,7 @@ struct GameContext
     boost::asio::thread_pool& dbPool;
 };
 
-class GameDispatcher : public Dispatcher<GameContext, GamePacket>
+class GameDispatcher : public Dispatcher<GameContext, GamePacket, GameOpcode::Code>
 {
 public:
     GameDispatcher();

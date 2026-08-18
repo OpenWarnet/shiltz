@@ -39,7 +39,10 @@
 
 namespace
 {
-    auto When(uint32_t opcode) { return OpcodeBinder<GameContext, GamePacket>(opcode); }
+    auto When(GameOpcode::Code opcode)
+    {
+        return OpcodeBinder<GameContext, GamePacket, GameOpcode::Code>(opcode);
+    }
 }
 
 GameDispatcher::GameDispatcher()

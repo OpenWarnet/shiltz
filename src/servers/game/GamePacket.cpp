@@ -34,7 +34,7 @@ bool GamePacket::Deserialize(std::span<const uint8_t> raw, std::span<const uint8
               << ", Raw buffer size = " << raw.size() << "\n";
 
     std::memcpy(&m_code, raw.data() + sizeof(uint32_t), sizeof(uint32_t));
-    std::cout << "Deserialized GamePacket: Code = " << m_code << "\n";
+    std::cout << "Deserialized GamePacket: Code = " << static_cast<uint32_t>(m_code) << "\n";
 
     uint32_t payloadLength = totalLength - sizeof(uint32_t) - sizeof(uint32_t);
     std::cout << "Payload length: " << payloadLength << "\n";
@@ -52,13 +52,13 @@ bool GamePacket::Deserialize(std::span<const uint8_t> raw, std::span<const uint8
 std::vector<uint8_t> GamePacket::Serialize(std::span<const uint8_t> key) const
 {
     uint32_t bodyLength = sizeof(uint32_t) + static_cast<uint32_t>(m_payload.size());
-    std::cout << "Serializing GamePacket: Code = " << m_code
+    std::cout << "Serializing GamePacket: Code = " << static_cast<uint32_t>(m_code)
               << ", Payload size = " << m_payload.size() << ", Body length = " << bodyLength
               << "\n";
     uint32_t totalLength = sizeof(uint32_t) + bodyLength;
 
-    PacketCapture::LogHandled(PacketCapture::Direction::Outbound, INVALID_SOCKET, m_code,
-                               GameOpcode::ToString(m_code), m_payload);
+    PacketCapture::LogHandled(PacketCapture::Direction::Outbound, INVALID_SOCKET,
+                               static_cast<uint32_t>(m_code), GameOpcode::ToString(m_code), m_payload);
 
     // No Encryption from Server -> Client
 

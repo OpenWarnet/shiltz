@@ -2,54 +2,42 @@
 
 namespace LoginOpcode
 {
-    std::string_view ToString(uint32_t code)
+    std::string_view ToString(Code code)
     {
+        // Derives the string from the enumerator token via # so it can never
+        // mismatch the name -- add a new opcode to the enum in
+        // LoginOpcodes.h and one OPCODE_NAME(...) line here.
+#define OPCODE_NAME(name) \
+    case Code::name:      \
+        return #name;
+
         switch (code)
         {
-        case CL_LOGIN:
-            return "CL_LOGIN";
-        case CL_USER_SYSTEM_SPEC_INFO:
-            return "CL_USER_SYSTEM_SPEC_INFO";
-        case CL_GAMEGUARD:
-            return "CL_GAMEGUARD";
-        case CL_GET_CHARINFO:
-            return "CL_GET_CHARINFO";
-        case CL_DELETE_CHARACTER:
-            return "CL_DELETE_CHARACTER";
-        case CL_CHAR_DELETE_CANCLE:
-            return "CL_CHAR_DELETE_CANCLE";
-        case CL_CREATE_CHARACTER:
-            return "CL_CREATE_CHARACTER";
-        case CL_CREATE_MAP_NUM:
-            return "CL_CREATE_MAP_NUM";
-        case CL_GAMESERVER_CONNECT:
-            return "CL_GAMESERVER_CONNECT";
-        case LC_LOGIN_SUCCESS:
-            return "LC_LOGIN_SUCCESS";
-        case LC_LOGIN_FAIL:
-            return "LC_LOGIN_FAIL";
-        case LC_CHARINFO_SUCCESS:
-            return "LC_CHARINFO_SUCCESS";
-        case LC_DELETECHAR_SUCCESS:
-            return "LC_DELETECHAR_SUCCESS";
-        case LC_DELETECHAR_FAIL:
-            return "LC_DELETECHAR_FAIL";
-        case LC_CHAR_DELETE_CANCLE_SUCCESS:
-            return "LC_CHAR_DELETE_CANCLE_SUCCESS";
-        case LC_CHAR_DELETE_CANCLE_FAIL:
-            return "LC_CHAR_DELETE_CANCLE_FAIL";
-        case LC_CREATECHAR_SUCCESS:
-            return "LC_CREATECHAR_SUCCESS";
-        case LC_CREATECHAR_FAIL:
-            return "LC_CREATECHAR_FAIL";
-        case LC_CREATE_MAP_NUM_SUCCESS:
-            return "LC_CREATE_MAP_NUM_SUCCESS";
-        case LC_CREATE_MAP_NUM_FAIL:
-            return "LC_CREATE_MAP_NUM_FAIL";
-        case LC_GSERV_CONNECT_SUCCESS:
-            return "LC_GSERV_CONNECT_SUCCESS";
+            OPCODE_NAME(CL_LOGIN)
+            OPCODE_NAME(CL_USER_SYSTEM_SPEC_INFO)
+            OPCODE_NAME(CL_GAMEGUARD)
+            OPCODE_NAME(CL_GET_CHARINFO)
+            OPCODE_NAME(CL_DELETE_CHARACTER)
+            OPCODE_NAME(CL_CHAR_DELETE_CANCLE)
+            OPCODE_NAME(CL_CREATE_CHARACTER)
+            OPCODE_NAME(CL_CREATE_MAP_NUM)
+            OPCODE_NAME(CL_GAMESERVER_CONNECT)
+            OPCODE_NAME(LC_LOGIN_SUCCESS)
+            OPCODE_NAME(LC_LOGIN_FAIL)
+            OPCODE_NAME(LC_CHARINFO_SUCCESS)
+            OPCODE_NAME(LC_DELETECHAR_SUCCESS)
+            OPCODE_NAME(LC_DELETECHAR_FAIL)
+            OPCODE_NAME(LC_CHAR_DELETE_CANCLE_SUCCESS)
+            OPCODE_NAME(LC_CHAR_DELETE_CANCLE_FAIL)
+            OPCODE_NAME(LC_CREATECHAR_SUCCESS)
+            OPCODE_NAME(LC_CREATECHAR_FAIL)
+            OPCODE_NAME(LC_CREATE_MAP_NUM_SUCCESS)
+            OPCODE_NAME(LC_CREATE_MAP_NUM_FAIL)
+            OPCODE_NAME(LC_GSERV_CONNECT_SUCCESS)
         default:
             return "UNKNOWN";
         }
+
+#undef OPCODE_NAME
     }
 }

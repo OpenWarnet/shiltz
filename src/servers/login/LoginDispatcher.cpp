@@ -15,7 +15,10 @@
 
 namespace
 {
-    auto When(uint32_t opcode) { return OpcodeBinder<LoginContext, LoginPacket>(opcode); }
+    auto When(LoginOpcode::Code opcode)
+    {
+        return OpcodeBinder<LoginContext, LoginPacket, LoginOpcode::Code>(opcode);
+    }
 }
 
 LoginDispatcher::LoginDispatcher()

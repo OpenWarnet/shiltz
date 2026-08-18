@@ -50,15 +50,15 @@ bool LoginPacket::Deserialize(std::span<const uint8_t> raw, std::span<const uint
 
 std::vector<uint8_t> LoginPacket::Serialize(std::span<const uint8_t> key) const {
 	uint32_t bodyLength = sizeof(uint32_t) + static_cast<uint32_t>(m_payload.size());
-	std::cout << "Serializing LoginPacket: Code = " << m_code << ", Payload size = " << m_payload.size() << ", Body length = " << bodyLength << "\n";
+	std::cout << "Serializing LoginPacket: Code = " << static_cast<uint32_t>(m_code) << ", Payload size = " << m_payload.size() << ", Body length = " << bodyLength << "\n";
 	uint32_t totalLength = sizeof(uint32_t) + bodyLength;
 
 	std::vector<uint8_t> body(bodyLength);
     std::memcpy(body.data(), &m_code, sizeof(uint32_t));
     std::memcpy(body.data() + sizeof(uint32_t), m_payload.data(), m_payload.size());
 
-    PacketCapture::LogHandled(PacketCapture::Direction::Outbound, INVALID_SOCKET, m_code,
-                               LoginOpcode::ToString(m_code), m_payload);
+    PacketCapture::LogHandled(PacketCapture::Direction::Outbound, INVALID_SOCKET,
+                               static_cast<uint32_t>(m_code), LoginOpcode::ToString(m_code), m_payload);
 
     if (!key.empty()) {
         for (size_t i = 0; i < body.size(); ++i) {

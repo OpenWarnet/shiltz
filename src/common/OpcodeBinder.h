@@ -14,19 +14,19 @@ enum class SkipReason
     Ignored, // Payload exists but is intentionally not parsed yet.
 };
 
-template <typename Context, typename Packet> class OpcodeBinder
+template <typename Context, typename Packet, typename OpcodeT> class OpcodeBinder
 {
 public:
     using HandlerFn = std::function<void(const Context&, const Packet&)>;
 
-    explicit OpcodeBinder(uint32_t opcode) : m_opcode(opcode) {}
+    explicit OpcodeBinder(OpcodeT opcode) : m_opcode(opcode) {}
 
     template <typename TMessage> class Typed
     {
     public:
-        explicit Typed(uint32_t opcode) : m_opcode(opcode) {}
+        explicit Typed(OpcodeT opcode) : m_opcode(opcode) {}
 
-        std::pair<uint32_t, HandlerFn>
+        std::pair<OpcodeT, HandlerFn>
         Then(std::function<void(const Context&, const TMessage&)> handler) const
         {
             return {m_opcode, [handler](const Context& ctx, const Packet& packet)
@@ -35,8 +35,8 @@ public:
                         TMessage message;
                         if (!message.Deserialize(reader))
                         {
-                            std::cout << "Failed parsing request for opcode " << packet.GetCode()
-                                      << "\n";
+                            std::cout << "Failed parsing request for opcode "
+                                      << static_cast<uint32_t>(packet.GetCode()) << "\n";
                             return;
                         }
                         handler(ctx, message);
@@ -44,21 +44,21 @@ public:
         }
 
     private:
-        uint32_t m_opcode;
+        OpcodeT m_opcode;
     };
 
     class Untyped
     {
     public:
-        explicit Untyped(uint32_t opcode) : m_opcode(opcode) {}
+        explicit Untyped(OpcodeT opcode) : m_opcode(opcode) {}
 
-        std::pair<uint32_t, HandlerFn> Then(std::function<void(const Context&)> handler) const
+        std::pair<OpcodeT, HandlerFn> Then(std::function<void(const Context&)> handler) const
         {
             return {m_opcode, [handler](const Context& ctx, const Packet&) { handler(ctx); }};
         }
 
     private:
-        uint32_t m_opcode;
+        OpcodeT m_opcode;
     };
 
     template <typename TMessage> Typed<TMessage> ParseAs() const
@@ -72,5 +72,5 @@ public:
     }
 
 private:
-    uint32_t m_opcode;
+    OpcodeT m_opcode;
 };

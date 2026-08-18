@@ -1,5 +1,6 @@
 #pragma once
 
+#include "LoginOpcodes.h"
 #include "common/Dispatcher.h"
 
 #include <boost/asio/thread_pool.hpp>
@@ -31,7 +32,7 @@ struct LoginContext
     boost::asio::thread_pool& dbPool;
 };
 
-class LoginDispatcher : public Dispatcher<LoginContext, LoginPacket>
+class LoginDispatcher : public Dispatcher<LoginContext, LoginPacket, LoginOpcode::Code>
 {
 public:
     LoginDispatcher();

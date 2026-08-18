@@ -2,138 +2,86 @@
 
 namespace GameOpcode
 {
-    std::string_view ToString(uint32_t code)
+    std::string_view ToString(Code code)
     {
+        // Derives the string from the enumerator token via # so it can never
+        // mismatch the name -- add a new opcode to the enum in GameOpcodes.h
+        // and one OPCODE_NAME(...) line here.
+#define OPCODE_NAME(name) \
+    case Code::name:      \
+        return #name;
+
         switch (code)
         {
-        case CG_ENTER:
-            return "CG_ENTER";
-        case CG_PLAY_START:
-            return "CG_PLAY_START";
-        case CG_EXIT:
-            return "CG_EXIT";
-        case CG_ITEM_PICKUP:
-            return "CG_ITEM_PICKUP";
-        case CG_ITEM_DROP:
-            return "CG_ITEM_DROP";
-        case CG_ITEM_MOVE:
-            return "CG_ITEM_MOVE";
-        case CG_QUEST_RESULT:
-            return "CG_QUEST_RESULT";
-        case CG_ITEM_TRADE_BUY:
-            return "CG_ITEM_TRADE_BUY";
-        case CG_ITEM_TRADE_SELL:
-            return "CG_ITEM_TRADE_SELL";
-        case CG_LEVEL_UP_CHECK:
-            return "CG_LEVEL_UP_CHECK";
-        case CG_CHAR_STATUS_UP:
-            return "CG_CHAR_STATUS_UP";
-        case GC_CHAR_SKILL_UP_EX:
-            return "GC_CHAR_SKILL_UP_EX";
-        case CG_ITEM_CONFIRM_NPC_REQUEST:
-            return "CG_ITEM_CONFIRM_NPC_REQUEST";
-        case CG_STORE_CREATE:
-            return "CG_STORE_CREATE";
-        case CG_STORE_OPEN:
-            return "CG_STORE_OPEN";
-        case CG_STORE_PW_MODIFY:
-            return "CG_STORE_PW_MODIFY";
-        case CG_STORE_CLOSE:
-            return "CG_STORE_CLOSE";
-        case CG_STORE_ITEM_IN:
-            return "CG_STORE_ITEM_IN";
-        case CG_STORE_ITEM_OUT:
-            return "CG_STORE_ITEM_OUT";
-        case CG_STORE_MONEY_IN:
-            return "CG_STORE_MONEY_IN";
-        case CG_STORE_MONEY_OUT:
-            return "CG_STORE_MONEY_OUT";
-        case CG_EMOTION:
-            return "CG_EMOTION";
-        case CG_ITEM_DELETE:
-            return "CG_ITEM_DELETE";
-        case CG_ITEM_MOVE_SUCC:
-            return "CG_ITEM_MOVE_SUCC";
-        case GC_ITEM_MOVE_FAIL:
-            return "GC_ITEM_MOVE_FAIL";
-        case GC_CHAR_MOVE:
-            return "GC_CHAR_MOVE";
-        case GC_CHAR_DATA_LOAD:
-            return "GC_CHAR_DATA_LOAD";
-        case GC_ENTER_FAIL:
-            return "GC_ENTER_FAIL";
-        case GC_ITEM_MAP_REMOVE:
-            return "GC_ITEM_MAP_REMOVE";
-        case GC_ITEM_PICKUP_SUCC:
-            return "GC_ITEM_PICKUP_SUCC";
-        case GC_ITEM_DROP_SUCC:
-            return "GC_ITEM_DROP_SUCC";
-        case GC_INVENTORY_ITEM_LIST:
-            return "GC_INVENTORY_ITEM_LIST";
-        case GC_CRT_LOAD:
-            return "GC_CRT_LOAD";
-        case GC_CHAR_EXIT_SUCC:
-            return "GC_CHAR_EXIT_SUCC";
-        case GC_QUEST_SUCC:
-            return "GC_QUEST_SUCC";
-        case GC_QUEST_FAIL:
-            return "GC_QUEST_FAIL";
-        case GC_VIEW_REMOVE_ALL:
-            return "GC_VIEW_REMOVE_ALL";
-        case GC_TRADE_BUY_SUCC:
-            return "GC_TRADE_BUY_SUCC";
-        case GC_TRADE_SELL_SUCC:
-            return "GC_TRADE_SELL_SUCC";
-        case GC_TRADE_BUY_FAIL:
-            return "GC_TRADE_BUY_FAIL";
-        case GC_TRADE_SELL_FAIL:
-            return "GC_TRADE_SELL_FAIL";
-        case GC_LEVEL_UP_SUCC:
-            return "GC_LEVEL_UP_SUCC";
-        case GC_LEVEL_UP_FAIL:
-            return "GC_LEVEL_UP_FAIL";
-        case GC_CHAR_STATUS_UP_SUCC:
-            return "GC_CHAR_STATUS_UP_SUCC";
-        case GC_CHAR_STATUS_UP_FAIL:
-            return "GC_CHAR_STATUS_UP_FAIL";
-        case GC_CHAR_SKILL_UP_EX_SUCC:
-            return "GC_CHAR_SKILL_UP_EX_SUCC";
-        case GC_CHAR_SKILL_UP_EX_FAIL:
-            return "GC_CHAR_SKILL_UP_EX_FAIL";
-        case GC_ITEM_CONFIRM_NPC_SUCC:
-            return "GC_ITEM_CONFIRM_NPC_SUCC";
-        case GC_ITEM_CONFIRM_NPC_FAIL:
-            return "GC_ITEM_CONFIRM_NPC_FAIL";
-        case GC_STORE_CREATE_SUCC:
-            return "GC_STORE_CREATE_SUCC";
-        case GC_STORE_OPEN_SUCC:
-            return "GC_STORE_OPEN_SUCC";
-        case GC_STORE_OPEN_FAIL:
-            return "GC_STORE_OPEN_FAIL";
-        case GC_STORE_PW_MODIFY_SUCC:
-            return "GC_STORE_PW_MODIFY_SUCC";
-        case GC_STORE_PW_MODIFY_FAIL:
-            return "GC_STORE_PW_MODIFY_FAIL";
-        case GC_STORE_CLOSE_SUCC:
-            return "GC_STORE_CLOSE_SUCC";
-        case GC_STORE_ITEM_IN:
-            return "GC_STORE_ITEM_IN";
-        case GC_STORE_ITEM_OUT:
-            return "GC_STORE_ITEM_OUT";
-        case GC_STORE_MONEY_IN_SUCC:
-            return "GC_STORE_MONEY_IN_SUCC";
-        case GC_STORE_MONEY_OUT_SUCC:
-            return "GC_STORE_MONEY_OUT_SUCC";
-        case GC_STORE_MONEY_FAIL:
-            return "GC_STORE_MONEY_FAIL";
-        case GC_EMOTION_SUCC:
-            return "GC_EMOTION_SUCC";
-        case GC_ITEM_DELETE_SUCC:
-            return "GC_ITEM_DELETE_SUCC";
-        case GC_SERVER_CHANGE:
-            return "GC_SERVER_CHANGE";
+            OPCODE_NAME(CG_MOVE)
+            OPCODE_NAME(CG_ENTER)
+            OPCODE_NAME(CG_PLAY_START)
+            OPCODE_NAME(CG_EXIT)
+            OPCODE_NAME(CG_ITEM_PICKUP)
+            OPCODE_NAME(CG_ITEM_DROP)
+            OPCODE_NAME(CG_ITEM_MOVE)
+            OPCODE_NAME(CG_QUEST_RESULT)
+            OPCODE_NAME(CG_ITEM_TRADE_BUY)
+            OPCODE_NAME(CG_ITEM_TRADE_SELL)
+            OPCODE_NAME(CG_LEVEL_UP_CHECK)
+            OPCODE_NAME(CG_CHAR_STATUS_UP)
+            OPCODE_NAME(GC_CHAR_SKILL_UP_EX)
+            OPCODE_NAME(CG_ITEM_CONFIRM_NPC_REQUEST)
+            OPCODE_NAME(CG_STORE_CREATE)
+            OPCODE_NAME(CG_STORE_OPEN)
+            OPCODE_NAME(CG_STORE_PW_MODIFY)
+            OPCODE_NAME(CG_STORE_CLOSE)
+            OPCODE_NAME(CG_STORE_ITEM_IN)
+            OPCODE_NAME(CG_STORE_ITEM_OUT)
+            OPCODE_NAME(CG_STORE_MONEY_IN)
+            OPCODE_NAME(CG_STORE_MONEY_OUT)
+            OPCODE_NAME(CG_EMOTION)
+            OPCODE_NAME(CG_ITEM_DELETE)
+            OPCODE_NAME(GC_CHAR_MOVE)
+            OPCODE_NAME(GC_CHAR_DATA_LOAD)
+            OPCODE_NAME(GC_ENTER_FAIL)
+            OPCODE_NAME(GC_CRT_LOAD)
+            OPCODE_NAME(GC_ITEM_MAP_NEW)
+            OPCODE_NAME(GC_ITEM_MAP_REMOVE)
+            OPCODE_NAME(GC_ITEM_PICKUP_SUCC)
+            OPCODE_NAME(GC_ITEM_DROP_SUCC)
+            OPCODE_NAME(CG_ITEM_MOVE_SUCC)
+            OPCODE_NAME(GC_ITEM_MOVE_FAIL)
+            OPCODE_NAME(GC_INVENTORY_ITEM_LIST)
+            OPCODE_NAME(GC_CHAR_EXIT_SUCC)
+            OPCODE_NAME(GC_QUEST_SUCC)
+            OPCODE_NAME(GC_QUEST_FAIL)
+            OPCODE_NAME(GC_VIEW_REMOVE_ALL)
+            OPCODE_NAME(GC_TRADE_BUY_SUCC)
+            OPCODE_NAME(GC_TRADE_SELL_SUCC)
+            OPCODE_NAME(GC_TRADE_BUY_FAIL)
+            OPCODE_NAME(GC_TRADE_SELL_FAIL)
+            OPCODE_NAME(GC_LEVEL_UP_SUCC)
+            OPCODE_NAME(GC_LEVEL_UP_FAIL)
+            OPCODE_NAME(GC_CHAR_STATUS_UP_SUCC)
+            OPCODE_NAME(GC_CHAR_STATUS_UP_FAIL)
+            OPCODE_NAME(GC_CHAR_SKILL_UP_EX_SUCC)
+            OPCODE_NAME(GC_CHAR_SKILL_UP_EX_FAIL)
+            OPCODE_NAME(GC_ITEM_CONFIRM_NPC_SUCC)
+            OPCODE_NAME(GC_ITEM_CONFIRM_NPC_FAIL)
+            OPCODE_NAME(GC_STORE_CREATE_SUCC)
+            OPCODE_NAME(GC_STORE_OPEN_SUCC)
+            OPCODE_NAME(GC_STORE_OPEN_FAIL)
+            OPCODE_NAME(GC_STORE_PW_MODIFY_SUCC)
+            OPCODE_NAME(GC_STORE_PW_MODIFY_FAIL)
+            OPCODE_NAME(GC_STORE_CLOSE_SUCC)
+            OPCODE_NAME(GC_STORE_ITEM_IN)
+            OPCODE_NAME(GC_STORE_ITEM_OUT)
+            OPCODE_NAME(GC_STORE_MONEY_IN_SUCC)
+            OPCODE_NAME(GC_STORE_MONEY_OUT_SUCC)
+            OPCODE_NAME(GC_STORE_MONEY_FAIL)
+            OPCODE_NAME(GC_EMOTION_SUCC)
+            OPCODE_NAME(GC_ITEM_DELETE_SUCC)
+            OPCODE_NAME(GC_SERVER_CHANGE)
         default:
             return "UNKNOWN";
         }
+
+#undef OPCODE_NAME
     }
 }
