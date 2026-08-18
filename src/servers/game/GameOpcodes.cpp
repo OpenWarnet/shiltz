@@ -37,6 +37,7 @@ namespace GameOpcode
             OPCODE_NAME(CG_STORE_MONEY_OUT)
             OPCODE_NAME(CG_EMOTION)
             OPCODE_NAME(CG_ITEM_DELETE)
+            OPCODE_NAME(CG_ATTACK_TO_CRT)
             OPCODE_NAME(GC_CHAR_MOVE)
             OPCODE_NAME(GC_CHAR_DATA_LOAD)
             OPCODE_NAME(GC_ENTER_FAIL)
@@ -79,6 +80,8 @@ namespace GameOpcode
             OPCODE_NAME(GC_EMOTION_SUCC)
             OPCODE_NAME(GC_ITEM_DELETE_SUCC)
             OPCODE_NAME(GC_SERVER_CHANGE)
+            OPCODE_NAME(GC_ATTACK_TO_CRT_MISS)
+            OPCODE_NAME(GC_ATTACK_CRT2TARGET_MISS)
         default:
             return "UNKNOWN";
         }

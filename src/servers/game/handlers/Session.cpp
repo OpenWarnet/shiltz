@@ -111,7 +111,7 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
     };
     ctx.sessions.Set(ctx.clientSocket, session);
     if (map)
-        map->SetPlayer(ctx.clientSocket, player.x, player.y);
+        map->SetPlayer(ctx.clientSocket, player.instance_id, player.x, player.y);
 
     PayloadWriter writer;
     CharacterDataLoad response = session.player.ToCharacterDataLoad(

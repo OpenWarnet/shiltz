@@ -2,6 +2,7 @@
 
 #include "GamePacket.h"
 #include "common/PayloadWriter.h"
+#include "protocol/server/AttackCrt2TargetMiss.h"
 #include "protocol/server/CrtMove.h"
 
 #include <algorithm>
@@ -27,7 +28,7 @@ GameServer::GameServer(uint16_t port, std::span<const uint8_t> key, IDatabase& d
       m_dbPool(1)
 {
     m_data.Load();
-    m_world.Start();
+    m_world.Start(m_data);
 
     m_lastTick = std::chrono::steady_clock::now();
     ScheduleTick();
@@ -50,7 +51,7 @@ void GameServer::ScheduleTick()
         const auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_lastTick);
         m_lastTick = now;
 
-        BroadcastCreatureMoves(m_world.Tick(delta));
+        BroadcastCreatureUpdates(m_world.Tick(delta));
 
         ScheduleTick();
     }));
@@ -82,15 +83,15 @@ void GameServer::OnClientDisconnected(SOCKET clientSocket)
     m_sessions.Remove(clientSocket);
 }
 
-void GameServer::BroadcastCreatureMoves(const std::vector<MapTickResult>& tickResults)
+void GameServer::BroadcastCreatureUpdates(const std::vector<MapTickResult>& tickResults)
 {
     for (const auto& mapResult : tickResults)
     {
-        if (mapResult.creature_moves.empty())
+        if (mapResult.creature_moves.empty() && mapResult.creature_attacks.empty())
             continue;
 
-        // The map produced these moves a moment ago on the map-pool thread,
-        // so it's still loaded.
+        // The map produced these moves/attacks a moment ago on the
+        // map-pool thread, so it's still loaded.
         Map* map = m_world.GetMap(mapResult.server_map_id);
         if (!map)
             continue;
@@ -119,6 +120,30 @@ void GameServer::BroadcastCreatureMoves(const std::vector<MapTickResult>& tickRe
             const auto payload = packet.Serialize(m_key);
 
             const auto creatureZone = Map::ZoneOf(move.to_x, move.to_y);
+
+            for (const auto& player : players)
+            {
+                if (Contains(map->ZonesAround(player.x, player.y), creatureZone))
+                    SendTo(player.socket, payload);
+            }
+        }
+
+        for (const auto& attack : mapResult.creature_attacks)
+        {
+            AttackCrt2TargetMiss attackMiss{
+                .target_id = attack.target_id,
+                .direction = attack.direction,
+                .pos_x = attack.pos_x,
+                .pos_y = attack.pos_y,
+            };
+
+            PayloadWriter writer;
+            attackMiss.Serialize(writer);
+            GamePacket packet(GameOpcode::GC_ATTACK_CRT2TARGET_MISS, writer.Data());
+            const auto payload = packet.Serialize(m_key);
+
+            const auto creatureZone =
+                Map::ZoneOf(static_cast<std::int32_t>(attack.pos_x), static_cast<std::int32_t>(attack.pos_y));
 
             for (const auto& player : players)
             {

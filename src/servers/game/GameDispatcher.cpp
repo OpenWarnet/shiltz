@@ -14,6 +14,7 @@
 #include "handlers/ItemConfirmNpc.h"
 #include "handlers/Store.h"
 #include "handlers/Emotion.h"
+#include "handlers/Attack.h"
 #include "protocol/client/GameEnter.h"
 #include "protocol/client/CharMove.h"
 #include "protocol/client/ItemPickup.h"
@@ -36,6 +37,7 @@
 #include "protocol/client/StoreMoneyIn.h"
 #include "protocol/client/StoreMoneyOut.h"
 #include "protocol/client/Emotion.h"
+#include "protocol/client/AttackToCrt.h"
 
 namespace
 {
@@ -75,6 +77,7 @@ GameDispatcher::GameDispatcher()
               When(GameOpcode::CG_STORE_MONEY_IN).ParseAs<StoreMoneyIn>().Then(HandleStoreMoneyIn),
               When(GameOpcode::CG_STORE_MONEY_OUT).ParseAs<StoreMoneyOut>().Then(HandleStoreMoneyOut),
               When(GameOpcode::CG_EMOTION).ParseAs<Emotion>().Then(HandleEmotion),
+              When(GameOpcode::CG_ATTACK_TO_CRT).ParseAs<AttackToCrt>().Then(HandleAttackToCrt),
           },
       }
 {

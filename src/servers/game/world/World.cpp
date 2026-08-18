@@ -2,6 +2,7 @@
 
 #include "MapLoader.h"
 #include "parser/MapScr.h"
+#include "tables/GameData.h"
 
 #include <boost/asio/post.hpp>
 
@@ -29,7 +30,7 @@ namespace
     }
 } // namespace
 
-void World::Start()
+void World::Start(const GameData& data)
 {
     std::cout << "World started\n";
 
@@ -50,7 +51,7 @@ void World::Start()
         {
             Map map = MapLoader::Load(NpcSpawnDataDir() / (record.npc_file + ".scr"),
                                        MonsterSpawnDataDir() / (record.monster_file + ".scr"),
-                                       [this] { return AllocateCreatureInstanceId(); });
+                                       [this] { return AllocateCreatureInstanceId(); }, data.monsters);
             m_maps.emplace(record.server_map_id, std::move(map));
         }
         catch (const std::runtime_error& e)
@@ -117,7 +118,9 @@ std::vector<MapTickResult> World::Tick(std::chrono::milliseconds delta)
         boost::asio::post(m_mapPool, [&map, delta, &result, &remaining] {
             try
             {
-                result.creature_moves = map.Tick(delta);
+                Map::TickResult tickResult = map.Tick(delta);
+                result.creature_moves = std::move(tickResult.moves);
+                result.creature_attacks = std::move(tickResult.attacks);
             }
             catch (const std::exception& e)
             {

@@ -30,12 +30,13 @@ private:
     // schedule regardless of client traffic.
     void ScheduleTick();
 
-    // Turns each map's World::Tick() result into GC_CRT_MOVE broadcasts --
-    // one per creature move, sent only to sessions on that map whose own
-    // 3x3 zone view (Map::ZonesAround, same rule as HandleMovement in
+    // Turns each map's World::Tick() result into GC_CRT_MOVE/
+    // GC_ATTACK_CRT2TARGET_MISS broadcasts -- one per creature move/
+    // attack, sent only to sessions on that map whose own 3x3 zone view
+    // (Map::ZonesAround, same rule as HandleMovement in
     // handlers/Movement.cpp) currently covers the creature's zone. Called
     // from ScheduleTick, still on the world strand.
-    void BroadcastCreatureMoves(const std::vector<MapTickResult>& tickResults);
+    void BroadcastCreatureUpdates(const std::vector<MapTickResult>& tickResults);
 
     GameDispatcher m_dispatcher;
     std::span<const uint8_t> m_key;

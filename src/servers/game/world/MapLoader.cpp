@@ -3,10 +3,21 @@
 #include "Creature.h"
 #include "parser/MonsterSpawnScr.h"
 #include "parser/NpcScr.h"
+#include "tables/MonsterTable.h"
+
+namespace
+{
+    MonsterRecord LookUpOrDefault(const MonsterTable& monsters, std::int64_t monsterId)
+    {
+        const MonsterRecord* record = monsters.Find(monsterId);
+        return record ? *record : MonsterRecord{};
+    }
+} // namespace
 
 Map MapLoader::Load(const std::filesystem::path& npcScrPath,
                      const std::filesystem::path& monsterSpawnScrPath,
-                     const std::function<std::uint32_t()>& nextInstanceId)
+                     const std::function<std::uint32_t()>& nextInstanceId,
+                     const MonsterTable& monsters)
 {
     Map map;
 
@@ -21,6 +32,7 @@ Map MapLoader::Load(const std::filesystem::path& npcScrPath,
                 .x = instance.x,
                 .y = instance.y,
                 .direction = instance.direction,
+                .monster = LookUpOrDefault(monsters, spawn.id),
             });
         }
     }
@@ -36,6 +48,7 @@ Map MapLoader::Load(const std::filesystem::path& npcScrPath,
                 .x = instance.x,
                 .y = instance.y,
                 .direction = instance.direction,
+                .monster = LookUpOrDefault(monsters, group.monster_id),
             });
         }
     }

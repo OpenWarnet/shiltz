@@ -59,12 +59,36 @@ public:
         std::int32_t to_y = 0;
     };
 
+    // A creature's melee swing at its current attack target, once in
+    // range (see AdvanceAttackState in Map.cpp) -- always a miss for now,
+    // no damage model exists yet. GameServer turns these into
+    // GC_ATTACK_CRT2TARGET_MISS broadcasts the same way CreatureMove
+    // becomes GC_CRT_MOVE; Map itself has no idea packets exist.
+    struct CreatureAttack
+    {
+        std::uint32_t creature_id = 0;
+        std::uint32_t target_id = 0;
+        std::uint32_t direction = 0;
+        std::uint32_t pos_x = 0;
+        std::uint32_t pos_y = 0;
+    };
+
+    // Bundles both of Tick()'s outputs -- everything a creature did this
+    // tick, split by kind since GameServer turns each into a different
+    // wire packet (GC_CRT_MOVE vs. GC_ATTACK_CRT2TARGET_MISS).
+    struct TickResult
+    {
+        std::vector<CreatureMove> moves;
+        std::vector<CreatureAttack> attacks;
+    };
+
     // One connected player's presence on this map -- just enough to notify
     // and to run a visibility check against (see GameServer::
     // BroadcastCreatureMoves), not the full GameSession. See SetPlayer.
     struct MapPlayer
     {
         SOCKET socket = 0;
+        std::uint32_t instance_id = 0;
         std::int32_t x = 0;
         std::int32_t y = 0;
     };
@@ -118,8 +142,11 @@ public:
     // initial placement and every later CG_MOVE within this map). Call
     // RemovePlayer first when a player *leaves* this map for another one
     // (see Quest.cpp's ApplyWarp) -- SetPlayer alone never removes a
-    // player from a map they've warped away from.
-    void SetPlayer(SOCKET socket, std::int32_t x, std::int32_t y);
+    // player from a map they've warped away from. `instanceId` is
+    // Player::instance_id -- carried on the roster (not just socket) so
+    // FindPlayerPosition can resolve an attacking creature's
+    // Creature::ai_target_id back to a live position.
+    void SetPlayer(SOCKET socket, std::uint32_t instanceId, std::int32_t x, std::int32_t y);
 
     // Removes `socket` from this map's roster. No-op if it wasn't on this
     // map. Call on CG_EXIT, on disconnect, and on the leaving side of a
@@ -150,15 +177,27 @@ public:
     // Map. Currently just runs TickCreature; this is the extension point
     // for respawns/regen once those exist too. Because Maps never
     // interact, none of this ever needs to reach across into another Map.
-    // Returns every creature that moved this tick, for World::Tick to hand
-    // up to GameServer.
+    // Returns every creature move and attack from this tick, for
+    // World::Tick to hand up to GameServer.
     //
     // World::Tick only calls this for maps where HasPlayers() is true, so a
     // creature's ai_timer simply doesn't count down while its map is empty
     // -- it resumes from wherever it was left once a player returns, since
     // every tick still advances by the same fixed `delta` regardless of how
     // many ticks a map sat skipped.
-    std::vector<CreatureMove> Tick(std::chrono::milliseconds delta);
+    TickResult Tick(std::chrono::milliseconds delta);
+
+    // Marks the Monster-kind creature with this instance id as under
+    // attack by `attackerId` (a Player::instance_id) -- sets ai_state to
+    // Attacking and ai_target_id to attackerId, interrupting whatever
+    // Idle/Wander timer it was mid-count on, the same in-place-mutate
+    // approach TickCreature's RollNextAiState uses. Called from
+    // handlers/Attack.cpp on CG_ATTACK_TO_CRT, so unlike Tick() this runs
+    // on a connection thread, not a map-pool thread -- takes
+    // m_creatureGridMutex exclusively for that reason. False if no such
+    // creature is on this map (already dead/despawned, wrong id, or an
+    // NPC).
+    bool AttackCreature(std::uint32_t creatureId, std::uint32_t attackerId);
 
 private:
     // Advances every Monster's Idle/Wander state machine by `delta` (NPCs
@@ -167,10 +206,22 @@ private:
     // updated in place first, then anyone who wandered into a different
     // zone is moved to that zone's bucket. See Creature.h for the state
     // machine itself and MixDecisionSeed (Map.cpp) for how each decision
-    // is rolled. Returns every creature that actually moved (Wander rolls
-    // that land back on the same tile don't happen -- see kWanderOffsets --
-    // so a Wander roll always produces one).
-    std::vector<CreatureMove> TickCreature(std::chrono::milliseconds delta);
+    // is rolled -- and Attacking (chasing/swinging at ai_target_id, see
+    // AdvanceAttackState). Returns every creature that actually moved
+    // (Wander rolls that land back on the same tile don't happen -- see
+    // kWanderOffsets -- so a Wander roll always produces one) plus every
+    // creature that swung at its target this tick.
+    TickResult TickCreature(std::chrono::milliseconds delta);
+
+    // Looks up a live player's current position by Player::instance_id --
+    // what TickCreature uses to chase an Attacking creature's
+    // ai_target_id toward its current position each step. A linear scan
+    // over m_players (keyed by socket, not instance_id); fine at this
+    // roster's size, same tradeoff AttackCreature already makes scanning
+    // the creature grid. std::nullopt if that player isn't on this map's
+    // roster (disconnected, or warped away).
+    std::optional<std::pair<std::int32_t, std::int32_t>>
+    FindPlayerPosition(std::uint32_t instanceId) const;
 
     mutable std::mutex m_itemsMutex;
     std::vector<GroundItem> m_items;

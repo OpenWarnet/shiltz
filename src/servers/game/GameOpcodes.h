@@ -34,6 +34,7 @@ namespace GameOpcode
         CG_STORE_MONEY_OUT = 411061,
         CG_EMOTION = 411074,     // 0x0645C2
         CG_ITEM_DELETE = 411454, // 0x06473E
+        CG_ATTACK_TO_CRT = 411014, // 0x064586
 
         // Server -> Client
         GC_CHAR_MOVE = 511000,
@@ -80,6 +81,8 @@ namespace GameOpcode
         GC_EMOTION_SUCC = 521464,     // 0x07F4F8
         GC_ITEM_DELETE_SUCC = 521462, // 0x07F4F6
         GC_SERVER_CHANGE = 511086,    // 0x7CC6E
+        GC_ATTACK_TO_CRT_MISS = 531018, // 0x081A4A
+        GC_ATTACK_CRT2TARGET_MISS = 531024, // 0x081A50
     };
 
     // Brings every enumerator above into GameOpcode::<name> scope directly,

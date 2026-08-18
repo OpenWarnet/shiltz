@@ -8,14 +8,18 @@
 #include <cstdint>
 #include <unordered_map>
 
+class GameData;
+
 // One Map's contribution to a World::Tick() call -- which map, and every
-// creature that moved on it this tick (see Map::Tick/Map::CreatureMove).
-// GameServer turns these into GC_CRT_MOVE broadcasts; World itself has no
-// idea packets or players exist, only that a tick happened.
+// creature move/attack on it this tick (see Map::Tick/Map::TickResult).
+// GameServer turns these into GC_CRT_MOVE/GC_ATTACK_CRT2TARGET_MISS
+// broadcasts; World itself has no idea packets or players exist, only
+// that a tick happened.
 struct MapTickResult
 {
     std::int64_t server_map_id = 0;
     std::vector<Map::CreatureMove> creature_moves;
+    std::vector<Map::CreatureAttack> creature_attacks;
 };
 
 // Owns the game server's live simulation state -- one Map per
@@ -34,7 +38,13 @@ struct MapTickResult
 class World
 {
 public:
-    void Start();
+    // `data` is only read while spawning creatures (see MapLoader::Load,
+    // currently just its MonsterTable) -- World doesn't keep a reference
+    // to it, so its caller (GameServer) is free to load GameData first and
+    // pass it in here. Taking the whole GameData rather than just the one
+    // table it uses today means Start() doesn't need a new parameter every
+    // time spawning grows to read another table.
+    void Start(const GameData& data);
     void Shutdown();
 
     // Looks up the Map for a given server_map_id (Player::map_id and

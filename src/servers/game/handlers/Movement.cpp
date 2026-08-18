@@ -103,7 +103,8 @@ void HandleMovement(const GameContext& ctx, const CharMove& request)
 
     ctx.sessions.Set(ctx.clientSocket, *session);
     if (map)
-        map->SetPlayer(ctx.clientSocket, session->player.x, session->player.y);
+        map->SetPlayer(ctx.clientSocket, session->player.instance_id, session->player.x,
+                        session->player.y);
 
     // Speed is this connection's own derived stat, not an echo of
     // CharMove::speed -- see protocol/server/CharMoveUpdate.h.
