@@ -13,9 +13,6 @@ using namespace std::chrono_literals;
 namespace
 {
     constexpr auto kTickInterval = 100ms;
-    // Log a heartbeat every 5s (50 ticks at 100ms) rather than every tick,
-    // just to make the loop's liveness visible on stdout without spamming it.
-    constexpr int kTicksPerHeartbeat = 50;
 
     bool Contains(const std::vector<std::pair<std::int32_t, std::int32_t>>& zones,
                   const std::pair<std::int32_t, std::int32_t>& zone)
@@ -54,12 +51,6 @@ void GameServer::ScheduleTick()
         m_lastTick = now;
 
         BroadcastCreatureMoves(m_world.Tick(delta));
-
-        if (++m_ticksSinceHeartbeat >= kTicksPerHeartbeat)
-        {
-            m_ticksSinceHeartbeat = 0;
-            std::cout << "World tick alive\n";
-        }
 
         ScheduleTick();
     }));

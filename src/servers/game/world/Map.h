@@ -131,6 +131,12 @@ public:
     // asking GameSessionStore to search for "who's on this map".
     std::vector<MapPlayer> Players() const;
 
+    // True if anyone is currently on this map's roster. Cheap occupancy
+    // check for World::Tick to decide whether this Map's simulation is
+    // worth running this tick, without paying for a full Players() copy
+    // just to test emptiness.
+    bool HasPlayers() const;
+
     // Which zone (zoneX, zoneY) contains world position (x, y) -- pure
     // coordinate math, no grid-bounds check (see ZonesAround/InZoneGrid in
     // Map.cpp for that). Exposed so GameServer can classify a
@@ -146,6 +152,12 @@ public:
     // interact, none of this ever needs to reach across into another Map.
     // Returns every creature that moved this tick, for World::Tick to hand
     // up to GameServer.
+    //
+    // World::Tick only calls this for maps where HasPlayers() is true, so a
+    // creature's ai_timer simply doesn't count down while its map is empty
+    // -- it resumes from wherever it was left once a player returns, since
+    // every tick still advances by the same fixed `delta` regardless of how
+    // many ticks a map sat skipped.
     std::vector<CreatureMove> Tick(std::chrono::milliseconds delta);
 
 private:

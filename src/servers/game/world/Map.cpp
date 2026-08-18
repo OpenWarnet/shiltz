@@ -191,6 +191,12 @@ std::vector<Map::MapPlayer> Map::Players() const
     return players;
 }
 
+bool Map::HasPlayers() const
+{
+    std::lock_guard lock(m_playersMutex);
+    return !m_players.empty();
+}
+
 std::pair<std::int32_t, std::int32_t> Map::ZoneOf(std::int32_t x, std::int32_t y)
 {
     return {x / kZoneSize, y / kZoneSize};

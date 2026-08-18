@@ -47,7 +47,6 @@ private:
     Server::Strand m_worldStrand;
     boost::asio::steady_timer m_tickTimer;
     std::chrono::steady_clock::time_point m_lastTick;
-    int m_ticksSinceHeartbeat = 0;
 
     // Dedicated worker for blocking IDatabase (SQLite) calls a handler
     // wants off the reactor pool's threads -- see GameContext::dbPool. One

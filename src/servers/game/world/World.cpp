@@ -102,6 +102,18 @@ std::vector<MapTickResult> World::Tick(std::chrono::milliseconds delta)
         MapTickResult& result = results[i++];
         result.server_map_id = serverMapId;
 
+        // Only maps with someone actually on them are worth simulating this
+        // tick -- an empty map's creatures just have their ai_timer left
+        // as-is (see the comment on Map::Tick) rather than being wandered
+        // around for nobody to see. Counting the latch down inline (instead
+        // of posting a no-op task) still leaves exactly m_maps.size()
+        // count_downs total, matching the latch's initial count above.
+        if (!map.HasPlayers())
+        {
+            remaining.count_down();
+            continue;
+        }
+
         boost::asio::post(m_mapPool, [&map, delta, &result, &remaining] {
             try
             {
