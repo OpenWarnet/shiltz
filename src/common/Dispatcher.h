@@ -5,8 +5,6 @@
 #include <cstdint>
 #include <functional>
 #include <initializer_list>
-#include <iomanip>
-#include <iostream>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
@@ -38,8 +36,6 @@ public:
         {
             PacketCapture::LogUnhandled(ctx.clientSocket, static_cast<uint32_t>(packet.GetCode()), name,
                                          packet.GetPayload());
-            std::cout << "Received unknown packet code: " << std::hex
-                      << static_cast<uint32_t>(packet.GetCode()) << std::dec << "\n";
             return;
         }
 

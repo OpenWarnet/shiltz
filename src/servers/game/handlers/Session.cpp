@@ -18,15 +18,9 @@
 #include "world/World.h"
 
 #include <ctime>
-#include <iostream>
 
 void HandleEnter(const GameContext& ctx, const GameEnter& request)
 {
-    std::cout << "Session ID: " << request.session_id << "\n";
-    std::cout << "Character: " << request.char_name << "\n";
-    std::cout << "Username: " << request.username << "\n";
-    // Password intentionally not logged.
-
     auto sendFail = [ctx]
     {
         PayloadWriter failWriter;
@@ -53,7 +47,6 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
 
     if (!findSession->Step())
     {
-        std::cout << "Rejecting CG_ENTER: unknown session " << request.session_id << "\n";
         sendFail();
         return;
     }
@@ -68,8 +61,6 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
 
     if (!findAccount->Step() || std::get<std::string>(findAccount->Column(0)) != request.username)
     {
-        std::cout << "Rejecting CG_ENTER: username '" << request.username
-                  << "' does not match session's account\n";
         sendFail();
         return;
     }
@@ -83,8 +74,6 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
 
     if (!findCharacterId->Step())
     {
-        std::cout << "Rejecting CG_ENTER: no character '" << request.char_name
-                  << "' for this account\n";
         sendFail();
         return;
     }
@@ -95,8 +84,6 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
     // gets a chance to read/write anything -- see GameSessionStore.h.
     if (!ctx.sessions.TryClaimCharacter(characterId, ctx.clientSocket))
     {
-        std::cout << "Rejecting CG_ENTER: character " << characterId
-                  << " already has an active session\n";
         sendFail();
         return;
     }
@@ -104,8 +91,6 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
     Player player;
     if (!player.LoadFromDB(ctx.db, characterId))
     {
-        std::cout << "Rejecting CG_ENTER: character " << characterId
-                  << " vanished between lookup and load\n";
         ctx.sessions.ReleaseCharacterClaim(characterId);
         sendFail();
         return;
@@ -182,13 +167,10 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
 
 void HandleCgPlayStart(const GameContext&)
 {
-    std::cout << "Received CG_PLAY_START packet.\n";
 }
 
 void HandleCgExit(const GameContext& ctx)
 {
-    std::cout << "Received CG_EXIT packet.\n";
-
     // Player::x/y is kept live by HandleMovement on every CG_MOVE, but
     // character_position is only ever written at character creation (see
     // Player::LoadFromDB) -- persist the session's current position now,

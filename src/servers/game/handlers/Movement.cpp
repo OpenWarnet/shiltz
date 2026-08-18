@@ -14,7 +14,6 @@
 #include "world/World.h"
 
 #include <algorithm>
-#include <iostream>
 
 namespace
 {
@@ -29,10 +28,7 @@ void HandleMovement(const GameContext& ctx, const CharMove& request)
 {
     auto session = ctx.sessions.Get(ctx.clientSocket);
     if (!session)
-    {
-        std::cout << "Rejecting CG_MOVE: socket has no resolved character (never entered)\n";
         return;
-    }
 
     // Null if session->player.map_id isn't a map.scr id this World loaded --
     // zone/creature updates stay empty in that case (see Session.cpp's
@@ -52,10 +48,6 @@ void HandleMovement(const GameContext& ctx, const CharMove& request)
         for (const auto& creature : map->CreaturesInZone(zone.first, zone.second))
         {
             const MonsterRecord* monsterRecord = ctx.data.monsters.Find(creature.monster_id);
-
-            std::cout << "Loading creature " << creature.instance_id << " (monster_id "
-                      << creature.monster_id << ") at (" << creature.x << ", " << creature.y
-                      << ") for player " << session->characterId << "\n";
 
             crtLoadResponse.records.push_back(CrtLoadRecord{
                 .id = creature.instance_id,

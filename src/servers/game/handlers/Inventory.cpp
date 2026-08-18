@@ -23,20 +23,14 @@
 #include "world/World.h"
 
 #include <algorithm>
-#include <iostream>
 #include <optional>
 #include <random>
 
 void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
 {
-    std::cout << "Item pickup: ground id " << request.id << ", slot_id " << request.slot_id << "\n";
-
     auto session = ctx.sessions.Get(ctx.clientSocket);
     if (!session)
-    {
-        std::cout << "Rejecting CG_ITEM_PICKUP: socket has no resolved character (never entered)\n";
         return;
-    }
 
     // Everything below touches World/Map state and/or blocking SQLite
     // calls -- run it on the DB pool instead of the connection's reactor
@@ -56,21 +50,14 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
 
     Map* map = ctx.world.GetMap(session->player.map_id);
     if (!map)
-    {
-        std::cout << "Rejecting CG_ITEM_PICKUP: character on unknown map_id "
-                  << session->player.map_id << "\n";
         return;
-    }
 
     // Atomically claim the ground item so two players racing the same
     // pickup can't both grant it to themselves. Claimed before the DB
     // write, so a failed write loses the item rather than duplicating it.
     auto groundItem = map->TryTakeItem(request.id);
     if (!groundItem)
-    {
-        std::cout << "Rejecting CG_ITEM_PICKUP: no ground item with id " << request.id << "\n";
         return;
-    }
 
     const std::uint32_t itemId = groundItem->item.item_id;
 
@@ -89,8 +76,6 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
     {
         if (existing->item_id != itemId)
         {
-            std::cout << "Rejecting CG_ITEM_PICKUP: slot_index " << slotIndex << " holds item_id "
-                      << existing->item_id << ", not " << itemId << " -- ignoring\n";
             // Put the claimed item back rather than dropping it -- this is
             // a normal rejection (stale client state), not a failure.
             map->AddItem(*groundItem);
@@ -102,9 +87,6 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
         // aren't meaningful per-unit), only quantity moves.
         updated = *existing;
         updated.quantity += 1;
-
-        std::cout << "Stacked item_id " << itemId << " at slot_index " << slotIndex << " (qty now "
-                  << updated.quantity << ")\n";
     }
     else
     {
@@ -114,13 +96,10 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
         // ground stack held.
         updated = groundItem->item;
         updated.quantity = 1;
-
-        std::cout << "Added item_id " << itemId << " at slot_index " << slotIndex << "\n";
     }
 
     if (!ItemRepository::SaveInventorySlot(ctx.db, characterId, slotIndex, existing, updated))
     {
-        std::cout << "Rejecting CG_ITEM_PICKUP: slot_index " << slotIndex << " changed concurrently\n";
         // Put the claimed item back rather than dropping it -- same
         // reasoning as the item_id-mismatch rejection above.
         map->AddItem(*groundItem);
@@ -161,9 +140,6 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
 
 void HandleItemMove(const GameContext& ctx, const ItemMove& request)
 {
-    std::cout << "Item move: source_slot_id " << request.source_slot_id << ", dest_slot_id "
-              << request.dest_slot_id << "\n";
-
     auto sendFail = [ctx, request]
     {
         PayloadWriter failWriter;
@@ -179,7 +155,6 @@ void HandleItemMove(const GameContext& ctx, const ItemMove& request)
     auto session = ctx.sessions.Get(ctx.clientSocket);
     if (!session)
     {
-        std::cout << "Rejecting CG_ITEM_MOVE: socket has no resolved character (never entered)\n";
         sendFail();
         return;
     }
@@ -200,8 +175,6 @@ void HandleItemMove(const GameContext& ctx, const ItemMove& request)
 
     if (!sourceContent && !destContent)
     {
-        std::cout << "Rejecting CG_ITEM_MOVE: source_slot_id " << request.source_slot_id
-                  << " and dest_slot_id " << request.dest_slot_id << " are both empty\n";
         sendFail();
         return;
     }
@@ -238,8 +211,6 @@ void HandleItemMove(const GameContext& ctx, const ItemMove& request)
 
     if (!writeOk)
     {
-        std::cout << "Rejecting CG_ITEM_MOVE: source_slot_id " << request.source_slot_id
-                  << " or dest_slot_id " << request.dest_slot_id << " changed concurrently\n";
         sendFail();
         return;
     }
@@ -252,25 +223,16 @@ void HandleItemMove(const GameContext& ctx, const ItemMove& request)
     {
         session->player.SetItemSlot(request.source_slot_id, *destContent);
         session->player.SetItemSlot(request.dest_slot_id, *sourceContent);
-
-        std::cout << "Swapped source_slot_id " << request.source_slot_id << " and dest_slot_id "
-                  << request.dest_slot_id << "\n";
     }
     else if (sourceContent)
     {
         session->player.SetItemSlot(request.dest_slot_id, *sourceContent);
         session->player.ClearItemSlot(request.source_slot_id);
-
-        std::cout << "Moved source_slot_id " << request.source_slot_id << " to empty dest_slot_id "
-                  << request.dest_slot_id << "\n";
     }
     else
     {
         session->player.SetItemSlot(request.source_slot_id, *destContent);
         session->player.ClearItemSlot(request.dest_slot_id);
-
-        std::cout << "Moved dest_slot_id " << request.dest_slot_id << " to empty source_slot_id "
-                  << request.source_slot_id << "\n";
     }
 
     ctx.sessions.Set(ctx.clientSocket, *session);
@@ -292,20 +254,12 @@ void HandleItemMove(const GameContext& ctx, const ItemMove& request)
 
 void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
 {
-    std::cout << "Item drop: slot_id " << request.slot_id << ", quantity " << request.quantity << "\n";
-
     if (request.quantity == 0)
-    {
-        std::cout << "Rejecting CG_ITEM_DROP: quantity 0\n";
         return;
-    }
 
     auto session = ctx.sessions.Get(ctx.clientSocket);
     if (!session)
-    {
-        std::cout << "Rejecting CG_ITEM_DROP: socket has no resolved character (never entered)\n";
         return;
-    }
 
     // Everything below touches World/Map state and/or blocking SQLite
     // calls -- run it on the DB pool instead of the connection's reactor
@@ -315,11 +269,7 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
     boost::asio::post(ctx.dbPool, [ctx, request, session]() mutable {
     Map* map = ctx.world.GetMap(session->player.map_id);
     if (!map)
-    {
-        std::cout << "Rejecting CG_ITEM_DROP: character on unknown map_id "
-                  << session->player.map_id << "\n";
         return;
-    }
 
     const int64_t characterId = session->characterId;
     // Same wire-relative -> bag-relative conversion as HandleItemPickup --
@@ -333,10 +283,7 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
 
     auto slotContent = session->player.GetInventorySlot(slotIndex);
     if (!slotContent)
-    {
-        std::cout << "Rejecting CG_ITEM_DROP: slot_index " << slotIndex << " is empty\n";
         return;
-    }
 
     const std::uint32_t itemId = slotContent->item_id;
 
@@ -385,10 +332,7 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
     }
 
     if (!writeOk)
-    {
-        std::cout << "Rejecting CG_ITEM_DROP: slot_index " << slotIndex << " changed concurrently\n";
         return;
-    }
 
     txn.Commit();
 
@@ -418,9 +362,6 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
         .item = droppedItem,
     });
 
-    std::cout << "Dropped item_id " << itemId << " (qty " << droppedItem.quantity << ") from slot_index "
-              << slotIndex << " as ground id " << groundId << "\n";
-
     PayloadWriter succWriter;
     ItemDropSuccess succResponse{
         .id = groundId,
@@ -443,14 +384,9 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
 
 void HandleItemDelete(const GameContext& ctx, const ItemDelete& request)
 {
-    std::cout << "Item delete: slot_id " << request.slot_id << "\n";
-
     auto session = ctx.sessions.Get(ctx.clientSocket);
     if (!session)
-    {
-        std::cout << "Rejecting CG_ITEM_DELETE: socket has no resolved character (never entered)\n";
         return;
-    }
 
     // Everything below is blocking SQLite work -- run it on the DB pool
     // instead of the connection's reactor thread. request/session are
@@ -465,25 +401,15 @@ void HandleItemDelete(const GameContext& ctx, const ItemDelete& request)
     // needed here.
     auto slotContent = session->player.GetItemSlot(request.slot_id);
     if (!slotContent)
-    {
-        std::cout << "Rejecting CG_ITEM_DELETE: slot_id " << request.slot_id << " is empty\n";
         return;
-    }
-
-    const std::uint32_t itemId = slotContent->item_id;
 
     DatabaseTransaction txn(ctx.db);
     if (!ItemRepository::ClearItemSlot(ctx.db, characterId, request.slot_id, slotContent))
-    {
-        std::cout << "Rejecting CG_ITEM_DELETE: slot_id " << request.slot_id << " changed concurrently\n";
         return;
-    }
     txn.Commit();
 
     session->player.ClearItemSlot(request.slot_id);
     ctx.sessions.Set(ctx.clientSocket, *session);
-
-    std::cout << "Deleted item_id " << itemId << " from slot_id " << request.slot_id << "\n";
 
     PayloadWriter succWriter;
     ItemDeleteSuccess succResponse{.slot_id = request.slot_id};

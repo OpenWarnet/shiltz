@@ -23,7 +23,6 @@
 #include "world/Player.h"
 #include "world/World.h"
 
-#include <iostream>
 #include <optional>
 #include <vector>
 
@@ -66,9 +65,7 @@ bool IsStackableItemType(std::int64_t rawItemType)
     }
 }
 
-// Checks every condition rather than stopping at the first failure, and
-// logs each one that fails with the actual-vs-required values -- so a
-// rejected turn-in shows *why* in the log instead of just that it failed.
+// Checks every condition rather than stopping at the first failure.
 bool ConditionsMet(const QuestConditions& c, const Player& player)
 {
     bool met = true;
@@ -77,60 +74,33 @@ bool ConditionsMet(const QuestConditions& c, const Player& player)
     {
         const std::int64_t have = CountItemInInventory(player, c.has_item_0);
         if (have < c.min_item_0_count)
-        {
-            std::cout << "Quest condition not met: has_item_0 " << c.has_item_0 << " -- have "
-                      << have << ", need " << c.min_item_0_count << "\n";
             met = false;
-        }
     }
 
     if (c.has_item_1 != 0)
     {
         const std::int64_t have = CountItemInInventory(player, c.has_item_1);
         if (have < c.min_item_1_count)
-        {
-            std::cout << "Quest condition not met: has_item_1 " << c.has_item_1 << " -- have "
-                      << have << ", need " << c.min_item_1_count << "\n";
             met = false;
-        }
     }
 
     if (c.has_flag != 0 && !player.quest_flags.IsSet(static_cast<std::uint32_t>(c.has_flag)))
-    {
-        std::cout << "Quest condition not met: has_flag " << c.has_flag << " not set\n";
         met = false;
-    }
 
     if (c.has_job != 0 && static_cast<std::uint32_t>(c.has_job) != player.job_id)
-    {
-        std::cout << "Quest condition not met: has_job " << c.has_job << " -- player job_id "
-                  << player.job_id << "\n";
         met = false;
-    }
 
     // "Reputation" and "Fame" are the same Individuality System stat under
     // two names -- see reward_fame below and CharacterDataLoad.h's ownFame
     // comment.
     if (c.min_reputation != 0 && static_cast<std::int64_t>(player.fame) < c.min_reputation)
-    {
-        std::cout << "Quest condition not met: min_reputation " << c.min_reputation
-                  << " -- player fame " << player.fame << "\n";
         met = false;
-    }
 
     if (c.min_level != 0 && static_cast<std::int64_t>(player.level) < c.min_level)
-    {
-        std::cout << "Quest condition not met: min_level " << c.min_level << " -- player level "
-                  << player.level << "\n";
         met = false;
-    }
 
     if (c.min_cegel != 0 && player.money < c.min_cegel)
-    {
-        std::cout << "Quest condition not met: min_cegel " << c.min_cegel << " -- player money "
-                  << player.money << "\n";
         met = false;
-    }
 
     // min_days/time_of_day: no "days played" counter or server clock exists
     // yet -- both are treated as always satisfied until that lands.
@@ -178,10 +148,7 @@ std::vector<QuestSuccItem> GrantRewardItem(const GameContext& ctx, GameSession& 
 
     const ItemRecord* record = ctx.data.items.Find(itemId);
     if (!record)
-    {
-        std::cout << "Quest reward: unknown item_id " << itemId << " -- skipping\n";
         return granted;
-    }
 
     const auto wireItemId = static_cast<std::uint32_t>(itemId);
     const std::int64_t units = count > 0 ? count : 1;
@@ -203,10 +170,7 @@ std::vector<QuestSuccItem> GrantRewardItem(const GameContext& ctx, GameSession& 
         }
 
         if (!bagIndex)
-        {
-            std::cout << "Quest reward: no free bag slot for item_id " << itemId << "\n";
             return granted;
-        }
 
         Item stacked{
             .item_id = wireItemId,
@@ -218,11 +182,7 @@ std::vector<QuestSuccItem> GrantRewardItem(const GameContext& ctx, GameSession& 
         // ItemRepository.h. A concurrently-changed slot just skips this
         // reward, same as "no free bag slot" above.
         if (!ItemRepository::SaveInventorySlot(ctx.db, characterId, *bagIndex, existing, stacked))
-        {
-            std::cout << "Quest reward: bag slot " << *bagIndex << " changed concurrently -- skipping item_id "
-                      << itemId << "\n";
             return granted;
-        }
         session.player.SetInventorySlot(*bagIndex, stacked);
 
         granted.push_back(QuestSuccItem{
@@ -242,11 +202,7 @@ std::vector<QuestSuccItem> GrantRewardItem(const GameContext& ctx, GameSession& 
     {
         auto bagIndex = FindFreeBagSlot(session.player);
         if (!bagIndex)
-        {
-            std::cout << "Quest reward: no free bag slot for item_id " << itemId << " (granted "
-                       << i << "/" << units << ")\n";
             break;
-        }
 
         Item equipped{
             .item_id = wireItemId,
@@ -258,12 +214,7 @@ std::vector<QuestSuccItem> GrantRewardItem(const GameContext& ctx, GameSession& 
         // bagIndex just came from FindFreeBagSlot, so the expected previous
         // content is "empty" -- see ItemRepository.h.
         if (!ItemRepository::SaveInventorySlot(ctx.db, characterId, *bagIndex, std::nullopt, equipped))
-        {
-            std::cout << "Quest reward: bag slot " << *bagIndex
-                      << " changed concurrently -- stopping grant of item_id " << itemId << " (granted "
-                      << i << "/" << units << ")\n";
             break;
-        }
         session.player.SetInventorySlot(*bagIndex, equipped);
 
         granted.push_back(QuestSuccItem{
@@ -320,10 +271,7 @@ void ApplyWarp(const GameContext& ctx, GameSession& session, std::int64_t warpId
 
     const WarpRecord* record = ctx.data.warps.Find(warpId);
     if (!record)
-    {
-        std::cout << "Quest reward: unknown warp_id " << warpId << " -- skipping\n";
         return;
-    }
 
     Player& player = session.player;
 
@@ -350,21 +298,6 @@ void ApplyWarp(const GameContext& ctx, GameSession& session, std::int64_t warpId
     SendServerChange(ctx, session.sessionId);
 }
 
-void LogUnhandledConsequences(const QuestConsequences& q)
-{
-    // These need their own server-side mechanism/packet (job-change
-    // confirmation, skill grant, revival-point registration) -- not
-    // something GC_QUEST_SUCC alone can express. Parsed so the data is
-    // available once that lands, but not applied yet.
-    if (q.change_job_id != 0)
-        std::cout << "Quest consequence not yet handled: change_job_id " << q.change_job_id << "\n";
-    if (q.add_skill_ids != 0)
-        std::cout << "Quest consequence not yet handled: add_skill_ids " << q.add_skill_ids << "\n";
-    if (q.revival_point_id != 0)
-        std::cout << "Quest consequence not yet handled: revival_point_id " << q.revival_point_id
-                  << "\n";
-}
-
 // nullopt if q.set_flag names a one-time quest already claimed by an
 // earlier pipelined turn-in -- see QuestFlagRepository::TryClaimFlag.
 // Nothing is granted in that case (the transaction is left uncommitted and
@@ -383,11 +316,7 @@ std::optional<QuestSucc> ApplyConsequences(const GameContext& ctx, GameSession& 
     if (q.set_flag != 0)
     {
         if (!QuestFlagRepository::TryClaimFlag(ctx.db, characterId, q.set_flag))
-        {
-            std::cout << "Quest set_flag " << q.set_flag
-                      << " already claimed -- rejecting duplicate turn-in\n";
             return std::nullopt;
-        }
         player.quest_flags.Set(static_cast<std::uint32_t>(q.set_flag), true);
     }
 
@@ -413,8 +342,6 @@ std::optional<QuestSucc> ApplyConsequences(const GameContext& ctx, GameSession& 
 
     txn.Commit();
 
-    LogUnhandledConsequences(q);
-
     return QuestSucc{
         .items = std::move(items),
         // set_flag is the only stable per-quest identifier this
@@ -432,7 +359,6 @@ std::optional<QuestSucc> ApplyConsequences(const GameContext& ctx, GameSession& 
 void SendQuestFail(const GameContext& ctx)
 {
     QuestFail response{.result_code = static_cast<std::int32_t>(QuestFailReason::ConditionsNotMet)};
-    std::cout << "Sending GC_QUEST_FAIL: result_code " << response.result_code << "\n";
 
     PayloadWriter writer;
     response.Serialize(writer);
@@ -444,29 +370,20 @@ void SendQuestFail(const GameContext& ctx)
 
 void HandleQuestResult(const GameContext& ctx, const QuestResult& request)
 {
-    std::cout << "Quest result: action_id " << request.action_id << ", creature_instance_id "
-              << request.creature_instance_id << " unknown: " << request.unknown << "\n";
-
     auto session = ctx.sessions.Get(ctx.clientSocket);
     if (!session)
-    {
-        std::cout
-            << "Rejecting CG_QUEST_RESULT: socket has no resolved character (never entered)\n";
         return;
-    }
 
     const QuestActionRecord* record =
         ctx.data.quests.Find(static_cast<std::int64_t>(request.action_id));
     if (!record)
     {
-        std::cout << "Quest action_id " << request.action_id << " not found in quest.scr\n";
         SendQuestFail(ctx);
         return;
     }
 
     if (!ConditionsMet(record->conditions, session->player))
     {
-        std::cout << "Quest action_id " << request.action_id << " conditions not met\n";
         SendQuestFail(ctx);
         return;
     }
@@ -488,10 +405,6 @@ void HandleQuestResult(const GameContext& ctx, const QuestResult& request)
         }
 
         ctx.sessions.Set(ctx.clientSocket, sessionCopy);
-
-        std::cout << "Sending GC_QUEST_SUCC: " << response->items.size() << " item(s), money "
-                  << response->money << ", fame " << response->fame << ", exp " << response->exp
-                  << ", ap " << response->ap << ", hp " << response->hp << "\n";
 
         PayloadWriter writer;
         response->Serialize(writer);

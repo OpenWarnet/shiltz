@@ -14,8 +14,6 @@
 #include "world/Player.h"
 #include "tables/SkillTable.h"
 
-#include <iostream>
-
 namespace
 {
     std::uint32_t CurrentSkillLevel(const PlayerSkills& skills, std::int64_t skillId)
@@ -120,23 +118,15 @@ void HandleCharSkillUpEx(const GameContext& ctx, const CharSkillUpEx& request)
 {
     auto session = ctx.sessions.Get(ctx.clientSocket);
     if (!session)
-    {
-        std::cout
-            << "Rejecting CG_CHAR_SKILL_UP_EX: socket has no resolved character (never entered)\n";
         return;
-    }
 
     const Validation validation =
         ValidateSkillUpRequest(ctx.data.skills, session->player, request.skills);
-
-    std::cout << "Char skill up ex: " << request.skills.size() << " skill(s), valid "
-              << validation.ok << ", total cost " << validation.totalCost << "\n";
 
     if (!validation.ok)
     {
         PayloadWriter writer;
         CharSkillUpExFail response{.reason = static_cast<std::int32_t>(validation.failReason)};
-        std::cout << "Sending GC_CHAR_SKILL_UP_EX_FAIL: reason " << response.reason << "\n";
         response.Serialize(writer);
 
         GamePacket packet(GameOpcode::GC_CHAR_SKILL_UP_EX_FAIL, writer.Data());
@@ -168,8 +158,6 @@ void HandleCharSkillUpEx(const GameContext& ctx, const CharSkillUpEx& request)
             .remaining_sp = remainingSp,
             .remaining_ep = remainingEp,
         };
-        std::cout << "Sending GC_CHAR_SKILL_UP_EX_SUCC: remaining_sp " << response.remaining_sp
-                  << ", remaining_ep " << response.remaining_ep << "\n";
         response.Serialize(writer);
 
         GamePacket packet(GameOpcode::GC_CHAR_SKILL_UP_EX_SUCC, writer.Data());

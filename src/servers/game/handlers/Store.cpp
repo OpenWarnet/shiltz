@@ -32,7 +32,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <iostream>
 #include <optional>
 
 namespace
@@ -88,14 +87,9 @@ void ClearBankSlot(GameSession& session, std::uint32_t slotId)
 
 void HandleStoreCreate(const GameContext& ctx, const StoreCreate& request)
 {
-    std::cout << "Store create request\n"; // password intentionally not logged
-
     auto session = ctx.sessions.Get(ctx.clientSocket);
     if (!session)
-    {
-        std::cout << "Rejecting CG_STORE_CREATE: socket has no resolved character (never entered)\n";
         return;
-    }
 
     // Everything below is blocking SQLite work -- run it on the DB pool
     // instead of the connection's reactor thread. request/session are
@@ -106,15 +100,9 @@ void HandleStoreCreate(const GameContext& ctx, const StoreCreate& request)
     // as HandleStoreItemOut/In. Refuse to stomp an existing bank_accounts
     // row (and its password/contents) rather than silently re-provisioning it.
     if (BankRepository::FindAccount(ctx.db, session->accountId))
-    {
-        std::cout << "Rejecting CG_STORE_CREATE: bank_accounts row already exists for account "
-                  << session->accountId << "\n";
         return;
-    }
 
-    auto account = BankRepository::CreateAccount(ctx.db, session->accountId, request.password);
-
-    std::cout << "Created bank account " << account.id << " for account " << session->accountId << "\n";
+    BankRepository::CreateAccount(ctx.db, session->accountId, request.password);
 
     PayloadWriter writer;
     StoreCreateSucc{}.Serialize(writer);
@@ -126,8 +114,6 @@ void HandleStoreCreate(const GameContext& ctx, const StoreCreate& request)
 
 void HandleStoreOpen(const GameContext& ctx, const StoreOpen& request)
 {
-    std::cout << "Store open request\n"; // password intentionally not logged
-
     auto sendFail = [ctx](std::int32_t reason = 1)
     {
         PayloadWriter failWriter;
@@ -139,10 +125,7 @@ void HandleStoreOpen(const GameContext& ctx, const StoreOpen& request)
 
     auto session = ctx.sessions.Get(ctx.clientSocket);
     if (!session)
-    {
-        std::cout << "Rejecting CG_STORE_OPEN: socket has no resolved character (never entered)\n";
         return;
-    }
 
     // Everything below is blocking SQLite work -- run it on the DB pool
     // instead of the connection's reactor thread. request/session/sendFail
@@ -152,16 +135,12 @@ void HandleStoreOpen(const GameContext& ctx, const StoreOpen& request)
     auto account = BankRepository::FindAccount(ctx.db, session->accountId);
     if (!account)
     {
-        std::cout << "Rejecting CG_STORE_OPEN: no bank_accounts row for account " << session->accountId
-                  << "\n";
         sendFail(2);
         return;
     }
 
     if (account->password != request.password)
     {
-        std::cout << "Rejecting CG_STORE_OPEN: password mismatch for account " << session->accountId
-                  << "\n";
         sendFail();
         return;
     }
@@ -188,16 +167,11 @@ void HandleStoreOpen(const GameContext& ctx, const StoreOpen& request)
 
     GamePacket packet(GameOpcode::GC_STORE_OPEN_SUCC, writer.Data());
     ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
-
-    std::cout << "Opened bank account " << account->id << " for character " << session->characterId
-              << "\n";
     });
 }
 
 void HandleStorePwModify(const GameContext& ctx, const StorePwModify& request)
 {
-    std::cout << "Store password modify request\n"; // passwords intentionally not logged
-
     auto sendFail = [ctx]
     {
         PayloadWriter failWriter;
@@ -209,10 +183,7 @@ void HandleStorePwModify(const GameContext& ctx, const StorePwModify& request)
 
     auto session = ctx.sessions.Get(ctx.clientSocket);
     if (!session)
-    {
-        std::cout << "Rejecting CG_STORE_PW_MODIFY: socket has no resolved character (never entered)\n";
         return;
-    }
 
     // Everything below is blocking SQLite work -- run it on the DB pool
     // instead of the connection's reactor thread. request/session/sendFail
@@ -226,23 +197,17 @@ void HandleStorePwModify(const GameContext& ctx, const StorePwModify& request)
     auto account = BankRepository::FindAccount(ctx.db, session->accountId);
     if (!account)
     {
-        std::cout << "Rejecting CG_STORE_PW_MODIFY: no bank_accounts row for account "
-                  << session->accountId << "\n";
         sendFail();
         return;
     }
 
     if (account->password != request.old_password)
     {
-        std::cout << "Rejecting CG_STORE_PW_MODIFY: old password mismatch for account "
-                  << session->accountId << "\n";
         sendFail();
         return;
     }
 
     BankRepository::SavePassword(ctx.db, account->id, request.new_password);
-
-    std::cout << "Changed bank password for account " << session->accountId << "\n";
 
     PayloadWriter writer;
     StorePwModifySucc{}.Serialize(writer);
@@ -256,14 +221,9 @@ void HandleStoreClose(const GameContext& ctx, const StoreClose& request)
 {
     (void)request; // constant 1 -- read for framing only, nothing to act on
 
-    std::cout << "Store close request\n";
-
     auto session = ctx.sessions.Get(ctx.clientSocket);
     if (!session)
-    {
-        std::cout << "Rejecting CG_STORE_CLOSE: socket has no resolved character (never entered)\n";
         return;
-    }
 
     // Drop this connection's bank authorization -- a later CG_STORE_ITEM_IN/
     // OUT or CG_STORE_MONEY_IN/OUT must go through CG_STORE_OPEN again.
@@ -281,31 +241,18 @@ void HandleStoreClose(const GameContext& ctx, const StoreClose& request)
 
 void HandleStoreItemOut(const GameContext& ctx, const StoreItemOut& request)
 {
-    std::cout << "Store item out: inventory_slot_id " << request.inventory_slot_id << ", bank_slot_id "
-              << request.bank_slot_id << ", amount " << request.amount << "\n";
-
     // There's no GC_STORE_ITEM_OUT fail variant on the wire -- every
     // rejection below just drops the request silently, same as a malformed
     // CG_ITEM_CONFIRM_NPC_REQUEST slot.
     if (request.amount == 0)
-    {
-        std::cout << "Rejecting CG_STORE_ITEM_OUT: amount 0\n";
         return;
-    }
 
     if (request.bank_slot_id >= StoreOpenSucc::kSlotCount)
-    {
-        std::cout << "Rejecting CG_STORE_ITEM_OUT: bank_slot_id " << request.bank_slot_id
-                  << " out of range\n";
         return;
-    }
 
     auto session = ctx.sessions.Get(ctx.clientSocket);
     if (!session)
-    {
-        std::cout << "Rejecting CG_STORE_ITEM_OUT: socket has no resolved character (never entered)\n";
         return;
-    }
 
     // Everything below is blocking SQLite work -- run it on the DB pool
     // instead of the connection's reactor thread. request/session are
@@ -313,27 +260,16 @@ void HandleStoreItemOut(const GameContext& ctx, const StoreItemOut& request)
     // server.SendTo() is safe to call from any thread.
     boost::asio::post(ctx.dbPool, [ctx, request, session]() mutable {
     if (!session->bankAccountId)
-    {
-        std::cout << "Rejecting CG_STORE_ITEM_OUT: bank not open on this connection\n";
         return;
-    }
 
     auto bankContent = GetBankSlot(*session, request.bank_slot_id);
     if (!bankContent)
-    {
-        std::cout << "Rejecting CG_STORE_ITEM_OUT: bank_slot_id " << request.bank_slot_id
-                  << " is empty\n";
         return;
-    }
 
     // Character's wallet money, not bank_accounts.money -- see
     // handlers/Store.cpp's design note in the repository header.
     if (session->player.money < kWithdrawalFee)
-    {
-        std::cout << "Rejecting CG_STORE_ITEM_OUT: character " << session->characterId
-                  << " can't afford the " << kWithdrawalFee << " withdrawal fee\n";
         return;
-    }
 
     const std::int64_t bankAccountId = *session->bankAccountId;
     const std::int64_t characterId = session->characterId;
@@ -351,11 +287,7 @@ void HandleStoreItemOut(const GameContext& ctx, const StoreItemOut& request)
     if (existingInventory &&
         (existingInventory->item_id != bankContent->item_id || existingInventory->has_refine_level ||
          bankContent->has_refine_level))
-    {
-        std::cout << "Rejecting CG_STORE_ITEM_OUT: inventory slot_index " << inventorySlotIndex
-                  << " can't receive item_id " << bankContent->item_id << " -- ignoring\n";
         return;
-    }
 
     Item updatedInventory;
     Item remainingBank = *bankContent;
@@ -399,11 +331,7 @@ void HandleStoreItemOut(const GameContext& ctx, const StoreItemOut& request)
 
     if (!ItemRepository::SaveInventorySlot(ctx.db, characterId, inventorySlotIndex, existingInventory,
                                             updatedInventory))
-    {
-        std::cout << "Rejecting CG_STORE_ITEM_OUT: inventory slot_index " << inventorySlotIndex
-                  << " changed concurrently\n";
         return;
-    }
 
     const bool bankWriteOk =
         bankSlotCleared
@@ -411,22 +339,14 @@ void HandleStoreItemOut(const GameContext& ctx, const StoreItemOut& request)
             : BankRepository::SaveItemSlot(ctx.db, bankAccountId, request.bank_slot_id, bankContent,
                                             remainingBank);
     if (!bankWriteOk)
-    {
-        std::cout << "Rejecting CG_STORE_ITEM_OUT: bank_slot_id " << request.bank_slot_id
-                  << " changed concurrently\n";
         return;
-    }
 
     // Authoritative fee check against the DB's *current* money -- the
     // session->player.money precheck above could be stale under the
     // pipelined-request race (see CharacterRepository.h).
     auto newPlayerMoney = CharacterRepository::TrySpendMoney(ctx.db, characterId, kWithdrawalFee);
     if (!newPlayerMoney)
-    {
-        std::cout << "Rejecting CG_STORE_ITEM_OUT: character " << characterId
-                  << " can't afford the " << kWithdrawalFee << " withdrawal fee (stale cache)\n";
         return;
-    }
 
     txn.Commit();
 
@@ -439,10 +359,6 @@ void HandleStoreItemOut(const GameContext& ctx, const StoreItemOut& request)
     else
         SetBankSlot(*session, request.bank_slot_id, remainingBank);
     ctx.sessions.Set(ctx.clientSocket, *session);
-
-    std::cout << "Withdrew " << movedAmount << "x item_id " << bankContent->item_id
-              << " from bank_slot_id " << request.bank_slot_id << " to inventory_slot_id "
-              << request.inventory_slot_id << "\n";
 
     PayloadWriter writer;
     StoreItemOutSuccess response{
@@ -466,30 +382,17 @@ void HandleStoreItemOut(const GameContext& ctx, const StoreItemOut& request)
 
 void HandleStoreItemIn(const GameContext& ctx, const StoreItemIn& request)
 {
-    std::cout << "Store item in: inventory_slot_id " << request.inventory_slot_id << ", bank_slot_id "
-              << request.bank_slot_id << ", amount " << request.amount << "\n";
-
     // No GC_STORE_ITEM_IN fail variant either -- same silent-drop policy as
     // HandleStoreItemOut.
     if (request.amount == 0)
-    {
-        std::cout << "Rejecting CG_STORE_ITEM_IN: amount 0\n";
         return;
-    }
 
     if (request.bank_slot_id >= StoreOpenSucc::kSlotCount)
-    {
-        std::cout << "Rejecting CG_STORE_ITEM_IN: bank_slot_id " << request.bank_slot_id
-                  << " out of range\n";
         return;
-    }
 
     auto session = ctx.sessions.Get(ctx.clientSocket);
     if (!session)
-    {
-        std::cout << "Rejecting CG_STORE_ITEM_IN: socket has no resolved character (never entered)\n";
         return;
-    }
 
     // Everything below is blocking SQLite work -- run it on the DB pool
     // instead of the connection's reactor thread. request/session are
@@ -497,10 +400,7 @@ void HandleStoreItemIn(const GameContext& ctx, const StoreItemIn& request)
     // server.SendTo() is safe to call from any thread.
     boost::asio::post(ctx.dbPool, [ctx, request, session]() mutable {
     if (!session->bankAccountId)
-    {
-        std::cout << "Rejecting CG_STORE_ITEM_IN: bank not open on this connection\n";
         return;
-    }
 
     const std::int64_t bankAccountId = *session->bankAccountId;
     const std::int64_t characterId = session->characterId;
@@ -512,21 +412,13 @@ void HandleStoreItemIn(const GameContext& ctx, const StoreItemIn& request)
 
     auto existingInventory = session->player.GetInventorySlot(inventorySlotIndex);
     if (!existingInventory)
-    {
-        std::cout << "Rejecting CG_STORE_ITEM_IN: inventory slot_index " << inventorySlotIndex
-                  << " is empty\n";
         return;
-    }
 
     auto existingBank = GetBankSlot(*session, request.bank_slot_id);
     if (existingBank &&
         (existingBank->item_id != existingInventory->item_id || existingBank->has_refine_level ||
          existingInventory->has_refine_level))
-    {
-        std::cout << "Rejecting CG_STORE_ITEM_IN: bank_slot_id " << request.bank_slot_id
-                  << " can't receive item_id " << existingInventory->item_id << " -- ignoring\n";
         return;
-    }
 
     Item updatedBank;
     Item remainingInventory = *existingInventory;
@@ -566,11 +458,7 @@ void HandleStoreItemIn(const GameContext& ctx, const StoreItemIn& request)
 
     if (!BankRepository::SaveItemSlot(ctx.db, bankAccountId, request.bank_slot_id, existingBank,
                                        updatedBank))
-    {
-        std::cout << "Rejecting CG_STORE_ITEM_IN: bank_slot_id " << request.bank_slot_id
-                  << " changed concurrently\n";
         return;
-    }
 
     const bool inventoryWriteOk =
         inventorySlotCleared
@@ -578,11 +466,7 @@ void HandleStoreItemIn(const GameContext& ctx, const StoreItemIn& request)
             : ItemRepository::SaveInventorySlot(ctx.db, characterId, inventorySlotIndex, existingInventory,
                                                  remainingInventory);
     if (!inventoryWriteOk)
-    {
-        std::cout << "Rejecting CG_STORE_ITEM_IN: inventory slot_index " << inventorySlotIndex
-                  << " changed concurrently\n";
         return;
-    }
 
     txn.Commit();
 
@@ -592,10 +476,6 @@ void HandleStoreItemIn(const GameContext& ctx, const StoreItemIn& request)
     else
         session->player.SetInventorySlot(inventorySlotIndex, remainingInventory);
     ctx.sessions.Set(ctx.clientSocket, *session);
-
-    std::cout << "Deposited " << movedAmount << "x item_id " << updatedBank.item_id
-              << " from inventory_slot_id " << request.inventory_slot_id << " to bank_slot_id "
-              << request.bank_slot_id << "\n";
 
     PayloadWriter writer;
     StoreItemInSuccess response{
@@ -618,8 +498,6 @@ void HandleStoreItemIn(const GameContext& ctx, const StoreItemIn& request)
 
 void HandleStoreMoneyOut(const GameContext& ctx, const StoreMoneyOut& request)
 {
-    std::cout << "Store money out: amount " << request.amount << "\n";
-
     auto sendFail = [ctx]
     {
         PayloadWriter failWriter;
@@ -631,7 +509,6 @@ void HandleStoreMoneyOut(const GameContext& ctx, const StoreMoneyOut& request)
 
     if (request.amount <= 0)
     {
-        std::cout << "Rejecting CG_STORE_MONEY_OUT: amount " << request.amount << " out of range\n";
         sendFail();
         return;
     }
@@ -639,7 +516,6 @@ void HandleStoreMoneyOut(const GameContext& ctx, const StoreMoneyOut& request)
     auto session = ctx.sessions.Get(ctx.clientSocket);
     if (!session)
     {
-        std::cout << "Rejecting CG_STORE_MONEY_OUT: socket has no resolved character (never entered)\n";
         sendFail();
         return;
     }
@@ -651,15 +527,12 @@ void HandleStoreMoneyOut(const GameContext& ctx, const StoreMoneyOut& request)
     boost::asio::post(ctx.dbPool, [ctx, request, session, sendFail]() mutable {
     if (!session->bankAccountId)
     {
-        std::cout << "Rejecting CG_STORE_MONEY_OUT: bank not open on this connection\n";
         sendFail();
         return;
     }
 
     if (session->bankMoney < request.amount)
     {
-        std::cout << "Rejecting CG_STORE_MONEY_OUT: bank account " << *session->bankAccountId
-                  << " has " << session->bankMoney << ", needs " << request.amount << "\n";
         sendFail();
         return;
     }
@@ -676,8 +549,6 @@ void HandleStoreMoneyOut(const GameContext& ctx, const StoreMoneyOut& request)
     auto newBankMoney = BankRepository::TrySpendMoney(ctx.db, bankAccountId, request.amount);
     if (!newBankMoney)
     {
-        std::cout << "Rejecting CG_STORE_MONEY_OUT: bank account " << bankAccountId
-                  << " has insufficient money for " << request.amount << " (stale cache)\n";
         sendFail();
         return;
     }
@@ -691,9 +562,6 @@ void HandleStoreMoneyOut(const GameContext& ctx, const StoreMoneyOut& request)
     session->player.money = newPlayerMoney;
     ctx.sessions.Set(ctx.clientSocket, *session);
 
-    std::cout << "Withdrew " << request.amount << " money from bank account " << bankAccountId
-              << " (bank now " << *newBankMoney << ", player now " << newPlayerMoney << ")\n";
-
     PayloadWriter writer;
     StoreMoneySucc response = BuildStoreMoneySucc(newPlayerMoney, *newBankMoney);
     response.Serialize(writer);
@@ -705,8 +573,6 @@ void HandleStoreMoneyOut(const GameContext& ctx, const StoreMoneyOut& request)
 
 void HandleStoreMoneyIn(const GameContext& ctx, const StoreMoneyIn& request)
 {
-    std::cout << "Store money in: amount " << request.amount << "\n";
-
     auto sendFail = [ctx]
     {
         PayloadWriter failWriter;
@@ -718,7 +584,6 @@ void HandleStoreMoneyIn(const GameContext& ctx, const StoreMoneyIn& request)
 
     if (request.amount <= 0)
     {
-        std::cout << "Rejecting CG_STORE_MONEY_IN: amount " << request.amount << " out of range\n";
         sendFail();
         return;
     }
@@ -726,7 +591,6 @@ void HandleStoreMoneyIn(const GameContext& ctx, const StoreMoneyIn& request)
     auto session = ctx.sessions.Get(ctx.clientSocket);
     if (!session)
     {
-        std::cout << "Rejecting CG_STORE_MONEY_IN: socket has no resolved character (never entered)\n";
         sendFail();
         return;
     }
@@ -738,15 +602,12 @@ void HandleStoreMoneyIn(const GameContext& ctx, const StoreMoneyIn& request)
     boost::asio::post(ctx.dbPool, [ctx, request, session, sendFail]() mutable {
     if (!session->bankAccountId)
     {
-        std::cout << "Rejecting CG_STORE_MONEY_IN: bank not open on this connection\n";
         sendFail();
         return;
     }
 
     if (session->player.money < request.amount)
     {
-        std::cout << "Rejecting CG_STORE_MONEY_IN: character " << session->characterId << " has "
-                  << session->player.money << ", needs " << request.amount << "\n";
         sendFail();
         return;
     }
@@ -760,8 +621,6 @@ void HandleStoreMoneyIn(const GameContext& ctx, const StoreMoneyIn& request)
     auto newPlayerMoney = CharacterRepository::TrySpendMoney(ctx.db, session->characterId, request.amount);
     if (!newPlayerMoney)
     {
-        std::cout << "Rejecting CG_STORE_MONEY_IN: character " << session->characterId
-                  << " has insufficient money for " << request.amount << " (stale cache)\n";
         sendFail();
         return;
     }
@@ -773,9 +632,6 @@ void HandleStoreMoneyIn(const GameContext& ctx, const StoreMoneyIn& request)
     session->player.money = *newPlayerMoney;
     session->bankMoney = newBankMoney;
     ctx.sessions.Set(ctx.clientSocket, *session);
-
-    std::cout << "Deposited " << request.amount << " money into bank account " << bankAccountId
-              << " (bank now " << newBankMoney << ", player now " << *newPlayerMoney << ")\n";
 
     PayloadWriter writer;
     StoreMoneySucc response = BuildStoreMoneySucc(*newPlayerMoney, newBankMoney);

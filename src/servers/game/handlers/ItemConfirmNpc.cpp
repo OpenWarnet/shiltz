@@ -21,7 +21,6 @@
 
 #include <algorithm>
 #include <array>
-#include <iostream>
 #include <iterator>
 #include <random>
 #include <vector>
@@ -185,23 +184,12 @@ std::uint64_t RollOptionBits(const ItemRecord& item, std::mt19937& rng)
 
 void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcRequest& request)
 {
-    std::cout << "Item confirm npc request: " << request.slot_ids.size() << " slot(s), npc_flag "
-              << request.npc_flag << "\n";
-
     if (request.slot_ids.empty() || request.slot_ids.size() > kMaxSlotsPerRequest)
-    {
-        std::cout << "Dropping CG_ITEM_CONFIRM_NPC_REQUEST: count " << request.slot_ids.size()
-                  << " out of range [1," << kMaxSlotsPerRequest << "]\n";
         return;
-    }
 
     auto session = ctx.sessions.Get(ctx.clientSocket);
     if (!session)
-    {
-        std::cout << "Rejecting CG_ITEM_CONFIRM_NPC_REQUEST: socket has no resolved character "
-                     "(never entered)\n";
         return;
-    }
 
     // Everything below is blocking SQLite work -- run it on the DB pool
     // instead of the connection's reactor thread. request/session are
@@ -235,10 +223,7 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
     for (std::uint32_t slotId : request.slot_ids)
     {
         if (!IsSlotInRange(slotId))
-        {
-            std::cout << "error inven_slot = " << slotId << "\n";
             continue;
-        }
 
         auto content = session->player.GetItemSlot(slotId);
         if (!content)
@@ -249,32 +234,18 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
             continue; // unknown item_id -- no type/scale data to check against
 
         if (!IsItemTypeEligible(itemRecord->item_type))
-        {
-            std::cout << "not confirm item : item_type=" << itemRecord->item_type
-                      << ", slot=" << slotId << "\n";
             continue;
-        }
 
         // A never-appraised item always qualifies; an already-appraised
         // one can only be rerolled if its use-level requirement is under
         // the threshold.
         const bool neverAppraised = content->option_bits == Item::kNeverAppraised;
         if (itemRecord->min_level >= kLevelRequirementThreshold || !neverAppraised)
-        {
-            std::cout << "item_type=" << itemRecord->item_type
-                      << ", option_bits=" << content->option_bits
-                      << ", min_level=" << itemRecord->min_level
-                      << ", require_level=" << kLevelRequirementThreshold << "\n";
             continue;
-        }
 
         const std::int64_t fee = itemRecord->sell_price;
         if (runningFee + fee > session->player.money)
-        {
-            std::cout << "no have money : " << fee << ", (" << runningFee << ", "
-                      << session->player.money << ")\n";
             continue;
-        }
 
         const Item original = *content;
         Item appraised = original;
@@ -285,10 +256,7 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
         // wrote -- a concurrently-changed slot is skipped like any other
         // per-slot gate failure above, not charged for.
         if (!ItemRepository::SaveItemSlot(ctx.db, characterId, slotId, original, appraised))
-        {
-            std::cout << "slot " << slotId << " changed concurrently -- skipping\n";
             continue;
-        }
 
         runningFee += fee;
         appraisedItems.push_back(AppraisedSlot{.slot_id = slotId, .item = appraised});
@@ -306,8 +274,6 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
         ItemConfirmNpcFail response{
             .result_code = static_cast<std::int32_t>(ItemConfirmFailReason::NoSlotsAppraised),
         };
-        std::cout << "Sending GC_ITEM_CONFIRM_NPC_FAIL: result_code " << response.result_code
-                  << "\n";
         response.Serialize(writer);
 
         GamePacket packet(GameOpcode::GC_ITEM_CONFIRM_NPC_FAIL, writer.Data());
@@ -324,9 +290,6 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
     auto newMoney = CharacterRepository::TrySpendMoney(ctx.db, characterId, runningFee);
     if (!newMoney)
     {
-        std::cout << "Rejecting CG_ITEM_CONFIRM_NPC_REQUEST: character " << characterId
-                  << " has insufficient money for total_fee " << runningFee << " (stale cache)\n";
-
         ItemConfirmNpcFail response{
             .result_code = static_cast<std::int32_t>(ItemConfirmFailReason::NoSlotsAppraised),
         };
@@ -350,8 +313,6 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
         .results = results,
         .total_fee = static_cast<std::uint32_t>(runningFee),
     };
-    std::cout << "Sending GC_ITEM_CONFIRM_NPC_SUCC: " << response.results.size()
-              << " slot(s) appraised, total_fee " << response.total_fee << "\n";
     response.Serialize(writer);
 
     GamePacket packet(GameOpcode::GC_ITEM_CONFIRM_NPC_SUCC, writer.Data());

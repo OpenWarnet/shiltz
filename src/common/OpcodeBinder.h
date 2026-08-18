@@ -4,7 +4,6 @@
 
 #include <cstdint>
 #include <functional>
-#include <iostream>
 #include <utility>
 
 // Why an opcode's payload isn't parsed into a message type.
@@ -34,11 +33,7 @@ public:
                         PayloadReader reader(packet.GetPayload());
                         TMessage message;
                         if (!message.Deserialize(reader))
-                        {
-                            std::cout << "Failed parsing request for opcode "
-                                      << static_cast<uint32_t>(packet.GetCode()) << "\n";
                             return;
-                        }
                         handler(ctx, message);
                     }};
         }

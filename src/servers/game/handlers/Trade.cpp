@@ -21,14 +21,9 @@
 #include "world/Item.h"
 
 #include <algorithm>
-#include <iostream>
 
 void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
 {
-    std::cout << "Item trade buy: shop_id " << request.shop_id << ", item_buy_index "
-              << request.item_buy_index << ", amount " << request.amount << ", slot_id " << request.slot_id
-              << ", creature_instance_id " << request.creature_instance_id << "\n";
-
     auto sendFail = [ctx, request]
     {
         PayloadWriter failWriter;
@@ -43,7 +38,6 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
 
     if (request.amount == 0)
     {
-        std::cout << "Rejecting CG_ITEM_TRADE_BUY: amount 0\n";
         sendFail();
         return;
     }
@@ -51,7 +45,6 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
     auto session = ctx.sessions.Get(ctx.clientSocket);
     if (!session)
     {
-        std::cout << "Rejecting CG_ITEM_TRADE_BUY: socket has no resolved character (never entered)\n";
         sendFail();
         return;
     }
@@ -64,15 +57,12 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
     const SellerRecord* seller = ctx.data.sellers.Find(request.shop_id);
     if (!seller)
     {
-        std::cout << "Rejecting CG_ITEM_TRADE_BUY: no seller record for shop_id " << request.shop_id << "\n";
         sendFail();
         return;
     }
 
     if (request.item_buy_index >= SellerRecord::kItemCount)
     {
-        std::cout << "Rejecting CG_ITEM_TRADE_BUY: item_buy_index " << request.item_buy_index
-                   << " out of range for shop_id " << request.shop_id << "\n";
         sendFail();
         return;
     }
@@ -82,7 +72,6 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
     const ItemRecord* item = ctx.data.items.Find(itemId);
     if (!item)
     {
-        std::cout << "Rejecting CG_ITEM_TRADE_BUY: no item record for item_id " << itemId << "\n";
         sendFail();
         return;
     }
@@ -90,9 +79,6 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
     const std::int64_t totalCost = item->buy_price * static_cast<std::int64_t>(request.amount);
     if (session->player.money < totalCost)
     {
-        std::cout << "Rejecting CG_ITEM_TRADE_BUY: character " << session->characterId << " has "
-                  << session->player.money << " money, needs " << totalCost << " for " << request.amount
-                  << "x item_id " << itemId << "\n";
         sendFail();
         return;
     }
@@ -119,8 +105,6 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
     {
         if (existing->item_id != itemId)
         {
-            std::cout << "Rejecting CG_ITEM_TRADE_BUY: slot_index " << slotIndex << " holds item_id "
-                      << existing->item_id << ", not " << itemId << " -- ignoring\n";
             sendFail();
             return;
         }
@@ -129,16 +113,10 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
         // existing stack's, same reasoning as HandleItemPickup.
         updated = *existing;
         updated.quantity += request.amount;
-
-        std::cout << "Stacked item_id " << itemId << " at slot_index " << slotIndex << " (qty now "
-                  << updated.quantity << ")\n";
     }
     else
     {
         updated = Item{.item_id = itemId, .quantity = request.amount};
-
-        std::cout << "Added item_id " << itemId << " at slot_index " << slotIndex << " (qty "
-                  << updated.quantity << ")\n";
     }
 
     // Authoritative debit -- checked atomically against the DB's *current*
@@ -148,8 +126,6 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
     auto newMoney = CharacterRepository::TrySpendMoney(ctx.db, characterId, totalCost);
     if (!newMoney)
     {
-        std::cout << "Rejecting CG_ITEM_TRADE_BUY: character " << characterId
-                  << " has insufficient money for " << totalCost << " (stale cache)\n";
         sendFail();
         return;
     }
@@ -158,8 +134,6 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
     // slot between the cache read above and now -- see ItemRepository.h.
     if (!ItemRepository::SaveInventorySlot(ctx.db, characterId, slotIndex, existing, updated))
     {
-        std::cout << "Rejecting CG_ITEM_TRADE_BUY: slot_index " << slotIndex
-                  << " changed concurrently\n";
         sendFail();
         return;
     }
@@ -198,9 +172,6 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
 
 void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
 {
-    std::cout << "Item trade sell: slot_id " << request.slot_id << ", count " << request.count
-              << ", instance_id " << request.instance_id << "\n";
-
     auto sendFail = [ctx, request]
     {
         PayloadWriter failWriter;
@@ -215,7 +186,6 @@ void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
 
     if (request.count == 0)
     {
-        std::cout << "Rejecting CG_ITEM_TRADE_SELL: count 0\n";
         sendFail();
         return;
     }
@@ -223,7 +193,6 @@ void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
     auto session = ctx.sessions.Get(ctx.clientSocket);
     if (!session)
     {
-        std::cout << "Rejecting CG_ITEM_TRADE_SELL: socket has no resolved character (never entered)\n";
         sendFail();
         return;
     }
@@ -246,7 +215,6 @@ void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
     auto existing = session->player.GetInventorySlot(slotIndex);
     if (!existing)
     {
-        std::cout << "Rejecting CG_ITEM_TRADE_SELL: slot_index " << slotIndex << " is empty\n";
         sendFail();
         return;
     }
@@ -256,7 +224,6 @@ void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
     const ItemRecord* item = ctx.data.items.Find(itemId);
     if (!item)
     {
-        std::cout << "Rejecting CG_ITEM_TRADE_SELL: no item record for item_id " << itemId << "\n";
         sendFail();
         return;
     }
@@ -301,8 +268,6 @@ void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
 
     if (!slotWriteOk)
     {
-        std::cout << "Rejecting CG_ITEM_TRADE_SELL: slot_index " << slotIndex
-                  << " changed concurrently\n";
         sendFail();
         return;
     }
@@ -320,9 +285,6 @@ void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
         session->player.SetInventorySlot(slotIndex, remainingItem);
     session->player.money = newMoney;
     ctx.sessions.Set(ctx.clientSocket, *session);
-
-    std::cout << "Sold " << soldCount << "x item_id " << itemId << " from slot_index " << slotIndex
-              << " for " << item->sell_price * static_cast<std::int64_t>(soldCount) << " money\n";
 
     // remainingCount == 0 means the slot was emptied entirely (fully sold,
     // or an equippable item, which always sells whole) -- item_id 0 is how

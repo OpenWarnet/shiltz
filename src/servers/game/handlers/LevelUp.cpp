@@ -12,19 +12,11 @@
 #include "tables/GameData.h"
 #include "tables/LevelTable.h"
 
-#include <iostream>
-
 void HandleLevelUpCheck(const GameContext& ctx, const LevelUpCheck& request)
 {
-    std::cout << "Level up check: session_id " << request.session_id << "\n";
-
     auto session = ctx.sessions.Get(ctx.clientSocket);
     if (!session)
-    {
-        std::cout
-            << "Rejecting CG_LEVEL_UP_CHECK: socket has no resolved character (never entered)\n";
         return;
-    }
 
     std::int32_t level = session->player.level;
     std::int64_t exp = session->player.exp;
@@ -57,8 +49,6 @@ void HandleLevelUpCheck(const GameContext& ctx, const LevelUpCheck& request)
             .level = level,
             .exp = static_cast<std::int32_t>(exp),
         };
-        std::cout << "Sending GC_LEVEL_UP_FAIL: level " << response.level << ", exp "
-                  << response.exp << "\n";
         response.Serialize(writer);
 
         GamePacket packet(GameOpcode::GC_LEVEL_UP_FAIL, writer.Data());
@@ -93,10 +83,6 @@ void HandleLevelUpCheck(const GameContext& ctx, const LevelUpCheck& request)
             .unallocated_ep = static_cast<std::int32_t>(player.skills.unallocated_ep),
             .current_exp = exp,
         };
-        std::cout << "Sending GC_LEVEL_UP_SUCC: level " << response.level
-                  << ", unallocated_stat_points " << response.unallocated_stat_points
-                  << ", unallocated_sp " << response.unallocated_sp << ", current_exp "
-                  << response.current_exp << "\n";
         response.Serialize(writer);
 
         GamePacket packet(GameOpcode::GC_LEVEL_UP_SUCC, writer.Data());
