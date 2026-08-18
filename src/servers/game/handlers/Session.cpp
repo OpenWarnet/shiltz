@@ -125,6 +125,8 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
         .player = player,
     };
     ctx.sessions.Set(ctx.clientSocket, session);
+    if (map)
+        map->SetPlayer(ctx.clientSocket, player.x, player.y);
 
     PayloadWriter writer;
     CharacterDataLoad response = session.player.ToCharacterDataLoad(
@@ -203,6 +205,9 @@ void HandleCgExit(const GameContext& ctx)
         if (session)
         {
             session->player.SavePosition(ctx.db);
+
+            if (Map* map = ctx.world.GetMap(session->player.map_id))
+                map->RemovePlayer(ctx.clientSocket);
         }
 
         // Release the session/character claim immediately on exit-to-character-

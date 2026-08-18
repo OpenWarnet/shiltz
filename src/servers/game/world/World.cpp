@@ -3,8 +3,11 @@
 #include "MapLoader.h"
 #include "parser/MapScr.h"
 
+#include <boost/asio/post.hpp>
+
 #include <filesystem>
 #include <iostream>
+#include <latch>
 #include <stdexcept>
 
 namespace
@@ -60,6 +63,11 @@ void World::Start()
 
 void World::Shutdown()
 {
+    // Drain and join m_mapPool before returning -- otherwise its worker
+    // threads (and any Map::Tick() still running on them) could outlive the
+    // Map/World objects they touch, since GameServer tears m_world down in
+    // its own destructor.
+    m_mapPool.join();
     std::cout << "World shut down\n";
 }
 
@@ -80,8 +88,41 @@ std::uint32_t World::AllocateCreatureInstanceId()
     return m_nextCreatureInstanceId++;
 }
 
-void World::Tick(std::chrono::milliseconds delta)
+std::vector<MapTickResult> World::Tick(std::chrono::milliseconds delta)
 {
+    if (m_maps.empty())
+        return {};
+
+    std::vector<MapTickResult> results(m_maps.size());
+    std::latch remaining(static_cast<std::ptrdiff_t>(m_maps.size()));
+
+    std::size_t i = 0;
     for (auto& [serverMapId, map] : m_maps)
-        map.Tick(delta);
+    {
+        MapTickResult& result = results[i++];
+        result.server_map_id = serverMapId;
+
+        boost::asio::post(m_mapPool, [&map, delta, &result, &remaining] {
+            try
+            {
+                result.creature_moves = map.Tick(delta);
+            }
+            catch (const std::exception& e)
+            {
+                // A single map's tick must never take the rest of the
+                // world's tick down with it -- log and let the other maps
+                // (and the next tick) carry on.
+                std::cerr << "Map::Tick threw: " << e.what() << "\n";
+            }
+
+            remaining.count_down();
+        });
+    }
+
+    // Block the caller (GameServer's world strand) until every map posted
+    // above has finished -- this is the only synchronization point between
+    // maps; nothing else couples their ticks together.
+    remaining.wait();
+
+    return results;
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 
 // Where a Creature came from -- an npcNN.scr static entity (dialogue/shop/
@@ -12,6 +13,15 @@ enum class CreatureKind : std::uint8_t
 {
     Npc,
     Monster,
+};
+
+// A monster's current AI behavior -- see Map::TickCreature. NPCs (kind ==
+// CreatureKind::Npc) never leave CreatureAiState::Idle; they're static
+// dialogue/shop/warp entities, not mobs.
+enum class CreatureAiState : std::uint8_t
+{
+    Idle,
+    Wander,
 };
 
 // A single spawned creature on a Map -- one instance from either an
@@ -31,4 +41,13 @@ struct Creature
     std::int32_t x = 0;
     std::int32_t y = 0;
     std::int32_t direction = 0;
+
+    // AI state (Monster kind only -- see Map::TickCreature). ai_timer
+    // counts down by each World tick's delta; when it reaches zero the
+    // creature re-rolls its next state. ai_decision_seq bumps once per
+    // roll and feeds the decision's pseudo-random seed alongside
+    // instance_id, so no roll -- for any creature, ever -- repeats.
+    CreatureAiState ai_state = CreatureAiState::Idle;
+    std::chrono::milliseconds ai_timer{0};
+    std::uint32_t ai_decision_seq = 0;
 };

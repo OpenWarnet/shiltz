@@ -186,6 +186,8 @@ add_executable (
 	"protocol/server/ItemMoveFail.cpp"
 	"protocol/server/CrtLoad.h"
 	"protocol/server/CrtLoad.cpp"
+	"protocol/server/CrtMove.h"
+	"protocol/server/CrtMove.cpp"
 	"protocol/server/CharExitSucc.h"
 	"protocol/server/CharExitSucc.cpp"
 	"protocol/server/QuestSucc.h"

@@ -41,6 +41,7 @@ namespace GameOpcode
             OPCODE_NAME(GC_CHAR_DATA_LOAD)
             OPCODE_NAME(GC_ENTER_FAIL)
             OPCODE_NAME(GC_CRT_LOAD)
+            OPCODE_NAME(GC_CRT_MOVE)
             OPCODE_NAME(GC_ITEM_MAP_NEW)
             OPCODE_NAME(GC_ITEM_MAP_REMOVE)
             OPCODE_NAME(GC_ITEM_PICKUP_SUCC)

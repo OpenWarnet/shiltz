@@ -21,6 +21,7 @@
 #include "tables/ItemTable.h"
 #include "tables/WarpTable.h"
 #include "world/Player.h"
+#include "world/World.h"
 
 #include <iostream>
 #include <optional>
@@ -325,6 +326,21 @@ void ApplyWarp(const GameContext& ctx, GameSession& session, std::int64_t warpId
     }
 
     Player& player = session.player;
+
+    // Leave the old map's roster before switching player.map_id -- once
+    // it's overwritten below, this is the last point that still knows
+    // which Map to remove `ctx.clientSocket` from (see Map::RemovePlayer).
+    // Not calling this and relying on OnClientDisconnected instead doesn't
+    // work here: ctx.sessions.Set() below (well, in HandleQuestResult,
+    // right after ApplyConsequences returns) commits the *new* map_id
+    // before the client actually disconnects, so by the time
+    // OnClientDisconnected runs it would look up the new map -- where this
+    // socket was never added -- and leave a stale entry behind in the old
+    // one. The new map doesn't need the same treatment: the client
+    // reconnects after GC_SERVER_CHANGE and sends a fresh CG_ENTER, which
+    // Session.cpp's HandleEnter already turns into a SetPlayer call.
+    if (Map* oldMap = ctx.world.GetMap(player.map_id))
+        oldMap->RemovePlayer(ctx.clientSocket);
 
     player.map_id = static_cast<std::uint32_t>(record->server_map_id);
     player.x = static_cast<std::int32_t>(record->x);

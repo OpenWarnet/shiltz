@@ -2,9 +2,21 @@
 
 #include "Map.h"
 
+#include <boost/asio/thread_pool.hpp>
+
 #include <chrono>
 #include <cstdint>
 #include <unordered_map>
+
+// One Map's contribution to a World::Tick() call -- which map, and every
+// creature that moved on it this tick (see Map::Tick/Map::CreatureMove).
+// GameServer turns these into GC_CRT_MOVE broadcasts; World itself has no
+// idea packets or players exist, only that a tick happened.
+struct MapTickResult
+{
+    std::int64_t server_map_id = 0;
+    std::vector<Map::CreatureMove> creature_moves;
+};
 
 // Owns the game server's live simulation state -- one Map per
 // server_map_id, as registered in world/data/map.scr. Lifetime is tied to
@@ -39,11 +51,33 @@ public:
     std::uint32_t AllocateCreatureInstanceId();
 
     // Advances the whole simulation by `delta` -- called once per tick from
-    // GameServer's tick thread (see GameServer::RunTickLoop), never from a
-    // per-connection thread. Fans out to every loaded Map's own Tick().
-    void Tick(std::chrono::milliseconds delta);
+    // GameServer's tick timer (see GameServer::ScheduleTick), never from a
+    // per-connection thread, and never called again until the previous call
+    // returns (GameServer serializes calls on its own strand).
+    //
+    // Maps are independent simulation state -- nothing that happens on one
+    // Map can observe or affect another Map (see Map.h) -- so this fans
+    // every Map's Tick() out onto m_mapPool and blocks until they've all
+    // finished, rather than walking m_maps on the calling thread. That
+    // bounds one World tick's cost by the slowest single Map instead of the
+    // sum of every Map, and lets it use as many cores as m_mapPool has
+    // threads, however many maps are loaded.
+    //
+    // Each posted task writes only into its own slot of the pre-sized
+    // result vector, so gathering results needs no locking of its own --
+    // the disjoint writes are already safe, and remaining.wait() below is
+    // the one synchronization point that makes reading them back out safe
+    // too.
+    std::vector<MapTickResult> Tick(std::chrono::milliseconds delta);
 
 private:
     std::unordered_map<std::int64_t, Map> m_maps;
     std::uint32_t m_nextCreatureInstanceId = 10000;
+
+    // Dedicated worker pool for parallel Map::Tick() calls, sized to
+    // hardware concurrency by boost::asio's default thread_pool ctor --
+    // deliberately separate from the io_context's own ioThreads pool (see
+    // Server.h) so a slow map tick can never starve network I/O, and vice
+    // versa. Joined in Shutdown().
+    boost::asio::thread_pool m_mapPool;
 };

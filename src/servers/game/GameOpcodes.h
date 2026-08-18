@@ -40,6 +40,7 @@ namespace GameOpcode
         GC_CHAR_DATA_LOAD = 511001,
         GC_ENTER_FAIL = 532050,
         GC_CRT_LOAD = 511029,
+        GC_CRT_MOVE = 511032,
         GC_ITEM_MAP_NEW = 511035,
         GC_ITEM_MAP_REMOVE = 511036,
         GC_ITEM_PICKUP_SUCC = 521033,
