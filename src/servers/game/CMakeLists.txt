@@ -496,6 +496,42 @@ add_world_v2_test(world_v2_pickup_test
 	"world_v2/Simulation.h"
 	"world_v2/system/PickupSystem.test.cpp")
 
+add_world_v2_test(world_v2_world_test
+	${WORLD_V2_CORE}
+	${WORLD_V2_COMPONENT}
+	${WORLD_V2_WORLD}
+	${WORLD_V2_SYSTEM}
+	"world_v2/system/CombatRules.h"
+	"world_v2/Ids.h"
+	"world_v2/CommandQueue.h"
+	"world_v2/Simulation.h"
+	"world_v2/World.h"
+	"world_v2/World.test.cpp")
+
+# Not registered with add_test either, and for a different reason than the
+# benchmark: it sleeps in real time and prints. It is the standalone driver
+# -- three simulations, fake clients, no GameServer -- for watching the
+# world run before there is anything to run it against.
+#
+#   world_v2_runner [seconds] [--quiet]
+add_executable(world_v2_runner
+	${WORLD_V2_CORE}
+	${WORLD_V2_COMPONENT}
+	${WORLD_V2_WORLD}
+	${WORLD_V2_SYSTEM}
+	"world_v2/system/CombatRules.h"
+	"world_v2/system/SpawnRules.h"
+	"world_v2/system/ItemRules.h"
+	"world_v2/system/DespawnRules.h"
+	"world_v2/Ids.h"
+	"world_v2/CommandQueue.h"
+	"world_v2/Simulation.h"
+	"world_v2/World.h"
+	"world_v2/WorldRunner.cpp")
+
+set_property(TARGET world_v2_runner PROPERTY CXX_STANDARD 20)
+set_property(TARGET world_v2_runner PROPERTY CXX_STANDARD_REQUIRED ON)
+
 # Not registered with add_test: a benchmark that fails CI on a noisy machine
 # is worse than no benchmark. Build and run it by hand, from a release
 # preset -- a debug build measures MSVC's container instrumentation instead
