@@ -285,3 +285,212 @@ target_link_libraries(game PRIVATE cryptopp::cryptopp unofficial::sqlite3::sqlit
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET game PROPERTY CXX_STANDARD 20)
 endif()
+
+# --- world_v2 ---------------------------------------------------------------
+#
+# A ground-up ECS rewrite of the simulation layer, built alongside world/
+# rather than in place of it. Nothing here is compiled into the `game`
+# executable yet: while the framework is being filled in, each piece is
+# header-only and carries its own test executable, all run together with
+# `ctest`. The pieces get linked into `game` once there is enough of a
+# simulation to move across.
+
+function(add_world_v2_test name)
+	add_executable(${name} ${ARGN})
+	set_property(TARGET ${name} PROPERTY CXX_STANDARD 20)
+	set_property(TARGET ${name} PROPERTY CXX_STANDARD_REQUIRED ON)
+	add_test(NAME ${name} COMMAND ${name})
+endfunction()
+
+add_world_v2_test(world_v2_component_pool_test
+	"world_v2/core/Entity.h"
+	"world_v2/core/ComponentPool.h"
+	"world_v2/core/Test.h"
+	"world_v2/core/ComponentPool.test.cpp")
+
+add_world_v2_test(world_v2_registry_test
+	"world_v2/core/Entity.h"
+	"world_v2/core/TypeId.h"
+	"world_v2/core/ComponentPool.h"
+	"world_v2/core/View.h"
+	"world_v2/core/Registry.h"
+	"world_v2/core/Test.h"
+	"world_v2/core/Registry.test.cpp")
+
+add_world_v2_test(world_v2_view_test
+	"world_v2/core/Entity.h"
+	"world_v2/core/TypeId.h"
+	"world_v2/core/ComponentPool.h"
+	"world_v2/core/View.h"
+	"world_v2/core/Registry.h"
+	"world_v2/core/Test.h"
+	"world_v2/core/View.test.cpp")
+
+add_world_v2_test(world_v2_event_manager_test
+	"world_v2/core/TypeId.h"
+	"world_v2/core/EventManager.h"
+	"world_v2/core/Test.h"
+	"world_v2/core/EventManager.test.cpp")
+
+set(WORLD_V2_CORE
+	"world_v2/core/Entity.h"
+	"world_v2/core/TypeId.h"
+	"world_v2/core/ComponentPool.h"
+	"world_v2/core/View.h"
+	"world_v2/core/Registry.h"
+	"world_v2/core/EventManager.h"
+	"world_v2/core/Test.h")
+
+set(WORLD_V2_COMPONENT
+	"world_v2/component/Grid.h"
+	"world_v2/component/Combat.h"
+	"world_v2/component/Items.h"
+	"world_v2/component/Request.h"
+	"world_v2/component/Network.h"
+	"world_v2/component/Spawn.h"
+	"world_v2/event/CombatEvents.h"
+	"world_v2/event/SpawnEvents.h"
+	"world_v2/event/MovementEvents.h"
+	"world_v2/event/ItemEvents.h")
+
+set(WORLD_V2_SYSTEM
+	"world_v2/system/SpawnSystem.h"
+	"world_v2/system/AISystem.h"
+	"world_v2/system/GridMovementSystem.h"
+	"world_v2/system/CombatSystem.h"
+	"world_v2/system/DeathSystem.h"
+	"world_v2/system/BroadcastSystem.h"
+	"world_v2/system/PickupSystem.h")
+
+add_world_v2_test(world_v2_tile_grid_test
+	"world_v2/core/Entity.h"
+	"world_v2/core/Test.h"
+	"world_v2/world/TileGrid.h"
+	"world_v2/world/TileGrid.test.cpp")
+
+add_world_v2_test(world_v2_map_world_test
+	${WORLD_V2_CORE}
+	${WORLD_V2_COMPONENT}
+	"world_v2/world/TileGrid.h"
+	"world_v2/world/MapWorld.h"
+	"world_v2/world/MapWorld.test.cpp")
+
+add_world_v2_test(world_v2_grid_movement_test
+	${WORLD_V2_CORE}
+	${WORLD_V2_COMPONENT}
+	"world_v2/world/TileGrid.h"
+	"world_v2/world/MapWorld.h"
+	"world_v2/system/GridMovementSystem.h"
+	"world_v2/system/GridMovementSystem.test.cpp")
+
+set(WORLD_V2_WORLD
+	"world_v2/world/TileGrid.h"
+	"world_v2/world/MapWorld.h"
+	"world_v2/world/Inventory.h")
+
+add_world_v2_test(world_v2_command_queue_test
+	${WORLD_V2_CORE}
+	${WORLD_V2_COMPONENT}
+	${WORLD_V2_WORLD}
+	"world_v2/CommandQueue.h"
+	"world_v2/CommandQueue.test.cpp")
+
+add_world_v2_test(world_v2_simulation_test
+	${WORLD_V2_CORE}
+	${WORLD_V2_COMPONENT}
+	${WORLD_V2_WORLD}
+	${WORLD_V2_SYSTEM}
+	"world_v2/CommandQueue.h"
+	"world_v2/Simulation.h"
+	"world_v2/Simulation.test.cpp")
+
+add_world_v2_test(world_v2_ai_test
+	${WORLD_V2_CORE}
+	${WORLD_V2_COMPONENT}
+	${WORLD_V2_WORLD}
+	"world_v2/system/AISystem.h"
+	"world_v2/system/AISystem.test.cpp")
+
+add_world_v2_test(world_v2_combat_test
+	${WORLD_V2_CORE}
+	${WORLD_V2_COMPONENT}
+	${WORLD_V2_WORLD}
+	"world_v2/system/CombatSystem.h"
+	"world_v2/system/DeathSystem.h"
+	"world_v2/system/CombatSystem.test.cpp")
+
+add_world_v2_test(world_v2_combat_rules_test
+	${WORLD_V2_CORE}
+	${WORLD_V2_COMPONENT}
+	${WORLD_V2_WORLD}
+	${WORLD_V2_SYSTEM}
+	"world_v2/system/CombatRules.h"
+	"world_v2/CommandQueue.h"
+	"world_v2/Simulation.h"
+	"world_v2/system/CombatRules.test.cpp")
+
+add_world_v2_test(world_v2_spawn_test
+	${WORLD_V2_CORE}
+	${WORLD_V2_COMPONENT}
+	${WORLD_V2_WORLD}
+	${WORLD_V2_SYSTEM}
+	"world_v2/system/CombatRules.h"
+	"world_v2/system/SpawnRules.h"
+	"world_v2/CommandQueue.h"
+	"world_v2/Simulation.h"
+	"world_v2/system/SpawnSystem.test.cpp")
+
+add_world_v2_test(world_v2_broadcast_test
+	${WORLD_V2_CORE}
+	${WORLD_V2_COMPONENT}
+	${WORLD_V2_WORLD}
+	${WORLD_V2_SYSTEM}
+	"world_v2/system/CombatRules.h"
+	"world_v2/system/SpawnRules.h"
+	"world_v2/CommandQueue.h"
+	"world_v2/Simulation.h"
+	"world_v2/system/BroadcastSystem.test.cpp")
+
+add_world_v2_test(world_v2_scenario_test
+	${WORLD_V2_CORE}
+	${WORLD_V2_COMPONENT}
+	${WORLD_V2_WORLD}
+	${WORLD_V2_SYSTEM}
+	"world_v2/system/CombatRules.h"
+	"world_v2/system/SpawnRules.h"
+	"world_v2/CommandQueue.h"
+	"world_v2/Simulation.h"
+	"world_v2/Scenario.test.cpp")
+
+add_world_v2_test(world_v2_inventory_test
+	"world_v2/component/Items.h"
+	"world_v2/world/Inventory.h"
+	"world_v2/core/Test.h"
+	"world_v2/world/Inventory.test.cpp")
+
+add_world_v2_test(world_v2_pickup_test
+	${WORLD_V2_CORE}
+	${WORLD_V2_COMPONENT}
+	${WORLD_V2_WORLD}
+	${WORLD_V2_SYSTEM}
+	"world_v2/system/ItemRules.h"
+	"world_v2/CommandQueue.h"
+	"world_v2/Simulation.h"
+	"world_v2/system/PickupSystem.test.cpp")
+
+# Not registered with add_test: a benchmark that fails CI on a noisy machine
+# is worse than no benchmark. Build and run it by hand, from a release
+# preset -- a debug build measures MSVC's container instrumentation instead
+# of anything here.
+add_executable(world_v2_benchmark
+	${WORLD_V2_CORE}
+	${WORLD_V2_COMPONENT}
+	${WORLD_V2_WORLD}
+	${WORLD_V2_SYSTEM}
+	"world_v2/core/Benchmark.h"
+	"world_v2/CommandQueue.h"
+	"world_v2/Simulation.h"
+	"world_v2/Benchmark.cpp")
+
+set_property(TARGET world_v2_benchmark PROPERTY CXX_STANDARD 20)
+set_property(TARGET world_v2_benchmark PROPERTY CXX_STANDARD_REQUIRED ON)
