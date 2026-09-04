@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 
 namespace world_v2
@@ -43,8 +44,24 @@ public:
 private:
     static TypeId Next()
     {
-        static TypeId next = 0;
-        return next++;
+        // Atomic, and this is not belt-and-braces.
+        //
+        // The magic static above serializes the initialization of *one*
+        // type's id -- a second thread asking for T's id blocks until the
+        // first has finished computing it. It says nothing about two
+        // *different* types being first touched at the same moment: those
+        // are two unrelated statics, both initializers run concurrently,
+        // and both land here. A plain `next++` is then a read-modify-write
+        // race, and losing it hands two component types the same id, which
+        // in Registry means the same pool.
+        //
+        // Reachable in exactly the case the rest of the framework is built
+        // for: several map threads coming up at once, each touching a
+        // component or event type nothing has touched yet. Relaxed is
+        // enough -- uniqueness is the whole requirement, and nothing
+        // orders other memory against this counter.
+        static std::atomic<TypeId> next{0};
+        return next.fetch_add(1, std::memory_order_relaxed);
     }
 };
 

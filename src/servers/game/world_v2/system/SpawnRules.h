@@ -28,13 +28,15 @@ using MonsterFactory = std::function<void(MapWorld&, Entity monster, std::uint32
 //
 // Placing an entity is structural, so it cannot happen where SpawnSystem
 // runs. This is the other half: it picks the tile at the moment of
-// placement -- when the claims made by requests ahead of it in the same
-// flush are already real, so a burst filling an empty camp spreads out
-// instead of every request choosing the same free tile.
+// placement and advances the spawner's sequence as it goes, so a burst
+// filling an empty camp spreads across the area instead of every request
+// landing on the same square. Cosmetic now rather than necessary --
+// monsters may share a tile, so no request is refused for want of room --
+// but a camp that arrives in one neat pile still looks wrong.
 //
 // A request is dropped, not retried, when the spawner is gone or its area
-// has no room. SpawnSystem recounts from scratch next tick and asks again,
-// so nothing needs to be remembered in between.
+// is entirely unwalkable. SpawnSystem recounts from scratch next tick and
+// asks again, so nothing needs to be remembered in between.
 inline void InstallSpawnRules(MapWorld& world, MonsterFactory factory)
 {
     world.events.Listen<MonsterSpawnRequestEvent>(
@@ -53,14 +55,15 @@ inline void InstallSpawnRules(MapWorld& world, MonsterFactory factory)
 
             int x = 0;
             int y = 0;
-            if (!SpawnSystem::FindFreeTile(world.tiles, *definition, x, y))
+            if (!SpawnSystem::FindSpawnTile(world.tiles, *definition, x, y))
             {
-                // The camp is full of its own monsters, or something has
-                // been built over the spawn point.
+                // Every tile in the area is unwalkable -- something has
+                // been built over the spawn point, or it was placed inside
+                // the terrain. Crowding is no longer a reason to fail.
                 return;
             }
 
-            const Entity monster = world.SpawnBlocking(x, y);
+            const Entity monster = world.Spawn(x, y);
             if (monster == kNullEntity)
             {
                 return;

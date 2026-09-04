@@ -37,7 +37,7 @@ void PushDefersUntilDrain()
     MapWorld world(8, 8, true);
     CommandQueue commands;
 
-    const Entity entity = world.SpawnBlocking(2, 2);
+    const Entity entity = world.Spawn(2, 2);
 
     commands.On<MoveCommand>(
         [](MapWorld& target, const MoveCommand& command)
@@ -98,14 +98,14 @@ void StaleHandlesAreRejectedNotMisapplied()
             target.registry.Assign<MoveIntentComponent>(command.entity, command.directionX, command.directionY);
         });
 
-    const Entity first = world.SpawnBlocking(2, 2);
+    const Entity first = world.Spawn(2, 2);
 
     // A packet arrives, then the player disconnects before the tick runs.
     commands.Push(MoveCommand{first, 1, 0});
     world.Despawn(first);
 
     // A different entity takes over the freed slot.
-    const Entity second = world.SpawnBlocking(2, 2);
+    const Entity second = world.Spawn(2, 2);
     CHECK(second != kNullEntity);
     CHECK_EQ(EntityIndex(second), EntityIndex(first));
 

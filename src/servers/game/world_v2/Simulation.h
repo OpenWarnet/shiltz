@@ -5,6 +5,7 @@
 #include "system/BroadcastSystem.h"
 #include "system/CombatSystem.h"
 #include "system/DeathSystem.h"
+#include "system/DespawnSystem.h"
 #include "system/GridMovementSystem.h"
 #include "system/PickupSystem.h"
 #include "system/SpawnSystem.h"
@@ -160,6 +161,14 @@ public:
         m_combat.Update(m_world.registry, m_world.events);
         m_death.Update(m_world.registry, m_world.events);
 
+        // Last of the stage, and after death on purpose. Both end in a
+        // despawn at the barrier, and something that dies on the same tick
+        // its timer runs out should be reported as having died -- the
+        // death handler is the one that credits a killer and drops loot,
+        // and an expiry that got there first would announce the removal
+        // with none of that.
+        m_despawn.Update(m_world.registry, m_world.events, deltaSeconds);
+
         // --- 3. Barrier -----------------------------------------------
         m_world.events.Flush();
 
@@ -188,6 +197,7 @@ private:
     PickupSystem m_pickup;
     CombatSystem m_combat;
     DeathSystem m_death;
+    DespawnSystem m_despawn;
 
     BroadcastSystem m_broadcast;
     NoticeSink m_sink;

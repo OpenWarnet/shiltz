@@ -3,132 +3,124 @@
 #include "../core/Test.h"
 #include "MapWorld.h"
 
+#include <cstddef>
+
 using namespace world_v2;
 
 namespace
 {
 
-void SpawnBlockingClaimsTheTile()
+void SpawnPlacesTheEntityOnItsTile()
 {
     MapWorld world(8, 8, true);
 
-    const Entity entity = world.SpawnBlocking(3, 4);
+    const Entity entity = world.Spawn(3, 4);
     CHECK(entity != kNullEntity);
     CHECK(world.registry.Exists(entity));
 
     // Position and occupancy are two copies of one fact, written together.
     CHECK_EQ(world.registry.Get<GridPositionComponent>(entity).x, 3);
     CHECK_EQ(world.registry.Get<GridPositionComponent>(entity).y, 4);
-    CHECK_EQ(world.tiles.OccupantAt(3, 4), entity);
-    CHECK(!world.tiles.IsFree(3, 4));
+    CHECK(world.tiles.Contains(entity, 3, 4));
+    CHECK_EQ(world.tiles.OccupantCount(3, 4), std::size_t{1});
 }
 
-void SpawnBlockingRefusesAndLeaksNothing()
+void SpawnRefusesOnlyOffTheMap()
 {
     MapWorld world(8, 8, true);
     world.tiles.SetWalkable(1, 1, false);
 
-    // Unwalkable terrain.
-    CHECK_EQ(world.SpawnBlocking(1, 1), kNullEntity);
+    // Unwalkable terrain is not a refusal: placement is authoring, and loot
+    // lands where its corpse fell. Only walking there is forbidden.
+    const Entity againstAWall = world.Spawn(1, 1);
+    CHECK(againstAWall != kNullEntity);
 
-    // Off the map.
-    CHECK_EQ(world.SpawnBlocking(99, 99), kNullEntity);
-
-    // Already taken.
-    const Entity first = world.SpawnBlocking(2, 2);
-    CHECK(first != kNullEntity);
-    CHECK_EQ(world.SpawnBlocking(2, 2), kNullEntity);
+    // Off the map still is.
+    CHECK_EQ(world.Spawn(99, 99), kNullEntity);
+    CHECK_EQ(world.Spawn(-1, 0), kNullEntity);
 
     // A refused spawn must not have consumed an entity slot on the way out.
-    CHECK_EQ(world.registry.AliveCount(), 1u);
-    CHECK_EQ(world.tiles.OccupantAt(2, 2), first);
+    CHECK_EQ(world.registry.AliveCount(), std::size_t{1});
 }
 
-void SpawnPassableDoesNotBlock()
+void AnyNumberOfEntitiesShareATile()
 {
+    // What used to be two functions -- SpawnBlocking, which refused a taken
+    // tile, and SpawnPassable, which stayed out of the index to avoid
+    // blocking anyone -- is one, because neither behaviour has anything
+    // left to mean.
     MapWorld world(8, 8, true);
 
-    const Entity item = world.SpawnPassable(5, 5);
+    const Entity item = world.Spawn(5, 5);
+    const Entity creature = world.Spawn(5, 5);
+    const Entity another = world.Spawn(5, 5);
+
     CHECK(item != kNullEntity);
-
-    // It has a position but is not in the occupancy array, so a creature
-    // can still walk onto the tile.
-    CHECK_EQ(world.registry.Get<GridPositionComponent>(item).x, 5);
-    CHECK_EQ(world.tiles.OccupantAt(5, 5), kNullEntity);
-    CHECK(world.tiles.IsFree(5, 5));
-
-    const Entity creature = world.SpawnBlocking(5, 5);
     CHECK(creature != kNullEntity);
-    CHECK_EQ(world.tiles.OccupantAt(5, 5), creature);
-}
+    CHECK(another != kNullEntity);
 
-void SpawnPassableIgnoresTerrain()
-{
-    MapWorld world(8, 8, true);
-    world.tiles.SetWalkable(6, 6, false);
+    CHECK_EQ(world.tiles.OccupantCount(5, 5), std::size_t{3});
+    CHECK(world.tiles.Contains(item, 5, 5));
+    CHECK(world.tiles.Contains(creature, 5, 5));
+    CHECK(world.tiles.Contains(another, 5, 5));
 
-    // An item dropped against a wall is fine; only walking there is not.
-    const Entity item = world.SpawnPassable(6, 6);
-    CHECK(item != kNullEntity);
-
-    // But off the map is still off the map.
-    CHECK_EQ(world.SpawnPassable(-1, 0), kNullEntity);
-    CHECK_EQ(world.registry.AliveCount(), 1u);
+    // All three agree with the index about where they are.
+    CHECK_EQ(world.registry.Get<GridPositionComponent>(item).x, 5);
+    CHECK_EQ(world.registry.Get<GridPositionComponent>(creature).y, 5);
 }
 
 void DespawnReleasesTheTile()
 {
     MapWorld world(8, 8, true);
 
-    const Entity entity = world.SpawnBlocking(3, 3);
+    const Entity entity = world.Spawn(3, 3);
     world.Despawn(entity);
 
     CHECK(!world.registry.Exists(entity));
-    CHECK_EQ(world.registry.AliveCount(), 0u);
+    CHECK_EQ(world.registry.AliveCount(), std::size_t{0});
 
-    // The tile must come back, or the map grows a phantom wall where
-    // something used to stand.
-    CHECK_EQ(world.tiles.OccupantAt(3, 3), kNullEntity);
-    CHECK(world.tiles.IsFree(3, 3));
+    // The tile must come back, or the map grows a phantom the AI can still
+    // see at a square nothing is standing on.
+    CHECK(world.tiles.OccupantsAt(3, 3).empty());
 
-    // And it is immediately usable again.
-    const Entity next = world.SpawnBlocking(3, 3);
+    const Entity next = world.Spawn(3, 3);
     CHECK(next != kNullEntity);
     CHECK(next != entity);
 }
 
-void DespawningAPassableEntityLeavesTheOccupantAlone()
+void DespawningOneOccupantLeavesTheRestAlone()
 {
     MapWorld world(8, 8, true);
 
-    const Entity item = world.SpawnPassable(4, 4);
-    const Entity creature = world.SpawnBlocking(4, 4);
+    const Entity item = world.Spawn(4, 4);
+    const Entity creature = world.Spawn(4, 4);
     CHECK(creature != kNullEntity);
 
     world.Despawn(item);
 
-    // The item never claimed the tile, so removing it must not evict the
-    // creature sharing those coordinates.
+    // Removing one thing from a shared tile must take only that thing.
     CHECK(world.registry.Exists(creature));
-    CHECK_EQ(world.tiles.OccupantAt(4, 4), creature);
+    CHECK_EQ(world.tiles.OccupantCount(4, 4), std::size_t{1});
+    CHECK(world.tiles.Contains(creature, 4, 4));
 }
 
 void DespawnIsIdempotent()
 {
     MapWorld world(8, 8, true);
 
-    const Entity entity = world.SpawnBlocking(1, 1);
+    const Entity entity = world.Spawn(1, 1);
     world.Despawn(entity);
     world.Despawn(entity);
     world.Despawn(kNullEntity);
 
-    CHECK_EQ(world.registry.AliveCount(), 0u);
+    CHECK_EQ(world.registry.AliveCount(), std::size_t{0});
 
-    // A repeated despawn must not have vacated a tile that someone else has
-    // since taken over.
-    const Entity next = world.SpawnBlocking(1, 1);
+    // A repeated despawn must not have taken someone else off the tile it
+    // used to hold.
+    const Entity next = world.Spawn(1, 1);
     world.Despawn(entity);
-    CHECK_EQ(world.tiles.OccupantAt(1, 1), next);
+    CHECK(world.tiles.Contains(next, 1, 1));
+    CHECK_EQ(world.tiles.OccupantCount(1, 1), std::size_t{1});
 }
 
 void EventsAreCarriedPerMap()
@@ -156,12 +148,11 @@ void EventsAreCarriedPerMap()
 
 int main()
 {
-    SpawnBlockingClaimsTheTile();
-    SpawnBlockingRefusesAndLeaksNothing();
-    SpawnPassableDoesNotBlock();
-    SpawnPassableIgnoresTerrain();
+    SpawnPlacesTheEntityOnItsTile();
+    SpawnRefusesOnlyOffTheMap();
+    AnyNumberOfEntitiesShareATile();
     DespawnReleasesTheTile();
-    DespawningAPassableEntityLeavesTheOccupantAlone();
+    DespawningOneOccupantLeavesTheRestAlone();
     DespawnIsIdempotent();
     EventsAreCarriedPerMap();
 

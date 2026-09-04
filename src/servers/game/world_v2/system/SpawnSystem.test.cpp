@@ -73,25 +73,21 @@ void PrimeFillsToStrength()
         CHECK(simulation.World().registry.Has<HealthComponent>(monster));
         CHECK(simulation.World().registry.Has<FactionComponent>(monster));
 
-        // On the map and blocking, like any other creature.
-        CHECK_EQ(simulation.World().tiles.OccupantAt(position.x, position.y), monster);
+        // On the map and in the tile index, like any other creature.
+        CHECK(simulation.World().tiles.Contains(monster, position.x, position.y));
     }
 }
 
-void EveryMonsterGetsItsOwnTile()
+void ABurstSpreadsAcrossItsArea()
 {
     Simulation simulation(64, 64, true);
     InstallSpawnRules(simulation.World(), DressMonster);
 
-    // Twenty monsters into a 5x5 area -- twenty of the twenty-five tiles.
-    // Packed tightly enough that tile choice has to see the claims made by
-    // the requests ahead of it in the same flush; choosing from walkability
-    // alone leaves most of the burst with nowhere to land.
-    //
-    // The count is the real assertion here. SpawnBlocking refuses to stack
-    // two creatures on one tile whatever the caller asks for, so the
-    // distinctness check below can never fail on its own -- a broken
-    // chooser shows up as monsters that never got placed.
+    // Twenty monsters into a 5x5 area. Nothing stops them stacking now --
+    // sharing a tile is legal -- so what is being checked is that the
+    // sequence-driven tile choice still scatters them rather than dropping
+    // the whole burst on one square, which would look like a bug even
+    // though nothing would be broken.
     AddSpawner(simulation, 30, 30, 2, 20);
     simulation.PrimeSpawns();
 
@@ -106,28 +102,68 @@ void EveryMonsterGetsItsOwnTile()
     }
 
     std::sort(tiles.begin(), tiles.end());
-    CHECK(std::adjacent_find(tiles.begin(), tiles.end()) == tiles.end());
+    const std::size_t distinct =
+        static_cast<std::size_t>(std::unique(tiles.begin(), tiles.end()) - tiles.begin());
+
+    // The area holds twenty-five tiles and the chooser walks it in order
+    // from a sequence-derived offset, so twenty spawns land on twenty
+    // distinct squares. Asserted as a floor rather than exact equality:
+    // spreading is a presentation choice, and a future chooser that
+    // occasionally doubles up is not a defect the way an empty camp is.
+    CHECK(distinct >= 15u);
 }
 
-void ACrowdedAreaFillsWhatItCan()
+void MonstersMayShareATile()
+{
+    Simulation simulation(64, 64, true);
+    InstallSpawnRules(simulation.World(), DressMonster);
+
+    // A 1x1 area asked for four monsters. Under exclusive occupancy this
+    // was a camp that could never reach strength -- three requests dropped
+    // every tick, forever. Now the single tile takes all four.
+    AddSpawner(simulation, 30, 30, 0, 4);
+    simulation.PrimeSpawns();
+
+    CHECK_EQ(LiveMonsters(simulation.World()).size(), 4u);
+    CHECK_EQ(simulation.World().tiles.OccupantCount(30, 30), std::size_t{4});
+
+    // And it holds there rather than churning: a spawner at strength stops
+    // asking.
+    for (int tick = 0; tick < 20; ++tick)
+    {
+        simulation.Tick(0.5f);
+    }
+    CHECK_EQ(LiveMonsters(simulation.World()).size(), 4u);
+}
+
+void ACrowdedAreaStillReachesStrength()
 {
     Simulation simulation(64, 64, true);
     InstallSpawnRules(simulation.World(), DressMonster);
 
     // A 3x3 area asked for 20 monsters -- nine tiles, one of them walled.
+    //
+    // This used to be the test that a camp fills only what it can: eight
+    // tiles meant eight monsters, and the other twelve requests were
+    // dropped every tick forever. Since monsters share tiles, area no
+    // longer caps population -- only walkability does, and eight walkable
+    // tiles hold all twenty.
     AddSpawner(simulation, 30, 30, 1, 20);
     simulation.World().tiles.SetWalkable(30, 30, false);
     simulation.PrimeSpawns();
 
-    CHECK_EQ(LiveMonsters(simulation.World()).size(), 8u);
-    CHECK_EQ(simulation.World().tiles.OccupantAt(30, 30), kNullEntity);
+    CHECK_EQ(LiveMonsters(simulation.World()).size(), 20u);
 
-    // And it keeps asking without ever succeeding, rather than wedging.
+    // The walled tile is still refused, though: terrain is what a spawn
+    // cannot cross.
+    CHECK(simulation.World().tiles.OccupantsAt(30, 30).empty());
+
+    // At strength, so it holds rather than churning.
     for (int i = 0; i < 20; ++i)
     {
         simulation.Tick(kStep);
     }
-    CHECK_EQ(LiveMonsters(simulation.World()).size(), 8u);
+    CHECK_EQ(LiveMonsters(simulation.World()).size(), 20u);
 }
 
 void NoRoomAtAllIsHarmless()
@@ -313,8 +349,22 @@ void SpawnersAreNotOnTheMap()
     // it, target it, or see it.
     CHECK(!simulation.World().registry.Has<GridPositionComponent>(spawner));
     CHECK(!simulation.World().registry.Has<FactionComponent>(spawner));
-    CHECK(simulation.World().tiles.OccupantAt(20, 20) != spawner);
-    CHECK(simulation.World().tiles.IsFree(20, 20) || simulation.World().tiles.OccupantAt(20, 20) != kNullEntity);
+    CHECK(!simulation.World().tiles.Contains(spawner, 20, 20));
+
+    // Nor is it anywhere else on the index: a spawner has no position at
+    // all, so no tile may list it.
+    bool listedAnywhere = false;
+    for (int y = 0; y < simulation.World().tiles.Height(); ++y)
+    {
+        for (int x = 0; x < simulation.World().tiles.Width(); ++x)
+        {
+            if (simulation.World().tiles.Contains(spawner, x, y))
+            {
+                listedAnywhere = true;
+            }
+        }
+    }
+    CHECK(!listedAnywhere);
 }
 
 void SpawnedEventDescribesAFinishedMonster()
@@ -417,8 +467,9 @@ void SeveralSpawnersAreIndependent()
 int main()
 {
     PrimeFillsToStrength();
-    EveryMonsterGetsItsOwnTile();
-    ACrowdedAreaFillsWhatItCan();
+    ABurstSpreadsAcrossItsArea();
+    MonstersMayShareATile();
+    ACrowdedAreaStillReachesStrength();
     NoRoomAtAllIsHarmless();
     ALossIsReplacedAfterTheDelay();
     LossesComeBackOneAtATime();

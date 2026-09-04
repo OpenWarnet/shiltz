@@ -37,24 +37,38 @@ public:
     {
     }
 
-    // Creates an entity that occupies (x, y), returning kNullEntity if the
-    // tile is unwalkable or already taken. For creatures -- anything that
-    // should block others and be findable by tile.
+    // Creates an entity standing at (x, y), returning kNullEntity only if
+    // the tile is off the map.
+    //
+    // One function, because there is nothing left for a second one to mean.
+    // This used to be a pair -- SpawnBlocking for creatures, which claimed
+    // the tile exclusively and refused if it was taken, and SpawnPassable
+    // for items, which stayed out of the occupancy array so as not to block
+    // anyone. With tiles holding any number of entities, the first refusal
+    // is gone and the second distinction has no purpose: everything with a
+    // position goes in the index, and anything that cares what kind of
+    // thing it found asks the registry, as AI targeting already does.
+    //
+    // Terrain is not consulted here. Placement is authoring -- loot lands
+    // where its corpse fell, wall or no wall -- while walking onto a tile
+    // is gameplay, and GridMovementSystem is what enforces that. A caller
+    // that wants a creature on walkable ground checks IsWalkable first;
+    // SpawnRules does.
     //
     // This and Despawn are the chokepoint TileGrid's invariant depends on:
-    // they place the entity in the occupancy array and give it its
+    // they add the entity to the tile's list and give it its
     // GridPositionComponent in one step, so the two cannot disagree.
-    Entity SpawnBlocking(int x, int y)
+    Entity Spawn(int x, int y)
     {
-        if (!tiles.IsFree(x, y))
+        if (!tiles.InBounds(x, y))
         {
             return kNullEntity;
         }
 
         const Entity entity = registry.Create();
-        if (!tiles.TryPlace(entity, x, y))
+        if (!tiles.Place(entity, x, y))
         {
-            // Unreachable given the IsFree check above, but leaving a
+            // Unreachable given the InBounds check above, but leaving a
             // half-spawned entity behind would be worse than a wasted slot.
             registry.Destroy(entity);
             return kNullEntity;
@@ -64,30 +78,10 @@ public:
         return entity;
     }
 
-    // Creates an entity that sits at (x, y) without claiming it -- ground
-    // items, effects, anything that should not block a creature or be
-    // returned by OccupantAt. It still has a position; it is simply not in
-    // the occupancy array.
+    // Takes the entity off its tile and destroys it.
     //
-    // Fails only if (x, y) is off the map. Passable things are allowed on
-    // unwalkable terrain: an item dropped against a wall is fine.
-    Entity SpawnPassable(int x, int y)
-    {
-        if (!tiles.InBounds(x, y))
-        {
-            return kNullEntity;
-        }
-
-        const Entity entity = registry.Create();
-        registry.Assign<GridPositionComponent>(entity, x, y);
-        return entity;
-    }
-
-    // Releases the entity's tile, if it held one, and destroys it.
-    //
-    // Safe for passable entities too: TileGrid::Remove only clears a tile
-    // whose occupant is actually this entity, so despawning an item never
-    // evicts a creature standing on the same square.
+    // TileGrid::Remove takes only the named entity, so despawning one thing
+    // never disturbs whatever else is standing on the same square.
     //
     // Structural -- call it at the barrier, not inside a system sweep,
     // except on the entity a view is currently visiting.
@@ -107,10 +101,10 @@ public:
     }
 
     // Public because this is a bundle, not an abstraction -- systems take
-    // the pieces they need by reference. The one rule is that a blocking
-    // entity's position is never assigned through `registry` directly;
-    // SpawnBlocking, Despawn, and GridMovementSystem own that, and they are
-    // what keep `tiles` honest.
+    // the pieces they need by reference. The one rule is that a
+    // GridPositionComponent is never assigned through `registry` directly;
+    // Spawn, Despawn, and GridMovementSystem own that, and they are what
+    // keep `tiles` honest.
     Registry registry;
     TileGrid tiles;
     EventManager events;

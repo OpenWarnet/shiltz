@@ -9,6 +9,7 @@
 #include "ItemRules.h"
 #include "PickupSystem.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -21,7 +22,7 @@ constexpr std::uint32_t kPotion = 100;
 
 Entity AddCarrier(Simulation& simulation, int x, int y, std::size_t slots)
 {
-    const Entity carrier = simulation.World().SpawnBlocking(x, y);
+    const Entity carrier = simulation.World().Spawn(x, y);
     simulation.World().registry.Assign<InventoryComponent>(carrier, MakeInventory(slots));
     return carrier;
 }
@@ -38,8 +39,9 @@ void PickingUpMovesTheGoodsAndClearsTheGround()
     const Entity item = SpawnGroundItem(simulation.World(), kPotion, 7, 10, 11, 10);
     CHECK(item != kNullEntity);
 
-    // An item claims no tile, so a creature can stand next to or on one.
-    CHECK_EQ(simulation.World().tiles.OccupantAt(11, 10), kNullEntity);
+    // The item is on the index like anything else with a position, and
+    // that stops nobody standing next to or on top of it.
+    CHECK(simulation.World().tiles.Contains(item, 11, 10));
 
     simulation.World().registry.Assign<PickupItemRequestComponent>(carrier, item);
     simulation.Tick(0.0f);
@@ -168,7 +170,7 @@ void ACarrierWithNoInventorySaysSo()
 
     // No InventoryComponent at all -- a wiring mistake, kept distinct from
     // a full bag so it does not hide as one.
-    const Entity carrier = simulation.World().SpawnBlocking(10, 10);
+    const Entity carrier = simulation.World().Spawn(10, 10);
     const Entity item = SpawnGroundItem(simulation.World(), kPotion, 1, 10, 11, 10);
 
     simulation.World().registry.Assign<PickupItemRequestComponent>(carrier, item);
@@ -254,16 +256,24 @@ void ItemsDoNotBlockAnything()
     const Entity item = SpawnGroundItem(simulation.World(), kPotion, 1, 10, 11, 10);
     CHECK(item != kNullEntity);
 
-    // Several on one square, none of them in the occupancy grid, and a
-    // creature free to walk straight over the pile.
-    CHECK(SpawnGroundItem(simulation.World(), kPotion, 1, 10, 11, 10) != kNullEntity);
-    CHECK(simulation.World().tiles.IsFree(11, 10));
+    // Several on one square -- all of them on the index, since nothing is
+    // hidden from it any more -- and a creature free to walk straight over
+    // the pile.
+    const Entity second = SpawnGroundItem(simulation.World(), kPotion, 1, 10, 11, 10);
+    CHECK(second != kNullEntity);
+    CHECK_EQ(simulation.World().tiles.OccupantCount(11, 10), std::size_t{2});
 
-    const Entity walker = simulation.World().SpawnBlocking(10, 10);
+    const Entity walker = simulation.World().Spawn(10, 10);
     simulation.World().registry.Assign<MoveIntentComponent>(walker, 1, 0);
     simulation.Tick(0.25f);
 
     CHECK_EQ(simulation.World().registry.Get<GridPositionComponent>(walker).x, 11);
+
+    // Standing on the pile, not stopped by it, and neither item disturbed.
+    CHECK_EQ(simulation.World().tiles.OccupantCount(11, 10), std::size_t{3});
+    CHECK(simulation.World().tiles.Contains(walker, 11, 10));
+    CHECK(simulation.World().tiles.Contains(item, 11, 10));
+    CHECK(simulation.World().tiles.Contains(second, 11, 10));
 }
 
 void SpawningNothingSpawnsNothing()

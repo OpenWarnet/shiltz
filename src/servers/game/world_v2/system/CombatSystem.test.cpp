@@ -17,7 +17,7 @@ namespace
 
 Entity SpawnFighter(MapWorld& world, int x, int y, int health)
 {
-    const Entity entity = world.SpawnBlocking(x, y);
+    const Entity entity = world.Spawn(x, y);
     world.registry.Assign<HealthComponent>(entity, health, health);
     return entity;
 }

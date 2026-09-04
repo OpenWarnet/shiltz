@@ -5,6 +5,8 @@
 #include "../core/Entity.h"
 #include "../core/Registry.h"
 #include "../event/CombatEvents.h"
+#include "../event/ItemEvents.h"
+#include "../event/LifecycleEvents.h"
 #include "../event/MovementEvents.h"
 #include "../event/SpawnEvents.h"
 #include "../world/MapWorld.h"
@@ -24,6 +26,30 @@ enum class NoticeKind : std::uint8_t
     Moved,
     Damaged,
     Died,
+
+    // Removed for a reason that is not a death -- a timer ran out, or
+    // somebody picked it up. Pairs with Spawned and ItemAppeared: anything
+    // a client was told to draw needs a way to be told to stop.
+    //
+    // Kept distinct from Died rather than folded into it, because a client
+    // does different things with them: a death plays an animation and may
+    // leave a corpse, a removal just takes the thing off the screen.
+    //
+    // One kind covers items and creatures alike. The client already knows
+    // which it is, because it was told when the thing appeared and keeps
+    // its own table -- the same reason every notice carries coordinates
+    // rather than looking them up, since the subject is gone by the time
+    // this is delivered.
+    Despawned,
+
+    // Loot is now on the floor. Its own kind rather than Spawned, because
+    // the payload differs -- an item is an id and a quantity, a monster is
+    // a template -- and because the v1 wire protocol already draws the same
+    // line: see protocol/server/ItemMapNew against a creature spawn.
+    //
+    //   templateId  the item id
+    //   amount      how many
+    ItemAppeared,
 };
 
 // One thing that happened this tick, flattened into a shape a network layer
@@ -131,6 +157,47 @@ public:
                 notice.y = event.y;
                 notice.amount = event.amount;
                 notice.remaining = event.remainingHealth;
+                m_notices.push_back(notice);
+            });
+
+        world.events.Listen<GroundItemSpawnedEvent>(
+            [this](const GroundItemSpawnedEvent& event)
+            {
+                Notice notice;
+                notice.kind = NoticeKind::ItemAppeared;
+                notice.subject = event.entity;
+                notice.x = event.x;
+                notice.y = event.y;
+                notice.templateId = event.itemId;
+                notice.amount = static_cast<int>(event.quantity);
+                m_notices.push_back(notice);
+            });
+
+        // A pickup is a removal as far as anyone watching is concerned:
+        // the item leaves the floor. `actor` carries who took it, which is
+        // what lets a client show the pickup rather than a bare vanish.
+        world.events.Listen<ItemPickedUpEvent>(
+            [this](const ItemPickedUpEvent& event)
+            {
+                Notice notice;
+                notice.kind = NoticeKind::Despawned;
+                notice.subject = event.item;
+                notice.actor = event.picker;
+                notice.x = event.x;
+                notice.y = event.y;
+                notice.templateId = event.itemId;
+                notice.amount = static_cast<int>(event.quantity);
+                m_notices.push_back(notice);
+            });
+
+        world.events.Listen<EntityExpiredEvent>(
+            [this](const EntityExpiredEvent& event)
+            {
+                Notice notice;
+                notice.kind = NoticeKind::Despawned;
+                notice.subject = event.entity;
+                notice.x = event.x;
+                notice.y = event.y;
                 m_notices.push_back(notice);
             });
 

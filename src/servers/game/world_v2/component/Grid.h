@@ -17,9 +17,9 @@ namespace world_v2
 
 // Where an entity is, in tile coordinates. The authoritative answer.
 //
-// Never write this directly -- an entity's tile is mirrored in
-// TileGrid's occupancy array, and the two going out of sync means
-// creatures standing on each other or blocking tiles they left. Go through
+// Never write this directly -- an entity's tile is mirrored in TileGrid's
+// occupancy index, and the two going out of sync means entities findable at
+// tiles they left and invisible at the one they are on. Go through
 // MapWorld/GridMovementSystem, which update both together.
 struct GridPositionComponent
 {

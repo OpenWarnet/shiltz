@@ -39,9 +39,9 @@ private:
     // Pass 1 -- decide each pending intent.
     //
     // The move is committed to GridPositionComponent and to the occupancy
-    // array in the same breath, which is the whole point of routing it
-    // through TileGrid::TryMove: a step is either fully taken or not taken
-    // at all, never half.
+    // index in the same breath, which is the whole point of routing it
+    // through TileGrid::Move: a step is either fully taken or not taken at
+    // all, never half.
     void ResolveIntents(Registry& registry, TileGrid& tiles, EventManager& events)
     {
         registry.view<GridPositionComponent, MoveIntentComponent>().Each(
@@ -86,9 +86,16 @@ private:
                 const int toX = fromX + directionX;
                 const int toY = fromY + directionY;
 
-                // Terrain and occupancy in one lookup. Blocked means the
-                // entity simply stays where it is.
-                if (!tiles.TryMove(entity, fromX, fromY, toX, toY))
+                // Terrain, and nothing else. Entities do not block each
+                // other, so a step is refused only by a wall or the edge of
+                // the map -- whoever is already standing on the destination
+                // is not consulted, and several things sharing a tile is an
+                // ordinary state rather than a collision to resolve.
+                //
+                // Still routed through TileGrid::Move rather than done here
+                // for the same reason as before: leaving the old tile and
+                // joining the new one must not half-apply.
+                if (!tiles.Move(entity, fromX, fromY, toX, toY))
                 {
                     return;
                 }

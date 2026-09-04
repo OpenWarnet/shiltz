@@ -41,7 +41,7 @@ void PacketToMovementInOneTick()
     Simulation simulation(8, 8, true);
     WireMovement(simulation);
 
-    const Entity entity = simulation.World().SpawnBlocking(2, 2);
+    const Entity entity = simulation.World().Spawn(2, 2);
 
     // What a connection thread does: push and walk away.
     simulation.Commands().Push(MoveCommand{entity, 1, 0});
@@ -55,7 +55,7 @@ void PacketToMovementInOneTick()
     const GridPositionComponent& position = simulation.World().registry.Get<GridPositionComponent>(entity);
     CHECK_EQ(position.x, 3);
     CHECK_EQ(position.y, 2);
-    CHECK_EQ(simulation.World().tiles.OccupantAt(3, 2), entity);
+    CHECK(simulation.World().tiles.Contains(entity, 3, 2));
     CHECK(!simulation.World().registry.Has<MoveIntentComponent>(entity));
 }
 
@@ -66,7 +66,7 @@ void StagesRunInOrder()
     std::vector<std::string> log;
     int positionWhenEventFired = -1;
 
-    const Entity entity = simulation.World().SpawnBlocking(2, 2);
+    const Entity entity = simulation.World().Spawn(2, 2);
 
     // Stage 1: the command handler both creates the intent and queues an
     // event for the barrier.
@@ -122,7 +122,7 @@ void CommandsPushedDuringBroadcastLandNextTick()
     Simulation simulation(8, 8, true);
     WireMovement(simulation);
 
-    const Entity entity = simulation.World().SpawnBlocking(2, 2);
+    const Entity entity = simulation.World().Spawn(2, 2);
 
     bool pushed = false;
     simulation.OnBroadcast(
@@ -165,7 +165,7 @@ void ContinuousMovementAcrossTicks()
     Simulation simulation(16, 16, true);
     WireMovement(simulation);
 
-    const Entity entity = simulation.World().SpawnBlocking(0, 5);
+    const Entity entity = simulation.World().Spawn(0, 5);
 
     // A player holding a direction: one command per tick, at the default 4
     // tiles/second with a 0.25s step, so each tick completes a step and
@@ -184,9 +184,9 @@ void ContinuousMovementAcrossTicks()
     // released as it was left.
     for (int x = 0; x < 6; ++x)
     {
-        CHECK_EQ(simulation.World().tiles.OccupantAt(x, 5), kNullEntity);
+        CHECK(simulation.World().tiles.OccupantsAt(x, 5).empty());
     }
-    CHECK_EQ(simulation.World().tiles.OccupantAt(6, 5), entity);
+    CHECK(simulation.World().tiles.Contains(entity, 6, 5));
 }
 
 void SeparateMapsDoNotShareState()
@@ -196,8 +196,8 @@ void SeparateMapsDoNotShareState()
     WireMovement(first);
     WireMovement(second);
 
-    const Entity a = first.World().SpawnBlocking(2, 2);
-    const Entity b = second.World().SpawnBlocking(2, 2);
+    const Entity a = first.World().Spawn(2, 2);
+    const Entity b = second.World().Spawn(2, 2);
 
     first.Commands().Push(MoveCommand{a, 1, 0});
     first.Tick(0.0f);
@@ -207,8 +207,8 @@ void SeparateMapsDoNotShareState()
     CHECK_EQ(first.World().registry.Get<GridPositionComponent>(a).x, 3);
     CHECK_EQ(second.World().registry.Get<GridPositionComponent>(b).x, 2);
     CHECK_EQ(second.LastCommandCount(), 0u);
-    CHECK_EQ(first.World().tiles.OccupantAt(2, 2), kNullEntity);
-    CHECK_EQ(second.World().tiles.OccupantAt(2, 2), b);
+    CHECK(first.World().tiles.OccupantsAt(2, 2).empty());
+    CHECK(second.World().tiles.Contains(b, 2, 2));
 }
 
 } // namespace

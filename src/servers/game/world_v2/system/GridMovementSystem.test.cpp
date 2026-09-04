@@ -31,7 +31,7 @@ void AcceptedStepMovesEverythingTogether()
     MapWorld world(8, 8, true);
     GridMovementSystem movement;
 
-    const Entity entity = world.SpawnBlocking(3, 3);
+    const Entity entity = world.Spawn(3, 3);
     world.registry.Assign<MoveIntentComponent>(entity, 1, 0);
 
     movement.Update(world.registry, world.tiles, world.events, 0.0f);
@@ -39,8 +39,8 @@ void AcceptedStepMovesEverythingTogether()
     // Grid position and occupancy commit in the same breath -- a step is
     // fully taken or not taken at all.
     PositionIs(world, entity, 4, 3);
-    CHECK_EQ(world.tiles.OccupantAt(3, 3), kNullEntity);
-    CHECK_EQ(world.tiles.OccupantAt(4, 3), entity);
+    CHECK(world.tiles.OccupantsAt(3, 3).empty());
+    CHECK(world.tiles.Contains(entity, 4, 3));
 
     // The intent is spent...
     CHECK(!world.registry.Has<MoveIntentComponent>(entity));
@@ -61,14 +61,14 @@ void TerrainBlocksTheStep()
     MapWorld world(8, 8, true);
     GridMovementSystem movement;
 
-    const Entity entity = world.SpawnBlocking(3, 3);
+    const Entity entity = world.Spawn(3, 3);
     world.tiles.SetWalkable(4, 3, false);
     world.registry.Assign<MoveIntentComponent>(entity, 1, 0);
 
     movement.Update(world.registry, world.tiles, world.events, 0.0f);
 
     PositionIs(world, entity, 3, 3);
-    CHECK_EQ(world.tiles.OccupantAt(3, 3), entity);
+    CHECK(world.tiles.Contains(entity, 3, 3));
     CHECK(!world.registry.Has<InterpolatedMoveComponent>(entity));
 
     // Rejected still means consumed -- otherwise a creature walking into a
@@ -76,22 +76,71 @@ void TerrainBlocksTheStep()
     CHECK(!world.registry.Has<MoveIntentComponent>(entity));
 }
 
-void CreaturesBlockEachOther()
+void CreaturesWalkThroughEachOther()
 {
+    // Entities do not block entities. Walking into someone is just standing
+    // where they are, so the step is committed like any other -- position
+    // updated, tile index updated, a move announced.
     MapWorld world(8, 8, true);
     GridMovementSystem movement;
 
-    const Entity mover = world.SpawnBlocking(3, 3);
-    const Entity blocker = world.SpawnBlocking(4, 3);
-    CHECK(blocker != kNullEntity);
+    const Entity mover = world.Spawn(3, 3);
+    const Entity resident = world.Spawn(4, 3);
+    CHECK(resident != kNullEntity);
 
     world.registry.Assign<MoveIntentComponent>(mover, 1, 0);
     movement.Update(world.registry, world.tiles, world.events, 0.0f);
 
-    PositionIs(world, mover, 3, 3);
-    CHECK_EQ(world.tiles.OccupantAt(3, 3), mover);
-    CHECK_EQ(world.tiles.OccupantAt(4, 3), blocker);
-    CHECK(!world.registry.Has<InterpolatedMoveComponent>(mover));
+    PositionIs(world, mover, 4, 3);
+    CHECK(world.tiles.OccupantsAt(3, 3).empty());
+    CHECK_EQ(world.tiles.OccupantCount(4, 3), std::size_t{2});
+    CHECK(world.tiles.Contains(mover, 4, 3));
+    CHECK(world.tiles.Contains(resident, 4, 3));
+
+    // A committed step, so it is mid-move like any other.
+    CHECK(world.registry.Has<InterpolatedMoveComponent>(mover));
+
+    // And the resident was not disturbed by being walked onto.
+    PositionIs(world, resident, 4, 3);
+    CHECK(!world.registry.Has<InterpolatedMoveComponent>(resident));
+}
+
+void AWholeCrowdCanStandOnOneTile()
+{
+    // The stacking case at scale, driven through movement rather than
+    // placement: eight creatures converging on one square all arrive.
+    MapWorld world(8, 8, true);
+    GridMovementSystem movement;
+
+    const Entity centre = world.Spawn(4, 4);
+    CHECK(centre != kNullEntity);
+
+    std::vector<Entity> arrivals;
+    for (int dy = -1; dy <= 1; ++dy)
+    {
+        for (int dx = -1; dx <= 1; ++dx)
+        {
+            if (dx == 0 && dy == 0)
+            {
+                continue;
+            }
+
+            const Entity entity = world.Spawn(4 + dx, 4 + dy);
+            CHECK(entity != kNullEntity);
+            world.registry.Assign<MoveIntentComponent>(entity, -dx, -dy);
+            arrivals.push_back(entity);
+        }
+    }
+
+    movement.Update(world.registry, world.tiles, world.events, 0.0f);
+
+    // All eight neighbours plus the one already there.
+    CHECK_EQ(world.tiles.OccupantCount(4, 4), std::size_t{9});
+    for (const Entity entity : arrivals)
+    {
+        PositionIs(world, entity, 4, 4);
+        CHECK(world.tiles.Contains(entity, 4, 4));
+    }
 }
 
 void NonAdjacentIntentIsRejected()
@@ -99,7 +148,7 @@ void NonAdjacentIntentIsRejected()
     MapWorld world(16, 16, true);
     GridMovementSystem movement;
 
-    const Entity entity = world.SpawnBlocking(5, 5);
+    const Entity entity = world.Spawn(5, 5);
 
     // A crafted packet claiming a huge direction is a malformed request,
     // not a longer step. Honoring it would be a teleport.
@@ -121,7 +170,7 @@ void ZeroIntentIsConsumedWithoutMoving()
     MapWorld world(8, 8, true);
     GridMovementSystem movement;
 
-    const Entity entity = world.SpawnBlocking(3, 3);
+    const Entity entity = world.Spawn(3, 3);
     world.registry.Assign<MoveIntentComponent>(entity, 0, 0);
 
     movement.Update(world.registry, world.tiles, world.events, 0.0f);
@@ -136,13 +185,13 @@ void DiagonalStep()
     MapWorld world(8, 8, true);
     GridMovementSystem movement;
 
-    const Entity entity = world.SpawnBlocking(3, 3);
+    const Entity entity = world.Spawn(3, 3);
     world.registry.Assign<MoveIntentComponent>(entity, -1, 1);
 
     movement.Update(world.registry, world.tiles, world.events, 0.0f);
 
     PositionIs(world, entity, 2, 4);
-    CHECK_EQ(world.tiles.OccupantAt(2, 4), entity);
+    CHECK(world.tiles.Contains(entity, 2, 4));
 }
 
 void StepRetiresWhenProgressCompletes()
@@ -150,7 +199,7 @@ void StepRetiresWhenProgressCompletes()
     MapWorld world(8, 8, true);
     GridMovementSystem movement;
 
-    const Entity entity = world.SpawnBlocking(3, 3);
+    const Entity entity = world.Spawn(3, 3);
     world.registry.Assign<MoveIntentComponent>(entity, 1, 0);
 
     // 4 tiles/sec at 0.1s advances 0.4 per tick, so the step takes three.
@@ -173,7 +222,7 @@ void IntentIsHeldWhileMidStep()
     MapWorld world(8, 8, true);
     GridMovementSystem movement;
 
-    const Entity entity = world.SpawnBlocking(3, 3);
+    const Entity entity = world.Spawn(3, 3);
     world.registry.Assign<MoveIntentComponent>(entity, 1, 0);
 
     movement.Update(world.registry, world.tiles, world.events, 0.1f);
@@ -198,8 +247,8 @@ void IntentIsHeldWhileMidStep()
     // Now the held intent is free to become the next step.
     movement.Update(world.registry, world.tiles, world.events, 0.1f);
     PositionIs(world, entity, 5, 3);
-    CHECK_EQ(world.tiles.OccupantAt(4, 3), kNullEntity);
-    CHECK_EQ(world.tiles.OccupantAt(5, 3), entity);
+    CHECK(world.tiles.OccupantsAt(4, 3).empty());
+    CHECK(world.tiles.Contains(entity, 5, 3));
     CHECK(!world.registry.Has<MoveIntentComponent>(entity));
 }
 
@@ -216,7 +265,7 @@ void ManyMoversInOnePass()
     std::vector<Entity> movers;
     for (int i = 0; i < 8; ++i)
     {
-        const Entity entity = world.SpawnBlocking(i * 4, 1);
+        const Entity entity = world.Spawn(i * 4, 1);
         CHECK(entity != kNullEntity);
         world.registry.Assign<MoveIntentComponent>(entity, 1, 0);
         movers.push_back(entity);
@@ -225,7 +274,7 @@ void ManyMoversInOnePass()
     std::vector<Entity> bystanders;
     for (int i = 0; i < 40; ++i)
     {
-        const Entity entity = world.SpawnBlocking(i, 5);
+        const Entity entity = world.Spawn(i, 5);
         CHECK(entity != kNullEntity);
         bystanders.push_back(entity);
     }
@@ -242,14 +291,14 @@ void ManyMoversInOnePass()
     for (int i = 0; i < 8; ++i)
     {
         PositionIs(world, movers[static_cast<std::size_t>(i)], i * 4 + 1, 1);
-        CHECK_EQ(world.tiles.OccupantAt(i * 4, 1), kNullEntity);
-        CHECK_EQ(world.tiles.OccupantAt(i * 4 + 1, 1), movers[static_cast<std::size_t>(i)]);
+        CHECK(world.tiles.OccupantsAt(i * 4, 1).empty());
+        CHECK(world.tiles.Contains(movers[static_cast<std::size_t>(i)], i * 4 + 1, 1));
     }
 
     for (int i = 0; i < 40; ++i)
     {
         PositionIs(world, bystanders[static_cast<std::size_t>(i)], i, 5);
-        CHECK_EQ(world.tiles.OccupantAt(i, 5), bystanders[static_cast<std::size_t>(i)]);
+        CHECK(world.tiles.Contains(bystanders[static_cast<std::size_t>(i)], i, 5));
     }
 }
 
@@ -261,7 +310,7 @@ void CommittedStepsAreAnnounced()
     std::vector<EntityMovedEvent> moves;
     world.events.Listen<EntityMovedEvent>([&moves](const EntityMovedEvent& event) { moves.push_back(event); });
 
-    const Entity entity = world.SpawnBlocking(3, 3);
+    const Entity entity = world.Spawn(3, 3);
     world.registry.Assign<MoveIntentComponent>(entity, 1, 0);
 
     movement.Update(world.registry, world.tiles, world.events, 0.0f);
@@ -291,11 +340,11 @@ void RejectedStepsAnnounceNothing()
     int announced = 0;
     world.events.Listen<EntityMovedEvent>([&announced](const EntityMovedEvent&) { ++announced; });
 
-    const Entity blocked = world.SpawnBlocking(3, 3);
+    const Entity blocked = world.Spawn(3, 3);
     world.tiles.SetWalkable(4, 3, false);
     world.registry.Assign<MoveIntentComponent>(blocked, 1, 0);
 
-    const Entity malformed = world.SpawnBlocking(6, 6);
+    const Entity malformed = world.Spawn(6, 6);
     world.registry.Assign<MoveIntentComponent>(malformed, 400, 0);
 
     movement.Update(world.registry, world.tiles, world.events, 0.0f);
@@ -311,13 +360,13 @@ void MapEdgeBlocksTheStep()
     MapWorld world(4, 4, true);
     GridMovementSystem movement;
 
-    const Entity entity = world.SpawnBlocking(0, 0);
+    const Entity entity = world.Spawn(0, 0);
     world.registry.Assign<MoveIntentComponent>(entity, -1, 0);
 
     movement.Update(world.registry, world.tiles, world.events, 0.0f);
 
     PositionIs(world, entity, 0, 0);
-    CHECK_EQ(world.tiles.OccupantAt(0, 0), entity);
+    CHECK(world.tiles.Contains(entity, 0, 0));
     CHECK(!world.registry.Has<InterpolatedMoveComponent>(entity));
 }
 
@@ -327,7 +376,8 @@ int main()
 {
     AcceptedStepMovesEverythingTogether();
     TerrainBlocksTheStep();
-    CreaturesBlockEachOther();
+    CreaturesWalkThroughEachOther();
+    AWholeCrowdCanStandOnOneTile();
     NonAdjacentIntentIsRejected();
     ZeroIntentIsConsumedWithoutMoving();
     DiagonalStep();

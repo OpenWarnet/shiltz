@@ -11,28 +11,36 @@
 // Checks don't abort -- a failing CHECK records the file/line and keeps
 // going, so one run reports every broken case instead of only the first.
 
+#include <atomic>
 #include <cstdio>
 
 namespace world_v2::test
 {
 
-inline int g_failures = 0;
+// Atomic because some tests drive several simulations on separate threads
+// -- one per map, which is the arrangement MapWorld is designed for -- and
+// record failures from all of them. The printf itself is stream-locked, so
+// two threads failing at once interleave lines rather than corrupting the
+// tally.
+inline std::atomic<int> g_failures{0};
 
 inline void Fail(const char* expression, const char* file, int line)
 {
     std::printf("  FAIL  %s:%d\n        %s\n", file, line, expression);
-    ++g_failures;
+    g_failures.fetch_add(1, std::memory_order_relaxed);
 }
 
 inline int Summary(const char* suite)
 {
-    if (g_failures == 0)
+    const int failures = g_failures.load(std::memory_order_relaxed);
+
+    if (failures == 0)
     {
         std::printf("PASS  %s\n", suite);
         return 0;
     }
 
-    std::printf("FAIL  %s -- %d check(s) failed\n", suite, g_failures);
+    std::printf("FAIL  %s -- %d check(s) failed\n", suite, failures);
     return 1;
 }
 

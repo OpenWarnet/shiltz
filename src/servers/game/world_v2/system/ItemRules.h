@@ -13,10 +13,10 @@ namespace world_v2
 
 // Puts an item on the ground and announces it.
 //
-// Passable, not blocking: an item claims no tile, so nobody has to walk
-// around a dropped potion, several can share a square, and a creature can
-// stand on top of one. That is also why picking one up needs its own range
-// check rather than reusing the occupancy grid -- items are not in it.
+// Nothing special is needed to keep it from blocking anyone, because
+// nothing blocks anyone: an item goes into the tile index like everything
+// else, several can share a square with each other and with whoever is
+// standing there, and a creature can walk over one freely.
 //
 // Returns kNullEntity if (x, y) is off the map. Unwalkable terrain is fine;
 // an item dropped against a wall is a normal thing for a corpse to leave
@@ -31,7 +31,7 @@ inline Entity SpawnGroundItem(MapWorld& world, std::uint32_t itemId, std::uint32
         return kNullEntity;
     }
 
-    const Entity item = world.SpawnPassable(x, y);
+    const Entity item = world.Spawn(x, y);
     if (item == kNullEntity)
     {
         return kNullEntity;

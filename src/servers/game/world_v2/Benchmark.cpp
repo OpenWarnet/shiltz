@@ -361,7 +361,7 @@ void FullTick(std::size_t creatures, std::size_t moversEvery)
             break;
         }
 
-        const Entity entity = simulation.World().SpawnBlocking(x, y);
+        const Entity entity = simulation.World().Spawn(x, y);
         if (entity == kNullEntity)
         {
             continue;
@@ -376,10 +376,36 @@ void FullTick(std::size_t creatures, std::size_t moversEvery)
 
     Header("6. Full Simulation::Tick");
 
+    // How many steps actually committed, which is the number this row's
+    // cost really tracks.
+    //
+    // Worth reporting rather than assuming, because it moved sharply when
+    // entities stopped blocking each other, and without it this row is
+    // easy to misread.
+    //
+    // The creatures are spread two tiles apart and every tenth one walks
+    // east. Under exclusive occupancy a mover took two steps and then spent
+    // the rest of the run pressed against the stationary neighbour ahead of
+    // it, so the row was almost entirely measuring *rejected* intents,
+    // which cost nearly nothing. Measured, with the two rules differing
+    // only in whether Move consults occupancy:
+    //
+    //     exclusive   34.3 of 500 steps commit    24.4 us   0.71 us/step
+    //     shared     492.4 of 500 steps commit    55.4 us   0.11 us/step
+    //
+    // So the whole-tick number roughly doubled while the tick did fourteen
+    // times as much committed movement -- six times cheaper per step of
+    // real work. The regression in the left-hand column is the benchmark
+    // finally doing the work the old rule was skipping, not the tile index
+    // being slower. The scan rows in sections 7 and 8, which do the same
+    // work under both rules, are the ones to read for structure cost;
+    // they came in within 5%.
+    std::size_t committedSteps = 0;
+    simulation.World().events.Listen<EntityMovedEvent>([&committedSteps](const EntityMovedEvent&)
+                                                       { ++committedSteps; });
+
     // At 4 tiles/sec a 0.25s step completes within the tick, so every tick
-    // starts with the movers free to step again. After the first couple of
-    // repeats most of them are pressed up against a neighbour, so this is a
-    // mix of accepted and rejected steps rather than a best case.
+    // starts with the movers free to step again.
     Row("tick (ns/op is per moving creature)", movers.size(),
         Measure(kRepeats,
                 [&]()
@@ -393,6 +419,8 @@ void FullTick(std::size_t creatures, std::size_t moversEvery)
                 }));
 
     std::printf("  -- %zu creatures on the map, %zu of them moving each tick\n", placed, movers.size());
+    std::printf("  -- %.1f steps committed per tick, of %zu intents issued\n",
+                static_cast<double>(committedSteps) / static_cast<double>(kRepeats), movers.size());
     std::printf("  -- the us column is the whole-tick cost; note it tracks movers, not map population\n");
 }
 
@@ -424,7 +452,7 @@ struct AiScene
             const int x = static_cast<int>((i % 40) * 8);
             const int y = static_cast<int>((i / 40) * 8);
 
-            const Entity monster = world.SpawnBlocking(x, y);
+            const Entity monster = world.Spawn(x, y);
             if (monster == kNullEntity)
             {
                 continue;
@@ -437,7 +465,7 @@ struct AiScene
 
             if (giveEachATarget)
             {
-                const Entity prey = world.SpawnBlocking(x + 1, y);
+                const Entity prey = world.Spawn(x + 1, y);
                 if (prey != kNullEntity)
                 {
                     world.registry.Assign<FactionComponent>(prey, kPlayerFaction);
@@ -453,7 +481,7 @@ struct AiScene
             const int x = static_cast<int>(i % 256);
             const int y = 300 + static_cast<int>(i / 256);
 
-            const Entity extra = world.SpawnBlocking(x, y);
+            const Entity extra = world.Spawn(x, y);
             if (extra != kNullEntity)
             {
                 world.registry.Assign<FactionComponent>(extra, kPlayerFaction);
@@ -508,6 +536,91 @@ void AiVisionScan()
     Note("the first two should match: scan cost is bounded by vision, not by population");
 }
 
+// Density: the cost axis that exclusive occupancy could not express.
+//
+// Every scan row above holds at most one entity per tile, because that is
+// all the old grid allowed, so none of them measure what shared tiles
+// actually changed. The window is the same size; what varies is how many
+// entities are standing in it.
+//
+// The crowd is deliberately unfactioned -- the shape of a floor covered in
+// dropped loot. AISystem walks it and rejects every one of them, so the
+// search still ends having found nothing and this measures list-walking
+// rather than an early exit on the first valid target.
+void AiDensityScan()
+{
+    struct Crowd
+    {
+        MapWorld world;
+        std::size_t monsters = 0;
+
+        explicit Crowd(std::size_t litterPerTile)
+            : world(128, 128, true)
+        {
+            constexpr int kOrigin = 32;
+            constexpr int kSpan = 48;
+
+            for (int y = kOrigin; y < kOrigin + kSpan; ++y)
+            {
+                for (int x = kOrigin; x < kOrigin + kSpan; ++x)
+                {
+                    for (std::size_t i = 0; i < litterPerTile; ++i)
+                    {
+                        // No faction and no health: in the index, seen by
+                        // the scan, skipped by IsEngageable.
+                        world.Spawn(x, y);
+                    }
+                }
+            }
+
+            // Two tiles apart, so a 9x9 window holds about twenty of them.
+            // Same faction as each other, so they are not targets either.
+            for (std::size_t i = 0; i < 500; ++i)
+            {
+                const int x = kOrigin + static_cast<int>(i % 25) * 2;
+                const int y = kOrigin + static_cast<int>(i / 25) * 2;
+
+                const Entity monster = world.Spawn(x, y);
+                if (monster == kNullEntity)
+                {
+                    continue;
+                }
+
+                world.registry.Assign<FactionComponent>(monster, kMonsterFaction);
+                world.registry.Assign<AIComponent>(monster, 4, 1, kNullEntity);
+                world.registry.Assign<HealthComponent>(monster, 100, 100);
+                ++monsters;
+            }
+        }
+    };
+
+    Header("7b. AI target search by local density (ns/op is per monster)");
+
+    static const char* const kLabels[] = {
+        "vision 4, bare floor          (~20 in window)",
+        "vision 4, 1 item per tile     (~100 in window)",
+        "vision 4, 4 items per tile    (~344 in window)",
+        "vision 4, 16 items per tile   (~1316 in window)",
+    };
+    static const std::size_t kLitter[] = {0, 1, 4, 16};
+
+    for (std::size_t row = 0; row < 4; ++row)
+    {
+        Crowd scene(kLitter[row]);
+        AISystem ai;
+        Row(kLabels[row], scene.monsters,
+            Measure(kRepeats,
+                    [&]()
+                    {
+                        ai.Update(scene.world.registry, scene.world.tiles);
+                        return static_cast<std::uint64_t>(scene.monsters);
+                    }));
+    }
+
+    Note("all four find nothing -- the crowd is unfactioned, so it is walked and rejected");
+    Note("this is the cost shared tiles added; the old grid capped every tile at one");
+}
+
 void AiVisionRangeScaling()
 {
     Header("8. AI target search by vision range (ns/op is per monster)");
@@ -548,7 +661,7 @@ void CombatSteadyState()
         const int px = (p % 20) * 12 + 6;
         const int py = (p / 20) * 24 + 12;
 
-        const Entity player = simulation.World().SpawnBlocking(px, py);
+        const Entity player = simulation.World().Spawn(px, py);
         if (player == kNullEntity)
         {
             continue;
@@ -568,7 +681,7 @@ void CombatSteadyState()
                     continue;
                 }
 
-                const Entity monster = simulation.World().SpawnBlocking(px + dx, py + dy);
+                const Entity monster = simulation.World().Spawn(px + dx, py + dy);
                 if (monster == kNullEntity)
                 {
                     continue;
@@ -620,7 +733,7 @@ void DeathCascade(std::size_t victims)
             const int x = static_cast<int>(i % 400);
             const int y = static_cast<int>(i / 400);
 
-            const Entity victim = simulation->World().SpawnBlocking(x, y);
+            const Entity victim = simulation->World().Spawn(x, y);
             if (victim == kNullEntity)
             {
                 continue;
@@ -666,7 +779,7 @@ void BroadcastDelivery(std::size_t viewerCount, std::size_t noticeCount)
         const int x = static_cast<int>((i % 32) * 16);
         const int y = static_cast<int>((i / 32) * 16);
 
-        const Entity viewer = world.SpawnBlocking(x, y);
+        const Entity viewer = world.Spawn(x, y);
         if (viewer == kNullEntity)
         {
             continue;
@@ -735,6 +848,7 @@ int main()
     CommandOverhead(500);
     FullTick(5000, 10);
     AiVisionScan();
+    AiDensityScan();
     AiVisionRangeScaling();
     CombatSteadyState();
     DeathCascade(2000);

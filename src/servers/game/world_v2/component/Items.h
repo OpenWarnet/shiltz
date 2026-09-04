@@ -16,9 +16,10 @@ struct LootTableComponent
 
 // An item lying on the ground, waiting to be picked up.
 //
-// Sits on a passable entity (see MapWorld::SpawnPassable) with a
-// GridPositionComponent: it has a place on the map but claims no tile, so
-// nobody has to walk around a dropped potion and nothing can target it.
+// An ordinary entity with a GridPositionComponent, standing on a tile like
+// everything else. It blocks nobody, because nothing blocks anybody, and it
+// is not a target because it has no FactionComponent -- see AISystem, which
+// scans the same tiles and skips it for that reason.
 //
 // `maxStack` travels with the instance rather than being looked up, for the
 // same reason a spawner carries a templateId: how many of item 1042 fit in

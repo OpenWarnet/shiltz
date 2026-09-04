@@ -23,7 +23,7 @@ constexpr int kPlayers = 2;
 Entity SpawnKiller(Simulation& simulation, int x, int y, std::uint64_t requiredForNextLevel)
 {
     MapWorld& world = simulation.World();
-    const Entity entity = world.SpawnBlocking(x, y);
+    const Entity entity = world.Spawn(x, y);
     world.registry.Assign<FactionComponent>(entity, kPlayers);
     world.registry.Assign<HealthComponent>(entity, 100, 100);
     world.registry.Assign<ExperienceComponent>(entity, std::uint64_t{0}, std::uint32_t{1}, requiredForNextLevel);
@@ -33,7 +33,7 @@ Entity SpawnKiller(Simulation& simulation, int x, int y, std::uint64_t requiredF
 Entity SpawnVictim(Simulation& simulation, int x, int y, int health, std::uint64_t reward, std::uint32_t dropTable)
 {
     MapWorld& world = simulation.World();
-    const Entity entity = world.SpawnBlocking(x, y);
+    const Entity entity = world.Spawn(x, y);
     world.registry.Assign<FactionComponent>(entity, kMonsters);
     world.registry.Assign<HealthComponent>(entity, health, health);
     world.registry.Assign<ExperienceRewardComponent>(entity, reward);
@@ -73,7 +73,7 @@ void OneKillResolvesCompletelyInOneTick()
     // Damage, death, credit, drop and despawn all inside the one tick that
     // caused them -- not one link per tick.
     CHECK(!simulation.World().registry.Exists(victim));
-    CHECK_EQ(simulation.World().tiles.OccupantAt(6, 5), kNullEntity);
+    CHECK(simulation.World().tiles.OccupantsAt(6, 5).empty());
 
     const ExperienceComponent& experience = simulation.World().registry.Get<ExperienceComponent>(killer);
     CHECK_EQ(experience.level, 2u);
@@ -231,8 +231,8 @@ void AMutualKillPaysNeitherSide()
     CHECK_EQ(awards, 0);
     CHECK(!simulation.World().registry.Exists(first));
     CHECK(!simulation.World().registry.Exists(second));
-    CHECK_EQ(simulation.World().tiles.OccupantAt(5, 5), kNullEntity);
-    CHECK_EQ(simulation.World().tiles.OccupantAt(6, 5), kNullEntity);
+    CHECK(simulation.World().tiles.OccupantsAt(5, 5).empty());
+    CHECK(simulation.World().tiles.OccupantsAt(6, 5).empty());
 }
 
 void LootHandlerCanSpawnAtTheBarrier()
@@ -248,7 +248,7 @@ void LootHandlerCanSpawnAtTheBarrier()
     // it is legal -- this proves that path works, not just despawning.
     Entity dropped = kNullEntity;
     simulation.World().events.Listen<LootDropEvent>(
-        [&](const LootDropEvent& event) { dropped = simulation.World().SpawnPassable(event.x, event.y); });
+        [&](const LootDropEvent& event) { dropped = simulation.World().Spawn(event.x, event.y); });
 
     simulation.World().registry.Assign<AttackRequestComponent>(killer, victim, 5);
     simulation.Tick(0.0f);
@@ -257,9 +257,12 @@ void LootHandlerCanSpawnAtTheBarrier()
     CHECK(simulation.World().registry.Exists(dropped));
     CHECK_EQ(simulation.World().registry.Get<GridPositionComponent>(dropped).x, 6);
 
-    // Passable, so the tile the corpse vacated is still walkable.
-    CHECK_EQ(simulation.World().tiles.OccupantAt(6, 5), kNullEntity);
-    CHECK(simulation.World().tiles.IsFree(6, 5));
+    // The corpse came off the tile and the drop took its place on it. Both
+    // are listed by the same index now -- what changed is that the item
+    // being there stops nobody, so the square is as enterable as it was.
+    CHECK(!simulation.World().tiles.Contains(victim, 6, 5));
+    CHECK(simulation.World().tiles.Contains(dropped, 6, 5));
+    CHECK(simulation.World().tiles.IsWalkable(6, 5));
 }
 
 void AiDrivenKillOverSeveralTicks()
@@ -268,13 +271,13 @@ void AiDrivenKillOverSeveralTicks()
     InstallCombatRules(simulation.World());
 
     // A monster that has to close distance before it can hit anything.
-    const Entity monster = simulation.World().SpawnBlocking(5, 5);
+    const Entity monster = simulation.World().Spawn(5, 5);
     simulation.World().registry.Assign<FactionComponent>(monster, kMonsters);
     simulation.World().registry.Assign<AIComponent>(monster, 10, 1, kNullEntity);
     simulation.World().registry.Assign<HealthComponent>(monster, 100, 100);
     simulation.World().registry.Assign<AttackPowerComponent>(monster, 4);
 
-    const Entity player = simulation.World().SpawnBlocking(11, 5);
+    const Entity player = simulation.World().Spawn(11, 5);
     simulation.World().registry.Assign<FactionComponent>(player, kPlayers);
     simulation.World().registry.Assign<HealthComponent>(player, 12, 12);
 

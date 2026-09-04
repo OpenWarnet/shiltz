@@ -2,12 +2,17 @@
 #include "../component/Combat.h"
 #include "../component/Grid.h"
 #include "../component/Network.h"
+#include "../component/Despawn.h"
+#include "../component/Items.h"
 #include "../component/Request.h"
 #include "../component/Spawn.h"
 #include "../core/Entity.h"
 #include "../core/Test.h"
 #include "BroadcastSystem.h"
+#include "../world/Inventory.h"
 #include "CombatRules.h"
+#include "DespawnRules.h"
+#include "ItemRules.h"
 #include "SpawnRules.h"
 
 #include <cstddef>
@@ -67,7 +72,7 @@ struct Recorder
 
 Entity AddViewer(Simulation& simulation, int x, int y, int radius)
 {
-    const Entity viewer = simulation.World().SpawnBlocking(x, y);
+    const Entity viewer = simulation.World().Spawn(x, y);
     simulation.World().registry.Assign<ViewerComponent>(viewer, radius);
     return viewer;
 }
@@ -79,7 +84,7 @@ void MovementIsAnnouncedWithBothEndpoints()
     simulation.OnNotice(recorder.Sink());
 
     const Entity viewer = AddViewer(simulation, 20, 20, 10);
-    const Entity walker = simulation.World().SpawnBlocking(22, 20);
+    const Entity walker = simulation.World().Spawn(22, 20);
     simulation.World().registry.Assign<MoveIntentComponent>(walker, 1, 0);
 
     simulation.Tick(0.25f);
@@ -106,7 +111,7 @@ void RejectedMovesAnnounceNothing()
     simulation.OnNotice(recorder.Sink());
 
     const Entity viewer = AddViewer(simulation, 20, 20, 10);
-    const Entity walker = simulation.World().SpawnBlocking(22, 20);
+    const Entity walker = simulation.World().Spawn(22, 20);
     simulation.World().tiles.SetWalkable(23, 20, false);
     simulation.World().registry.Assign<MoveIntentComponent>(walker, 1, 0);
 
@@ -156,8 +161,8 @@ void DamageIsAnnouncedWithTheNumbers()
     simulation.OnNotice(recorder.Sink());
 
     const Entity viewer = AddViewer(simulation, 20, 20, 10);
-    const Entity attacker = simulation.World().SpawnBlocking(22, 20);
-    const Entity target = simulation.World().SpawnBlocking(23, 20);
+    const Entity attacker = simulation.World().Spawn(22, 20);
+    const Entity target = simulation.World().Spawn(23, 20);
     simulation.World().registry.Assign<HealthComponent>(target, 50, 50);
     simulation.World().registry.Assign<AttackRequestComponent>(attacker, target, 12);
 
@@ -184,8 +189,8 @@ void DeathIsAnnouncedAfterTheCorpseIsGone()
     simulation.OnNotice(recorder.Sink());
 
     const Entity viewer = AddViewer(simulation, 20, 20, 10);
-    const Entity attacker = simulation.World().SpawnBlocking(22, 20);
-    const Entity target = simulation.World().SpawnBlocking(23, 20);
+    const Entity attacker = simulation.World().Spawn(22, 20);
+    const Entity target = simulation.World().Spawn(23, 20);
     simulation.World().registry.Assign<HealthComponent>(target, 5, 5);
     simulation.World().registry.Assign<AttackRequestComponent>(attacker, target, 5);
 
@@ -207,6 +212,152 @@ void DeathIsAnnouncedAfterTheCorpseIsGone()
     }
 }
 
+void LootOnTheFloorIsAnnounced()
+{
+    // The client cannot be told an item vanished if it was never told the
+    // item existed. This is the appearance half of that pair.
+    Simulation simulation(32, 32, true);
+    Recorder recorder;
+    simulation.OnNotice(recorder.Sink());
+
+    const Entity viewer = AddViewer(simulation, 10, 10, 6);
+
+    SpawnGroundItem(simulation.World(), 1042, 7, 10, 12, 11);
+    simulation.Tick(0.0f);
+
+    const std::vector<Notice> appeared = recorder.For(viewer, NoticeKind::ItemAppeared);
+    CHECK_EQ(appeared.size(), std::size_t{1});
+    if (appeared.size() == 1)
+    {
+        CHECK_EQ(appeared[0].x, 12);
+        CHECK_EQ(appeared[0].y, 11);
+
+        // An item is an id and a quantity, which is why this is its own
+        // kind rather than Spawned.
+        CHECK_EQ(appeared[0].templateId, std::uint32_t{1042});
+        CHECK_EQ(appeared[0].amount, 7);
+    }
+}
+
+void LootOutOfSightIsNotAnnounced()
+{
+    Simulation simulation(64, 64, true);
+    Recorder recorder;
+    simulation.OnNotice(recorder.Sink());
+
+    const Entity viewer = AddViewer(simulation, 10, 10, 4);
+
+    SpawnGroundItem(simulation.World(), 1042, 1, 10, 40, 40);
+    simulation.Tick(0.0f);
+
+    CHECK_EQ(recorder.For(viewer, NoticeKind::ItemAppeared).size(), std::size_t{0});
+}
+
+void APickupIsAnnouncedAsARemovalWithItsTaker()
+{
+    // A pickup is a removal to everyone watching -- the item leaves the
+    // floor. `actor` is what lets a client show who took it instead of the
+    // thing blinking out.
+    Simulation simulation(32, 32, true);
+    InstallItemRules(simulation.World());
+
+    Recorder recorder;
+    simulation.OnNotice(recorder.Sink());
+
+    const Entity viewer = AddViewer(simulation, 10, 10, 6);
+
+    const Entity picker = simulation.World().Spawn(11, 10);
+    simulation.World().registry.Assign<InventoryComponent>(picker, MakeInventory(4));
+
+    const Entity item = SpawnGroundItem(simulation.World(), 1042, 3, 10, 12, 10);
+    CHECK(item != kNullEntity);
+
+    // Let the appearance land first, so this tick is only the removal.
+    simulation.Tick(0.0f);
+    recorder.deliveries.clear();
+
+    simulation.World().registry.Assign<PickupItemRequestComponent>(picker, item);
+    simulation.Tick(0.0f);
+
+    const std::vector<Notice> gone = recorder.For(viewer, NoticeKind::Despawned);
+    CHECK_EQ(gone.size(), std::size_t{1});
+    if (gone.size() == 1)
+    {
+        CHECK_EQ(gone[0].subject, item);
+        CHECK_EQ(gone[0].actor, picker);
+        CHECK_EQ(gone[0].x, 12);
+        CHECK_EQ(gone[0].y, 10);
+    }
+}
+
+void ATimeoutIsAnnouncedWithNoTaker()
+{
+    // The other way an item leaves: nobody took it. Same kind, but no
+    // actor -- a client showing "X picked up Y" must not invent an X.
+    Simulation simulation(32, 32, true);
+    InstallDespawnRules(simulation.World());
+
+    Recorder recorder;
+    simulation.OnNotice(recorder.Sink());
+
+    const Entity viewer = AddViewer(simulation, 10, 10, 6);
+    const Entity item = SpawnGroundItem(simulation.World(), 1042, 1, 10, 12, 10);
+    simulation.World().registry.Assign<DespawnTimerComponent>(item, 0.25f);
+
+    simulation.Tick(0.0f);
+    recorder.deliveries.clear();
+
+    simulation.Tick(0.25f);
+
+    const std::vector<Notice> gone = recorder.For(viewer, NoticeKind::Despawned);
+    CHECK_EQ(gone.size(), std::size_t{1});
+    if (gone.size() == 1)
+    {
+        CHECK_EQ(gone[0].subject, item);
+        CHECK_EQ(gone[0].actor, kNullEntity);
+    }
+}
+
+void EveryItemThatAppearsAlsoLeaves()
+{
+    // The pairing itself, over a whole item lifetime: appeared once, gone
+    // once, in that order, to the same viewer. An item stream that only
+    // ever announced one half would leave the client either drawing ghosts
+    // or missing loot entirely.
+    Simulation simulation(32, 32, true);
+    InstallItemRules(simulation.World());
+    InstallDespawnRules(simulation.World());
+
+    Recorder recorder;
+    simulation.OnNotice(recorder.Sink());
+
+    const Entity viewer = AddViewer(simulation, 10, 10, 8);
+    const Entity item = SpawnGroundItem(simulation.World(), 1042, 1, 10, 12, 10);
+    simulation.World().registry.Assign<DespawnTimerComponent>(item, 0.25f);
+
+    simulation.Tick(0.0f);
+    simulation.Tick(0.25f);
+
+    CHECK_EQ(recorder.For(viewer, NoticeKind::ItemAppeared).size(), std::size_t{1});
+    CHECK_EQ(recorder.For(viewer, NoticeKind::Despawned).size(), std::size_t{1});
+
+    // Order matters: a removal before the appearance is unusable.
+    std::size_t appearedAt = 0;
+    std::size_t goneAt = 0;
+    for (std::size_t i = 0; i < recorder.deliveries.size(); ++i)
+    {
+        if (recorder.deliveries[i].notice.kind == NoticeKind::ItemAppeared)
+        {
+            appearedAt = i;
+        }
+        if (recorder.deliveries[i].notice.kind == NoticeKind::Despawned)
+        {
+            goneAt = i;
+        }
+    }
+    CHECK(appearedAt < goneAt);
+}
+
 void ListenerOrderDoesNotMatter()
 {
     // The same death, with the corpse-removing handler registered *before*
@@ -221,8 +372,8 @@ void ListenerOrderDoesNotMatter()
     CombatSystem combat;
     DeathSystem death;
 
-    const Entity attacker = world.SpawnBlocking(10, 10);
-    const Entity target = world.SpawnBlocking(11, 10);
+    const Entity attacker = world.Spawn(10, 10);
+    const Entity target = world.Spawn(11, 10);
     world.registry.Assign<HealthComponent>(target, 5, 5);
     world.registry.Assign<AttackRequestComponent>(attacker, target, 5);
 
@@ -254,7 +405,7 @@ void ViewersOnlySeeWhatIsNear()
     const Entity close = AddViewer(simulation, 20, 20, 5);
     const Entity far = AddViewer(simulation, 100, 100, 5);
 
-    const Entity walker = simulation.World().SpawnBlocking(22, 20);
+    const Entity walker = simulation.World().Spawn(22, 20);
     simulation.World().registry.Assign<MoveIntentComponent>(walker, 1, 0);
 
     simulation.Tick(0.25f);
@@ -274,7 +425,7 @@ void AViewerHearsAboutItselfAndNothingElse()
     const Entity viewer = AddViewer(simulation, 20, 20, 0);
     simulation.World().registry.Assign<MoveIntentComponent>(viewer, 1, 0);
 
-    const Entity stranger = simulation.World().SpawnBlocking(25, 20);
+    const Entity stranger = simulation.World().Spawn(25, 20);
     simulation.World().registry.Assign<MoveIntentComponent>(stranger, 1, 0);
 
     simulation.Tick(0.25f);
@@ -304,7 +455,7 @@ void ADespawnedViewerHearsNothing()
     const Entity viewer = AddViewer(simulation, 20, 20, 10);
     simulation.World().registry.Assign<HealthComponent>(viewer, 5, 5);
 
-    const Entity attacker = simulation.World().SpawnBlocking(21, 20);
+    const Entity attacker = simulation.World().Spawn(21, 20);
     simulation.World().registry.Assign<AttackRequestComponent>(attacker, viewer, 5);
 
     const Entity bystander = AddViewer(simulation, 22, 20, 10);
@@ -340,7 +491,7 @@ void AStepOutOfRangeIsStillDelivered()
     // Standing at the edge of vision and stepping out of it. Without the
     // origin end of the step counting, the creature would freeze on screen
     // at the boundary instead of walking away.
-    const Entity leaver = simulation.World().SpawnBlocking(23, 20);
+    const Entity leaver = simulation.World().Spawn(23, 20);
     simulation.World().registry.Assign<MoveIntentComponent>(leaver, 1, 0);
 
     simulation.Tick(0.25f);
@@ -361,7 +512,7 @@ void NoticesDoNotCarryOverBetweenTicks()
     simulation.OnNotice(recorder.Sink());
 
     const Entity viewer = AddViewer(simulation, 20, 20, 10);
-    const Entity walker = simulation.World().SpawnBlocking(22, 20);
+    const Entity walker = simulation.World().Spawn(22, 20);
     simulation.World().registry.Assign<MoveIntentComponent>(walker, 1, 0);
 
     simulation.Tick(0.25f);
@@ -379,7 +530,7 @@ void AnUnwatchedSimulationDoesNotAccumulate()
 
     // No sink at all. The notices still have to be cleared, or an
     // unwatched map grows a list forever.
-    const Entity walker = simulation.World().SpawnBlocking(22, 20);
+    const Entity walker = simulation.World().Spawn(22, 20);
 
     for (int i = 0; i < 10; ++i)
     {
@@ -398,10 +549,10 @@ void EachViewerGetsItsOwnSet()
     const Entity west = AddViewer(simulation, 20, 20, 4);
     const Entity east = AddViewer(simulation, 40, 20, 4);
 
-    const Entity nearWest = simulation.World().SpawnBlocking(22, 20);
+    const Entity nearWest = simulation.World().Spawn(22, 20);
     simulation.World().registry.Assign<MoveIntentComponent>(nearWest, 0, 1);
 
-    const Entity nearEast = simulation.World().SpawnBlocking(42, 20);
+    const Entity nearEast = simulation.World().Spawn(42, 20);
     simulation.World().registry.Assign<MoveIntentComponent>(nearEast, 0, 1);
 
     simulation.Tick(0.25f);
@@ -426,8 +577,8 @@ void ANonViewerReceivesNothing()
 
     // On the map, right next to the action, but nobody is watching through
     // it -- a monster, not a player.
-    const Entity bystander = simulation.World().SpawnBlocking(21, 20);
-    const Entity walker = simulation.World().SpawnBlocking(22, 20);
+    const Entity bystander = simulation.World().Spawn(21, 20);
+    const Entity walker = simulation.World().Spawn(22, 20);
     simulation.World().registry.Assign<MoveIntentComponent>(walker, 1, 0);
 
     simulation.Tick(0.25f);
@@ -445,6 +596,11 @@ int main()
     SpawnsAreAnnounced();
     DamageIsAnnouncedWithTheNumbers();
     DeathIsAnnouncedAfterTheCorpseIsGone();
+    LootOnTheFloorIsAnnounced();
+    LootOutOfSightIsNotAnnounced();
+    APickupIsAnnouncedAsARemovalWithItsTaker();
+    ATimeoutIsAnnouncedWithNoTaker();
+    EveryItemThatAppearsAlsoLeaves();
     ListenerOrderDoesNotMatter();
     ViewersOnlySeeWhatIsNear();
     AViewerHearsAboutItselfAndNothingElse();

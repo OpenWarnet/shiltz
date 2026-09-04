@@ -348,10 +348,12 @@ set(WORLD_V2_COMPONENT
 	"world_v2/component/Request.h"
 	"world_v2/component/Network.h"
 	"world_v2/component/Spawn.h"
+	"world_v2/component/Despawn.h"
 	"world_v2/event/CombatEvents.h"
 	"world_v2/event/SpawnEvents.h"
 	"world_v2/event/MovementEvents.h"
-	"world_v2/event/ItemEvents.h")
+	"world_v2/event/ItemEvents.h"
+	"world_v2/event/LifecycleEvents.h")
 
 set(WORLD_V2_SYSTEM
 	"world_v2/system/SpawnSystem.h"
@@ -359,6 +361,7 @@ set(WORLD_V2_SYSTEM
 	"world_v2/system/GridMovementSystem.h"
 	"world_v2/system/CombatSystem.h"
 	"world_v2/system/DeathSystem.h"
+	"world_v2/system/DespawnSystem.h"
 	"world_v2/system/BroadcastSystem.h"
 	"world_v2/system/PickupSystem.h")
 
@@ -447,6 +450,8 @@ add_world_v2_test(world_v2_broadcast_test
 	${WORLD_V2_SYSTEM}
 	"world_v2/system/CombatRules.h"
 	"world_v2/system/SpawnRules.h"
+	"world_v2/system/ItemRules.h"
+	"world_v2/system/DespawnRules.h"
 	"world_v2/CommandQueue.h"
 	"world_v2/Simulation.h"
 	"world_v2/system/BroadcastSystem.test.cpp")
@@ -458,9 +463,22 @@ add_world_v2_test(world_v2_scenario_test
 	${WORLD_V2_SYSTEM}
 	"world_v2/system/CombatRules.h"
 	"world_v2/system/SpawnRules.h"
+	"world_v2/system/ItemRules.h"
+	"world_v2/system/DespawnRules.h"
 	"world_v2/CommandQueue.h"
 	"world_v2/Simulation.h"
 	"world_v2/Scenario.test.cpp")
+
+add_world_v2_test(world_v2_despawn_test
+	${WORLD_V2_CORE}
+	${WORLD_V2_COMPONENT}
+	${WORLD_V2_WORLD}
+	${WORLD_V2_SYSTEM}
+	"world_v2/system/DespawnRules.h"
+	"world_v2/system/ItemRules.h"
+	"world_v2/CommandQueue.h"
+	"world_v2/Simulation.h"
+	"world_v2/system/DespawnSystem.test.cpp")
 
 add_world_v2_test(world_v2_inventory_test
 	"world_v2/component/Items.h"

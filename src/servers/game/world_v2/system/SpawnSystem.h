@@ -89,18 +89,25 @@ public:
     }
 
     // Picks the tile a spawn should land on, or reports that the area is
-    // full.
+    // solid rock.
     //
     // Starts from a position derived from the spawner's sequence counter so
-    // successive monsters spread out instead of stacking against one corner,
-    // then walks the whole area from there until it finds a tile that is
-    // both walkable and unoccupied. Deterministic in every part: the same
-    // spawner in the same state always yields the same tile, which is what
-    // keeps two runs of the same world identical.
+    // successive monsters spread out instead of piling onto one square,
+    // then walks the whole area from there until it finds walkable ground.
+    // Deterministic in every part: the same spawner in the same state
+    // always yields the same tile, which is what keeps two runs of the same
+    // world identical.
     //
-    // Returns false when the area has no free tile at all -- a camp packed
-    // with its own monsters, or a spawn point that has been built over.
-    static bool FindFreeTile(const TileGrid& tiles, const SpawnerComponent& definition, int& outX, int& outY)
+    // Occupancy is not consulted, and the spreading is now cosmetic rather
+    // than load-bearing. Monsters may share a tile, so a crowded camp is no
+    // longer a reason to refuse a spawn -- which also means a spawner can
+    // always reach its desiredCount, where before a packed area would
+    // silently keep it short.
+    //
+    // Returns false only when every tile in the area is unwalkable: a spawn
+    // point that has been built over, or one placed inside the terrain to
+    // begin with.
+    static bool FindSpawnTile(const TileGrid& tiles, const SpawnerComponent& definition, int& outX, int& outY)
     {
         const int span = definition.radius * 2 + 1;
         const int total = span * span;
@@ -118,7 +125,7 @@ public:
             const int x = definition.x - definition.radius + (index % span);
             const int y = definition.y - definition.radius + (index / span);
 
-            if (tiles.IsFree(x, y))
+            if (tiles.IsWalkable(x, y))
             {
                 outX = x;
                 outY = y;
