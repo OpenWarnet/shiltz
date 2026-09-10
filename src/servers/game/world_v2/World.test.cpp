@@ -19,6 +19,8 @@
 //   SendFromManyThreadsWhileTicking    the inbound seam under contention
 
 #include "World.h"
+#include "system/BroadcastModule.h"
+#include "system/CoreSimulationModule.h"
 
 #include "component/Combat.h"
 #include "component/Grid.h"
@@ -26,7 +28,7 @@
 #include "core/Entity.h"
 #include "core/Test.h"
 #include "system/CombatRules.h"
-#include "world/MapWorld.h"
+#include "core/Map.h"
 
 #include <atomic>
 #include <cstddef>
@@ -69,9 +71,12 @@ struct SmiteCommand
 // do. Everything world_v2 deliberately does not know.
 void InstallPlayerRules(Simulation& simulation, int* stepsSeen = nullptr, bool refuseJoins = false)
 {
-    InstallCombatRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<CombatRulesModule>();
 
-    simulation.OnSpawnPlayer([refuseJoins](MapWorld& world, const JoinCommand& command) -> Entity {
+    simulation.Install<LambdaModule>("player", [stepsSeen, refuseJoins](ModuleContext& context) {
+    context.OnSpawnPlayer([refuseJoins](Map& world, const JoinCommand& command) -> Entity {
         if (refuseJoins)
         {
             return kNullEntity;
@@ -89,7 +94,7 @@ void InstallPlayerRules(Simulation& simulation, int* stepsSeen = nullptr, bool r
         return player;
     });
 
-    simulation.OnPlayerCommand<StepCommand>([stepsSeen](MapWorld& world, Entity actor, const StepCommand& command) {
+    context.OnPlayerCommand<StepCommand>([stepsSeen](Map& world, Entity actor, const StepCommand& command) {
         if (stepsSeen != nullptr)
         {
             ++(*stepsSeen);
@@ -98,8 +103,9 @@ void InstallPlayerRules(Simulation& simulation, int* stepsSeen = nullptr, bool r
         world.registry.Assign<MoveIntentComponent>(actor, command.directionX, command.directionY);
     });
 
-    simulation.OnPlayerCommand<SmiteCommand>([](MapWorld& world, Entity actor, const SmiteCommand&) {
+    context.OnPlayerCommand<SmiteCommand>([](Map& world, Entity actor, const SmiteCommand&) {
         world.registry.Get<HealthComponent>(actor).current = 0;
+    });
     });
 }
 

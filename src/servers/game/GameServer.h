@@ -5,7 +5,7 @@
 #include "common/Server.h"
 #include "storage/IDatabase.h"
 #include "tables/GameData.h"
-#include "world/World.h"
+#include "simulation/GameSimulation.h"
 
 #include <chrono>
 #include <cstdint>
@@ -22,7 +22,8 @@ protected:
     void OnClientDisconnected(SOCKET clientSocket) override;
 
 private:
-    // Re-arms m_tickTimer and, on the world strand, advances m_world.Tick()
+    // Re-arms m_tickTimer and, on the world strand, advances
+    // m_simulation.Tick()
     // by the actual elapsed time -- replaces the old dedicated tick thread
     // with a steady_timer posted on the io_context, serialized against
     // itself (never overlaps) by m_worldStrand. Independent of any
@@ -30,19 +31,16 @@ private:
     // schedule regardless of client traffic.
     void ScheduleTick();
 
-    // Turns each map's World::Tick() result into GC_CRT_MOVE broadcasts --
-    // one per creature move, sent only to sessions on that map whose own
-    // 3x3 zone view (Map::ZonesAround, same rule as HandleMovement in
-    // handlers/Movement.cpp) currently covers the creature's zone. Called
-    // from ScheduleTick, still on the world strand.
-    void BroadcastCreatureMoves(const std::vector<MapTickResult>& tickResults);
-
     GameDispatcher m_dispatcher;
     std::span<const uint8_t> m_key;
     IDatabase& m_db;
     GameSessionStore m_sessions;
     GameData m_data;
-    World m_world;
+
+    // Every piece of live world state, old and new. GameServer drives it
+    // and otherwise knows nothing about what is inside -- see
+    // simulation/GameSimulation.h.
+    GameSimulation m_simulation;
 
     Server::Strand m_worldStrand;
     boost::asio::steady_timer m_tickTimer;

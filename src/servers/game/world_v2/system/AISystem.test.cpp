@@ -3,7 +3,7 @@
 #include "../component/Request.h"
 #include "../core/Entity.h"
 #include "../core/Test.h"
-#include "../world/MapWorld.h"
+#include "../core/Map.h"
 #include "AISystem.h"
 
 #include <cstddef>
@@ -17,7 +17,7 @@ constexpr int kMonsters = 1;
 constexpr int kPlayers = 2;
 
 // A monster: sees, chases, and hits.
-Entity SpawnHunter(MapWorld& world, int x, int y, int visionRange, int attackRange)
+Entity SpawnHunter(Map& world, int x, int y, int visionRange, int attackRange)
 {
     const Entity entity = world.Spawn(x, y);
     world.registry.Assign<FactionComponent>(entity, kMonsters);
@@ -27,7 +27,7 @@ Entity SpawnHunter(MapWorld& world, int x, int y, int visionRange, int attackRan
 }
 
 // Something for it to hunt.
-Entity SpawnPrey(MapWorld& world, int x, int y, int faction = kPlayers)
+Entity SpawnPrey(Map& world, int x, int y, int faction = kPlayers)
 {
     const Entity entity = world.Spawn(x, y);
     world.registry.Assign<FactionComponent>(entity, faction);
@@ -41,7 +41,7 @@ void APileOnOneTileIsStillSeen()
     // to be walked. The failure this guards against is a scan that looks at
     // whoever is first on the tile and gives up -- a pile of prey standing
     // behind an ignorable entity would then be invisible.
-    MapWorld world(32, 32, true);
+    Map world(32, 32, true);
     AISystem ai;
 
     const Entity hunter = SpawnHunter(world, 5, 5, 6, 1);
@@ -68,7 +68,7 @@ void ACloserTileWinsOverACrowdedFarOne()
 {
     // Distance still decides, however many are stacked. A pile is not more
     // attractive for being a pile.
-    MapWorld world(32, 32, true);
+    Map world(32, 32, true);
     AISystem ai;
 
     const Entity hunter = SpawnHunter(world, 5, 5, 8, 1);
@@ -86,7 +86,7 @@ void ACloserTileWinsOverACrowdedFarOne()
 
 void NothingInSightMeansNoDecision()
 {
-    MapWorld world(32, 32, true);
+    Map world(32, 32, true);
     AISystem ai;
 
     const Entity hunter = SpawnHunter(world, 5, 5, 4, 1);
@@ -100,7 +100,7 @@ void NothingInSightMeansNoDecision()
 
 void OutOfReachMeansStepTowards()
 {
-    MapWorld world(32, 32, true);
+    Map world(32, 32, true);
     AISystem ai;
 
     const Entity hunter = SpawnHunter(world, 5, 5, 6, 1);
@@ -120,7 +120,7 @@ void OutOfReachMeansStepTowards()
 
 void InReachMeansAttack()
 {
-    MapWorld world(32, 32, true);
+    Map world(32, 32, true);
     AISystem ai;
 
     const Entity hunter = SpawnHunter(world, 5, 5, 6, 1);
@@ -138,7 +138,7 @@ void InReachMeansAttack()
 
 void DiagonalsCountAsOneTile()
 {
-    MapWorld world(32, 32, true);
+    Map world(32, 32, true);
     AISystem ai;
 
     // Chebyshev distance 1, the same metric movement uses -- so a
@@ -153,7 +153,7 @@ void DiagonalsCountAsOneTile()
 
 void AttackPowerOverridesTheDefault()
 {
-    MapWorld world(32, 32, true);
+    Map world(32, 32, true);
     AISystem ai;
     ai.defaultAttackDamage = 3;
 
@@ -168,7 +168,7 @@ void AttackPowerOverridesTheDefault()
 
 void VisionRangeIsRespected()
 {
-    MapWorld world(32, 32, true);
+    Map world(32, 32, true);
     AISystem ai;
 
     const Entity hunter = SpawnHunter(world, 5, 5, 2, 1);
@@ -183,7 +183,7 @@ void VisionRangeIsRespected()
 
 void OwnFactionIsNotATarget()
 {
-    MapWorld world(32, 32, true);
+    Map world(32, 32, true);
     AISystem ai;
 
     const Entity hunter = SpawnHunter(world, 5, 5, 6, 1);
@@ -197,7 +197,7 @@ void OwnFactionIsNotATarget()
 
 void UnfactionedEntitiesAreInvisible()
 {
-    MapWorld world(32, 32, true);
+    Map world(32, 32, true);
     AISystem ai;
 
     const Entity hunter = SpawnHunter(world, 5, 5, 6, 1);
@@ -214,7 +214,7 @@ void UnfactionedEntitiesAreInvisible()
 
 void NearestTargetWins()
 {
-    MapWorld world(32, 32, true);
+    Map world(32, 32, true);
     AISystem ai;
 
     const Entity hunter = SpawnHunter(world, 10, 10, 8, 1);
@@ -238,7 +238,7 @@ void TargetSelectionIsDeterministic()
     Entity firstRun = kNullEntity;
     for (int run = 0; run < 4; ++run)
     {
-        MapWorld world(32, 32, true);
+        Map world(32, 32, true);
         AISystem ai;
 
         const Entity hunter = SpawnHunter(world, 10, 10, 8, 1);
@@ -263,7 +263,7 @@ void TargetSelectionIsDeterministic()
 
 void TargetIsKeptWhileStillValid()
 {
-    MapWorld world(32, 32, true);
+    Map world(32, 32, true);
     AISystem ai;
 
     const Entity hunter = SpawnHunter(world, 10, 10, 8, 1);
@@ -281,7 +281,7 @@ void TargetIsKeptWhileStillValid()
 
 void TargetIsDroppedWhenItLeavesVision()
 {
-    MapWorld world(64, 64, true);
+    Map world(64, 64, true);
     AISystem ai;
 
     const Entity hunter = SpawnHunter(world, 10, 10, 4, 1);
@@ -290,7 +290,7 @@ void TargetIsDroppedWhenItLeavesVision()
     ai.Update(world.registry, world.tiles);
     CHECK_EQ(world.registry.Get<AIComponent>(hunter).currentTarget, prey);
 
-    // Teleport it out of sight (moving through MapWorld would need the
+    // Teleport it out of sight (moving through Map would need the
     // movement system; the grid entry is what matters here).
     world.tiles.Remove(prey, 10, 13);
     world.registry.Get<GridPositionComponent>(prey).y = 40;
@@ -302,7 +302,7 @@ void TargetIsDroppedWhenItLeavesVision()
 
 void DeadEntitiesNeitherActNorAttract()
 {
-    MapWorld world(32, 32, true);
+    Map world(32, 32, true);
     AISystem ai;
 
     const Entity hunter = SpawnHunter(world, 5, 5, 6, 1);
@@ -329,7 +329,7 @@ void DeadEntitiesNeitherActNorAttract()
 
 void ScanCostDoesNotDependOnMapPopulation()
 {
-    MapWorld world(128, 128, true);
+    Map world(128, 128, true);
     AISystem ai;
 
     const Entity hunter = SpawnHunter(world, 64, 64, 3, 1);

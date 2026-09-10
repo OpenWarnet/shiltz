@@ -1,4 +1,6 @@
 #include "../Simulation.h"
+#include "BroadcastModule.h"
+#include "CoreSimulationModule.h"
 #include "../component/Grid.h"
 #include "../component/Items.h"
 #include "../component/Request.h"
@@ -30,7 +32,9 @@ Entity AddCarrier(Simulation& simulation, int x, int y, std::size_t slots)
 void PickingUpMovesTheGoodsAndClearsTheGround()
 {
     Simulation simulation(32, 32, true);
-    InstallItemRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<ItemRulesModule>();
 
     std::vector<ItemPickedUpEvent> taken;
     simulation.World().events.Listen<ItemPickedUpEvent>([&taken](const ItemPickedUpEvent& e) { taken.push_back(e); });
@@ -67,7 +71,9 @@ void PickingUpMovesTheGoodsAndClearsTheGround()
 void RequestsAreAlwaysConsumed()
 {
     Simulation simulation(32, 32, true);
-    InstallItemRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<ItemRulesModule>();
 
     std::vector<ItemPickupFailedEvent> refused;
     simulation.World().events.Listen<ItemPickupFailedEvent>(
@@ -98,7 +104,9 @@ void RequestsAreAlwaysConsumed()
 void RangeIsCheckedAgainstWhereThingsEndedUp()
 {
     Simulation simulation(32, 32, true);
-    InstallItemRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<ItemRulesModule>();
 
     const Entity carrier = AddCarrier(simulation, 10, 10, 4);
     const Entity item = SpawnGroundItem(simulation.World(), kPotion, 1, 10, 12, 10);
@@ -118,7 +126,9 @@ void RangeIsCheckedAgainstWhereThingsEndedUp()
 void StandingOnTheItemWorksToo()
 {
     Simulation simulation(32, 32, true);
-    InstallItemRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<ItemRulesModule>();
 
     const Entity carrier = AddCarrier(simulation, 10, 10, 4);
     const Entity item = SpawnGroundItem(simulation.World(), kPotion, 2, 10, 10, 10);
@@ -132,7 +142,9 @@ void StandingOnTheItemWorksToo()
 void AFullBagRefusesAndLeavesTheItem()
 {
     Simulation simulation(32, 32, true);
-    InstallItemRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<ItemRulesModule>();
 
     std::vector<ItemPickupFailedEvent> refused;
     simulation.World().events.Listen<ItemPickupFailedEvent>(
@@ -162,7 +174,9 @@ void AFullBagRefusesAndLeavesTheItem()
 void ACarrierWithNoInventorySaysSo()
 {
     Simulation simulation(32, 32, true);
-    InstallItemRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<ItemRulesModule>();
 
     std::vector<ItemPickupFailedEvent> refused;
     simulation.World().events.Listen<ItemPickupFailedEvent>(
@@ -187,7 +201,9 @@ void ACarrierWithNoInventorySaysSo()
 void TwoPickersCannotBothTakeIt()
 {
     Simulation simulation(32, 32, true);
-    InstallItemRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<ItemRulesModule>();
 
     std::vector<ItemPickedUpEvent> taken;
     std::vector<ItemPickupFailedEvent> refused;
@@ -227,7 +243,9 @@ void TwoPickersCannotBothTakeIt()
 void AStaleItemHandleIsRefused()
 {
     Simulation simulation(32, 32, true);
-    InstallItemRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<ItemRulesModule>();
 
     const Entity carrier = AddCarrier(simulation, 10, 10, 4);
     const Entity item = SpawnGroundItem(simulation.World(), kPotion, 3, 10, 11, 10);
@@ -251,7 +269,9 @@ void AStaleItemHandleIsRefused()
 void ItemsDoNotBlockAnything()
 {
     Simulation simulation(32, 32, true);
-    InstallItemRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<ItemRulesModule>();
 
     const Entity item = SpawnGroundItem(simulation.World(), kPotion, 1, 10, 11, 10);
     CHECK(item != kNullEntity);
@@ -279,6 +299,8 @@ void ItemsDoNotBlockAnything()
 void SpawningNothingSpawnsNothing()
 {
     Simulation simulation(32, 32, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
 
     // A pile of zero would read as already-claimed and sit on the map
     // forever.
@@ -292,6 +314,8 @@ void SpawningNothingSpawnsNothing()
 void SpawnIsAnnounced()
 {
     Simulation simulation(32, 32, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
 
     std::vector<GroundItemSpawnedEvent> dropped;
     simulation.World().events.Listen<GroundItemSpawnedEvent>(
@@ -314,7 +338,9 @@ void SpawnIsAnnounced()
 void ManyPickupsInOneTick()
 {
     Simulation simulation(64, 64, true);
-    InstallItemRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<ItemRulesModule>();
 
     // Each carrier takes its own item, all resolved in one sweep, each
     // removing its own request from the pool being iterated.

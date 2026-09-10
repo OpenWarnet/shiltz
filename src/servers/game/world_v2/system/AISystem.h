@@ -5,7 +5,8 @@
 #include "../component/Request.h"
 #include "../core/Entity.h"
 #include "../core/Registry.h"
-#include "../world/TileGrid.h"
+#include "../core/System.h"
+#include "../core/Tile.h"
 
 #include <cstdlib>
 
@@ -48,15 +49,28 @@ namespace world_v2
 // so two runs of the same state pick the same target.
 //
 // Not modelled yet: line of sight. A monster can currently see through a
-// wall, because TileGrid knows which tiles block movement but nothing
+// wall, because Tile knows which tiles block movement but nothing
 // traces a ray across them.
-class AISystem
+class AISystem : public ISystem
 {
 public:
+    const char* Name() const override
+    {
+        return "AISystem";
+    }
+
+    // Stage-2 adapter. Update below is the real entry point, and its
+    // signature is what declares which parts of the Map this touches.
+    void Run(Map& world, float deltaSeconds) override
+    {
+        (void)deltaSeconds;
+        Update(world.registry, world.tiles);
+    }
+
     // Used when an attacker has no AttackPowerComponent of its own.
     int defaultAttackDamage = 1;
 
-    void Update(Registry& registry, const TileGrid& tiles)
+    void Update(Registry& registry, const Tile& tiles)
     {
         registry.view<AIComponent, GridPositionComponent, FactionComponent>().Each(
             [&](Entity self, AIComponent& ai, GridPositionComponent& position, FactionComponent& faction)
@@ -167,7 +181,7 @@ private:
         return Chebyshev(selfX, selfY, position->x, position->y);
     }
 
-    static Entity FindNearest(Registry& registry, const TileGrid& tiles, Entity self, int selfFaction, int centerX,
+    static Entity FindNearest(Registry& registry, const Tile& tiles, Entity self, int selfFaction, int centerX,
                               int centerY, int range)
     {
         Entity best = kNullEntity;
@@ -180,7 +194,7 @@ private:
                 // Emptiness first, and the order matters. Most tiles in a
                 // vision window hold nothing, so the cheapest possible
                 // rejection has to come first: one 4-byte read out of the
-                // dense count array, which is the reason TileGrid keeps
+                // dense count array, which is the reason Tile keeps
                 // that array at all. Out-of-bounds tiles report zero, so
                 // the scan needs no clipping of its own.
                 //
@@ -201,7 +215,7 @@ private:
                 }
 
                 // Ties within one tile go to whoever arrived first, which
-                // TileGrid keeps stable.
+                // Tile keeps stable.
                 for (const Entity occupant : tiles.OccupantsAt(x, y))
                 {
                     if (occupant == self || !IsEngageable(registry, selfFaction, occupant))

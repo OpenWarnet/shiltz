@@ -1,7 +1,7 @@
 #include "../component/Grid.h"
-#include "../core/Entity.h"
-#include "../core/Test.h"
-#include "MapWorld.h"
+#include "Entity.h"
+#include "Map.h"
+#include "Test.h"
 
 #include <cstddef>
 
@@ -12,7 +12,7 @@ namespace
 
 void SpawnPlacesTheEntityOnItsTile()
 {
-    MapWorld world(8, 8, true);
+    Map world(8, 8, true);
 
     const Entity entity = world.Spawn(3, 4);
     CHECK(entity != kNullEntity);
@@ -27,7 +27,7 @@ void SpawnPlacesTheEntityOnItsTile()
 
 void SpawnRefusesOnlyOffTheMap()
 {
-    MapWorld world(8, 8, true);
+    Map world(8, 8, true);
     world.tiles.SetWalkable(1, 1, false);
 
     // Unwalkable terrain is not a refusal: placement is authoring, and loot
@@ -49,7 +49,7 @@ void AnyNumberOfEntitiesShareATile()
     // tile, and SpawnPassable, which stayed out of the index to avoid
     // blocking anyone -- is one, because neither behaviour has anything
     // left to mean.
-    MapWorld world(8, 8, true);
+    Map world(8, 8, true);
 
     const Entity item = world.Spawn(5, 5);
     const Entity creature = world.Spawn(5, 5);
@@ -71,7 +71,7 @@ void AnyNumberOfEntitiesShareATile()
 
 void DespawnReleasesTheTile()
 {
-    MapWorld world(8, 8, true);
+    Map world(8, 8, true);
 
     const Entity entity = world.Spawn(3, 3);
     world.Despawn(entity);
@@ -90,7 +90,7 @@ void DespawnReleasesTheTile()
 
 void DespawningOneOccupantLeavesTheRestAlone()
 {
-    MapWorld world(8, 8, true);
+    Map world(8, 8, true);
 
     const Entity item = world.Spawn(4, 4);
     const Entity creature = world.Spawn(4, 4);
@@ -106,7 +106,7 @@ void DespawningOneOccupantLeavesTheRestAlone()
 
 void DespawnIsIdempotent()
 {
-    MapWorld world(8, 8, true);
+    Map world(8, 8, true);
 
     const Entity entity = world.Spawn(1, 1);
     world.Despawn(entity);
@@ -125,7 +125,7 @@ void DespawnIsIdempotent()
 
 void EventsAreCarriedPerMap()
 {
-    MapWorld world(4, 4, true);
+    Map world(4, 4, true);
 
     // The bundle owns its own queue, so one map's barrier never dispatches
     // another map's events.
@@ -156,5 +156,5 @@ int main()
     DespawnIsIdempotent();
     EventsAreCarriedPerMap();
 
-    return world_v2::test::Summary("MapWorld");
+    return world_v2::test::Summary("Map");
 }

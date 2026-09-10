@@ -9,7 +9,7 @@
 #include "../event/LifecycleEvents.h"
 #include "../event/MovementEvents.h"
 #include "../event/SpawnEvents.h"
-#include "../world/MapWorld.h"
+#include "../core/Map.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -118,7 +118,7 @@ public:
     // Listener order does not matter: every event these read carries its
     // own coordinates, so a notice built after the corpse has already been
     // despawned still knows where the death happened.
-    void Install(MapWorld& world)
+    void Install(Map& world)
     {
         world.events.Listen<MonsterSpawnedEvent>(
             [this](const MonsterSpawnedEvent& event)

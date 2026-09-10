@@ -4,8 +4,9 @@
 #include "../core/Entity.h"
 #include "../core/EventManager.h"
 #include "../core/Registry.h"
+#include "../core/System.h"
+#include "../core/Tile.h"
 #include "../event/MovementEvents.h"
-#include "../world/TileGrid.h"
 
 namespace world_v2
 {
@@ -20,16 +21,28 @@ namespace world_v2
 //
 // Two passes, in this order, because the second is what releases entities
 // for the first.
-class GridMovementSystem
+class GridMovementSystem : public ISystem
 {
 public:
+    const char* Name() const override
+    {
+        return "GridMovementSystem";
+    }
+
+    // Stage-2 adapter. Update below is the real entry point, and its
+    // signature is what declares which parts of the Map this touches.
+    void Run(Map& world, float deltaSeconds) override
+    {
+        Update(world.registry, world.tiles, world.events, deltaSeconds);
+    }
+
     // Tiles crossed per second. Uniform for now; when creatures need
     // individual speeds this becomes a component read here instead.
     static constexpr float kDefaultTilesPerSecond = 4.0f;
 
     float tilesPerSecond = kDefaultTilesPerSecond;
 
-    void Update(Registry& registry, TileGrid& tiles, EventManager& events, float deltaSeconds)
+    void Update(Registry& registry, Tile& tiles, EventManager& events, float deltaSeconds)
     {
         ResolveIntents(registry, tiles, events);
         AdvanceSteps(registry, deltaSeconds);
@@ -40,9 +53,9 @@ private:
     //
     // The move is committed to GridPositionComponent and to the occupancy
     // index in the same breath, which is the whole point of routing it
-    // through TileGrid::Move: a step is either fully taken or not taken at
+    // through Tile::Move: a step is either fully taken or not taken at
     // all, never half.
-    void ResolveIntents(Registry& registry, TileGrid& tiles, EventManager& events)
+    void ResolveIntents(Registry& registry, Tile& tiles, EventManager& events)
     {
         registry.view<GridPositionComponent, MoveIntentComponent>().Each(
             [&](Entity entity, GridPositionComponent& position, MoveIntentComponent& intent)
@@ -92,7 +105,7 @@ private:
                 // is not consulted, and several things sharing a tile is an
                 // ordinary state rather than a collision to resolve.
                 //
-                // Still routed through TileGrid::Move rather than done here
+                // Still routed through Tile::Move rather than done here
                 // for the same reason as before: leaving the old tile and
                 // joining the new one must not half-apply.
                 if (!tiles.Move(entity, fromX, fromY, toX, toY))

@@ -1,9 +1,9 @@
 #pragma once
 
 #include "../component/Grid.h"
-#include "../core/EventManager.h"
-#include "../core/Registry.h"
-#include "TileGrid.h"
+#include "EventManager.h"
+#include "Registry.h"
+#include "Tile.h"
 
 namespace world_v2
 {
@@ -22,17 +22,17 @@ namespace world_v2
 //   * two maps share no mutable state, so ticking them on separate threads
 //     later needs no locking, only that a tick not overlap itself
 //
-// The trade is that an Entity is only meaningful inside its own MapWorld,
+// The trade is that an Entity is only meaningful inside its own Map,
 // and a warp is a despawn here plus a spawn there rather than a field
 // write. That is honest about what a warp is: everyone watching the old map
 // has to be told the entity left, and everyone on the new one that it
 // arrived.
 //
 // Single-threaded, like the Registry inside it.
-class MapWorld
+class Map
 {
 public:
-    MapWorld(int width, int height, bool walkableByDefault = false)
+    Map(int width, int height, bool walkableByDefault = false)
         : tiles(width, height, walkableByDefault)
     {
     }
@@ -55,7 +55,7 @@ public:
     // that wants a creature on walkable ground checks IsWalkable first;
     // SpawnRules does.
     //
-    // This and Despawn are the chokepoint TileGrid's invariant depends on:
+    // This and Despawn are the chokepoint Tile's invariant depends on:
     // they add the entity to the tile's list and give it its
     // GridPositionComponent in one step, so the two cannot disagree.
     Entity Spawn(int x, int y)
@@ -80,7 +80,7 @@ public:
 
     // Takes the entity off its tile and destroys it.
     //
-    // TileGrid::Remove takes only the named entity, so despawning one thing
+    // Tile::Remove takes only the named entity, so despawning one thing
     // never disturbs whatever else is standing on the same square.
     //
     // Structural -- call it at the barrier, not inside a system sweep,
@@ -106,7 +106,7 @@ public:
     // Spawn, Despawn, and GridMovementSystem own that, and they are what
     // keep `tiles` honest.
     Registry registry;
-    TileGrid tiles;
+    Tile tiles;
     EventManager events;
 };
 

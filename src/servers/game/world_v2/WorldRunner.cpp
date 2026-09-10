@@ -34,12 +34,14 @@
 #include "core/Entity.h"
 #include "event/CombatEvents.h"
 #include "event/SpawnEvents.h"
+#include "system/BroadcastModule.h"
 #include "system/CombatRules.h"
+#include "system/CoreSimulationModule.h"
 #include "system/DespawnRules.h"
 #include "system/ItemRules.h"
 #include "system/SpawnRules.h"
 #include "world/Inventory.h"
-#include "world/MapWorld.h"
+#include "core/Map.h"
 
 #include <chrono>
 #include <cstdio>
@@ -206,95 +208,118 @@ const char* KindName(NoticeKind kind)
 // The game layer's half of a map: what a player is, what a monster is, what
 // a corpse leaves behind, and what each command does.
 //
-// This is everything world_v2 refuses to decide, gathered in one place so
-// it is obvious how little of it the framework needs to know.
-void InstallGameRules(Simulation& simulation, SimulationId id)
+// This is everything world_v2 refuses to decide. It used to be one function
+// calling six different kinds of wiring in an order that mattered and was
+// written down nowhere. Now each piece is a module, and the order that
+// matters is the install list at the bottom of this file.
+
+// The seam world_v2 leaves open on purpose: turning a drop-table id into
+// items needs .scr data the framework does not read. One item per corpse
+// here, with a timer so an uncollected floor does not grow without bound.
+class LootModule : public Module
 {
-    MapWorld& world = simulation.World();
+public:
+    const char* Name() const override
+    {
+        return "Loot";
+    }
 
-    InstallCombatRules(world);
-    InstallItemRules(world);
-    InstallDespawnRules(world);
+    void Setup(ModuleContext& context) override
+    {
+        Map& world = context.World();
 
-    InstallSpawnRules(world, [](MapWorld& map, Entity monster, std::uint32_t templateId) {
+        context.Listen<LootDropEvent>([&world](const LootDropEvent& event) {
+            const Entity item = SpawnGroundItem(world, event.dropTableId, 1, 10, event.x, event.y);
+            if (item != kNullEntity)
+            {
+                world.registry.Assign<DespawnTimerComponent>(item, kLootLifetime);
+            }
+        });
+    }
+};
+
+// What a monster is, once a template id has been turned into an entity.
+MonsterFactory MakeMonsterFactory()
+{
+    return [](Map& map, Entity monster, std::uint32_t templateId) {
         map.registry.Assign<FactionComponent>(monster, kMonsterFaction);
         map.registry.Assign<HealthComponent>(monster, 20, 20);
         map.registry.Assign<AIComponent>(monster, 7, 1, kNullEntity);
         map.registry.Assign<AttackPowerComponent>(monster, 3);
         map.registry.Assign<ExperienceRewardComponent>(monster, std::uint64_t{35});
         map.registry.Assign<LootTableComponent>(monster, templateId);
-    });
+    };
+}
 
-    // LootDropEvent is the seam world_v2 leaves open on purpose: turning a
-    // table id into items needs .scr data it does not read. One item per
-    // corpse here, with a timer so an uncollected floor does not grow
-    // without bound.
-    world.events.Listen<LootDropEvent>([&world](const LootDropEvent& event) {
-        const Entity item = SpawnGroundItem(world, event.dropTableId, 1, 10, event.x, event.y);
-        if (item != kNullEntity)
-        {
-            world.registry.Assign<DespawnTimerComponent>(item, kLootLifetime);
-        }
-    });
+// What a player is, and what each of the three client commands does.
+class PlayerModule : public Module
+{
+public:
+    const char* Name() const override
+    {
+        return "Player";
+    }
 
-    simulation.OnSpawnPlayer([id](MapWorld& map, const JoinCommand& command) -> Entity {
-        const Entity player = map.Spawn(command.x, command.y);
-        if (player == kNullEntity || !map.tiles.IsWalkable(command.x, command.y))
-        {
-            if (player != kNullEntity)
+    void Setup(ModuleContext& context) override
+    {
+        context.OnSpawnPlayer([](Map& map, const JoinCommand& command) -> Entity {
+            const Entity player = map.Spawn(command.x, command.y);
+            if (player == kNullEntity || !map.tiles.IsWalkable(command.x, command.y))
             {
-                map.Despawn(player);
+                if (player != kNullEntity)
+                {
+                    map.Despawn(player);
+                }
+
+                return kNullEntity;
             }
 
-            return kNullEntity;
-        }
+            map.registry.Assign<ViewerComponent>(player, kViewRadius);
+            map.registry.Assign<HealthComponent>(player, kPlayerHealth, kPlayerHealth);
+            map.registry.Assign<FactionComponent>(player, kPlayerFaction);
+            map.registry.Assign<ExperienceComponent>(player, std::uint64_t{0}, std::uint32_t{1}, std::uint64_t{100});
+            map.registry.Assign<InventoryComponent>(player, MakeInventory(8));
+            map.registry.Assign<NetworkIDComponent>(player, static_cast<std::uint32_t>(command.connection));
 
-        map.registry.Assign<ViewerComponent>(player, kViewRadius);
-        map.registry.Assign<HealthComponent>(player, kPlayerHealth, kPlayerHealth);
-        map.registry.Assign<FactionComponent>(player, kPlayerFaction);
-        map.registry.Assign<ExperienceComponent>(player, std::uint64_t{0}, std::uint32_t{1}, std::uint64_t{100});
-        map.registry.Assign<InventoryComponent>(player, MakeInventory(8));
-        map.registry.Assign<NetworkIDComponent>(player, static_cast<std::uint32_t>(command.connection));
+            // Announced like anything else that appears, which is what lets
+            // other players see the newcomer -- and what lets the newcomer
+            // recognise itself, since the template id carries its character.
+            map.events.Emit(MonsterSpawnedEvent{player, kNullEntity, kPlayerTemplateBase + command.character,
+                                                command.x, command.y});
 
-        // Announced like anything else that appears, which is what lets
-        // other players see the newcomer -- and what lets the newcomer
-        // recognise itself, since the template id carries its character.
-        map.events.Emit(MonsterSpawnedEvent{player, kNullEntity, kPlayerTemplateBase + command.character, command.x,
-                                            command.y});
+            return player;
+        });
 
-        (void)id;
-        return player;
-    });
+        context.OnPlayerCommand<StepCommand>([](Map& map, Entity actor, const StepCommand& command) {
+            map.registry.Assign<MoveIntentComponent>(actor, command.directionX, command.directionY);
+        });
 
-    simulation.OnPlayerCommand<StepCommand>([](MapWorld& map, Entity actor, const StepCommand& command) {
-        map.registry.Assign<MoveIntentComponent>(actor, command.directionX, command.directionY);
-    });
+        context.OnPlayerCommand<AttackCommand>([](Map& map, Entity actor, const AttackCommand& command) {
+            // The target may have died between the client deciding and this
+            // draining -- the generation in the handle is what makes that a
+            // rejected command rather than a hit on whoever took the slot.
+            if (!map.registry.Exists(command.target))
+            {
+                return;
+            }
 
-    simulation.OnPlayerCommand<AttackCommand>([](MapWorld& map, Entity actor, const AttackCommand& command) {
-        // The target may have died between the client deciding and this
-        // draining -- the generation in the handle is what makes that a
-        // rejected command rather than a hit on whoever took the slot.
-        if (!map.registry.Exists(command.target))
-        {
-            return;
-        }
+            map.registry.Assign<AttackRequestComponent>(actor, command.target, command.damage);
+        });
 
-        map.registry.Assign<AttackRequestComponent>(actor, command.target, command.damage);
-    });
+        context.OnPlayerCommand<PickupCommand>([](Map& map, Entity actor, const PickupCommand& command) {
+            if (!map.registry.Exists(command.item))
+            {
+                return;
+            }
 
-    simulation.OnPlayerCommand<PickupCommand>([](MapWorld& map, Entity actor, const PickupCommand& command) {
-        if (!map.registry.Exists(command.item))
-        {
-            return;
-        }
-
-        map.registry.Assign<PickupItemRequestComponent>(actor, command.item);
-    });
-}
+            map.registry.Assign<PickupItemRequestComponent>(actor, command.item);
+        });
+    }
+};
 
 // A few walls, so paths are not all open field and the AI has something to
 // walk around. Deterministic, and the same on every map.
-void CarveTerrain(MapWorld& world)
+void CarveTerrain(Map& world)
 {
     for (int y = 6; y < kMapSize - 6; ++y)
     {
@@ -310,7 +335,7 @@ void CarveTerrain(MapWorld& world)
     }
 }
 
-void PlaceSpawners(MapWorld& world, SimulationId id)
+void PlaceSpawners(Map& world, SimulationId id)
 {
     for (int index = 0; index < kSpawnersPerMap; ++index)
     {
@@ -322,6 +347,36 @@ void PlaceSpawners(MapWorld& world, SimulationId id)
                                                 3, kMonstersPerSpawner, 0, 4.0f, 0.0f, std::uint32_t{0});
     }
 }
+
+// World data rather than behaviour, but it belongs in the install list for
+// the same reason everything else does: what a map is made of should be one
+// readable sequence.
+//
+// Both halves run during Setup, which is what lets SpawnRulesModule::Start
+// prime these spawners afterwards -- the ordering that used to be three
+// statements the caller had to keep in the right sequence.
+class TerrainModule : public Module
+{
+public:
+    explicit TerrainModule(SimulationId id)
+        : m_id(id)
+    {
+    }
+
+    const char* Name() const override
+    {
+        return "Terrain";
+    }
+
+    void Setup(ModuleContext& context) override
+    {
+        CarveTerrain(context.World());
+        PlaceSpawners(context.World(), m_id);
+    }
+
+private:
+    SimulationId m_id;
+};
 
 // --------------------------------------------------------------------
 
@@ -337,10 +392,24 @@ public:
             const SimulationId id = static_cast<SimulationId>(index + 1);
             Simulation& simulation = m_world.Create(id, kMapSize, kMapSize, true);
 
-            CarveTerrain(simulation.World());
-            InstallGameRules(simulation, id);
-            PlaceSpawners(simulation.World(), id);
-            simulation.PrimeSpawns();
+            // The whole of what this map is, top to bottom. Stage-2
+            // systems run in this order; everything else is a listener,
+            // a command handler, or world data.
+            simulation.Install<CoreSimulationModule>();
+            simulation.Install<BroadcastModule>();
+            simulation.Install<CombatRulesModule>();
+            simulation.Install<SpawnRulesModule>(MakeMonsterFactory());
+            simulation.Install<ItemRulesModule>();
+            simulation.Install<DespawnRulesModule>();
+            simulation.Install<TerrainModule>(id);
+            simulation.Install<LootModule>();
+            simulation.Install<PlayerModule>();
+
+            // Runs every module's Start -- which is where the spawners
+            // this map just authored get primed -- and seals the
+            // simulation. The first Tick would do it anyway; doing it here
+            // means the world is populated before the clients join.
+            simulation.Start();
         }
 
         m_world.OnNotice([this](ConnectionId connection, SimulationId simulation, const Notice& notice) {

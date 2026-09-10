@@ -1,4 +1,6 @@
 #include "../Simulation.h"
+#include "BroadcastModule.h"
+#include "CoreSimulationModule.h"
 #include "../component/Combat.h"
 #include "../component/Grid.h"
 #include "../component/Items.h"
@@ -22,7 +24,7 @@ constexpr int kPlayers = 2;
 
 Entity SpawnKiller(Simulation& simulation, int x, int y, std::uint64_t requiredForNextLevel)
 {
-    MapWorld& world = simulation.World();
+    Map& world = simulation.World();
     const Entity entity = world.Spawn(x, y);
     world.registry.Assign<FactionComponent>(entity, kPlayers);
     world.registry.Assign<HealthComponent>(entity, 100, 100);
@@ -32,7 +34,7 @@ Entity SpawnKiller(Simulation& simulation, int x, int y, std::uint64_t requiredF
 
 Entity SpawnVictim(Simulation& simulation, int x, int y, int health, std::uint64_t reward, std::uint32_t dropTable)
 {
-    MapWorld& world = simulation.World();
+    Map& world = simulation.World();
     const Entity entity = world.Spawn(x, y);
     world.registry.Assign<FactionComponent>(entity, kMonsters);
     world.registry.Assign<HealthComponent>(entity, health, health);
@@ -47,7 +49,9 @@ Entity SpawnVictim(Simulation& simulation, int x, int y, int health, std::uint64
 void OneKillResolvesCompletelyInOneTick()
 {
     Simulation simulation(32, 32, true);
-    InstallCombatRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<CombatRulesModule>();
 
     const Entity killer = SpawnKiller(simulation, 5, 5, 100);
     const Entity victim = SpawnVictim(simulation, 6, 5, 5, 100, 42);
@@ -102,7 +106,9 @@ void OneKillResolvesCompletelyInOneTick()
 void CascadeOrderIsDeathThenCreditThenLevel()
 {
     Simulation simulation(32, 32, true);
-    InstallCombatRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<CombatRulesModule>();
 
     const Entity killer = SpawnKiller(simulation, 5, 5, 100);
     const Entity victim = SpawnVictim(simulation, 6, 5, 5, 100, 42);
@@ -125,7 +131,9 @@ void CascadeOrderIsDeathThenCreditThenLevel()
 void ExperienceBelowTheThresholdDoesNotLevel()
 {
     Simulation simulation(32, 32, true);
-    InstallCombatRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<CombatRulesModule>();
 
     const Entity killer = SpawnKiller(simulation, 5, 5, 100);
     const Entity victim = SpawnVictim(simulation, 6, 5, 5, 30, 0);
@@ -145,7 +153,9 @@ void ExperienceBelowTheThresholdDoesNotLevel()
 void OneAwardCanGrantSeveralLevels()
 {
     Simulation simulation(32, 32, true);
-    InstallCombatRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<CombatRulesModule>();
 
     const Entity killer = SpawnKiller(simulation, 5, 5, 100);
     const Entity victim = SpawnVictim(simulation, 6, 5, 5, 350, 0);
@@ -168,7 +178,9 @@ void OneAwardCanGrantSeveralLevels()
 void AZeroThresholdCannotSpin()
 {
     Simulation simulation(32, 32, true);
-    InstallCombatRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<CombatRulesModule>();
 
     // A game that never sets requiredForNextLevel would otherwise loop
     // forever subtracting nothing.
@@ -188,7 +200,9 @@ void AZeroThresholdCannotSpin()
 void NoDropTableMeansNoDropEvent()
 {
     Simulation simulation(32, 32, true);
-    InstallCombatRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<CombatRulesModule>();
 
     const Entity killer = SpawnKiller(simulation, 5, 5, 100);
     const Entity victim = SpawnVictim(simulation, 6, 5, 5, 10, 0);
@@ -206,7 +220,9 @@ void NoDropTableMeansNoDropEvent()
 void AMutualKillPaysNeitherSide()
 {
     Simulation simulation(32, 32, true);
-    InstallCombatRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<CombatRulesModule>();
 
     // Both on one hit point, both swinging. Combat resolves both requests
     // before death announces either, so both fall in the same tick.
@@ -238,7 +254,9 @@ void AMutualKillPaysNeitherSide()
 void LootHandlerCanSpawnAtTheBarrier()
 {
     Simulation simulation(32, 32, true);
-    InstallCombatRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<CombatRulesModule>();
 
     const Entity killer = SpawnKiller(simulation, 5, 5, 100);
     const Entity victim = SpawnVictim(simulation, 6, 5, 5, 10, 7);
@@ -268,7 +286,9 @@ void LootHandlerCanSpawnAtTheBarrier()
 void AiDrivenKillOverSeveralTicks()
 {
     Simulation simulation(32, 32, true);
-    InstallCombatRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<CombatRulesModule>();
 
     // A monster that has to close distance before it can hit anything.
     const Entity monster = simulation.World().Spawn(5, 5);

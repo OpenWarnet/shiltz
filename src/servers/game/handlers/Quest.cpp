@@ -21,7 +21,7 @@
 #include "tables/ItemTable.h"
 #include "tables/WarpTable.h"
 #include "world/Player.h"
-#include "world/World.h"
+#include "simulation/GameSimulation.h"
 
 #include <optional>
 #include <vector>
@@ -287,8 +287,10 @@ void ApplyWarp(const GameContext& ctx, GameSession& session, std::int64_t warpId
     // one. The new map doesn't need the same treatment: the client
     // reconnects after GC_SERVER_CHANGE and sends a fresh CG_ENTER, which
     // Session.cpp's HandleEnter already turns into a SetPlayer call.
-    if (Map* oldMap = ctx.world.GetMap(player.map_id))
-        oldMap->RemovePlayer(ctx.clientSocket);
+    // Out of the old map's simulation. The client reconnects after
+    // GC_SERVER_CHANGE and sends a fresh CG_ENTER, which HandleEnter turns
+    // into a join on the new one.
+    ctx.simulation.Leave(ctx.clientSocket);
 
     player.map_id = static_cast<std::uint32_t>(record->server_map_id);
     player.x = static_cast<std::int32_t>(record->x);

@@ -3,8 +3,9 @@
 #include "../component/Grid.h"
 #include "../component/Items.h"
 #include "../core/Entity.h"
+#include "../core/Map.h"
+#include "../core/Module.h"
 #include "../event/ItemEvents.h"
-#include "../world/MapWorld.h"
 
 #include <cstdint>
 
@@ -21,7 +22,7 @@ namespace world_v2
 // Returns kNullEntity if (x, y) is off the map. Unwalkable terrain is fine;
 // an item dropped against a wall is a normal thing for a corpse to leave
 // behind, and only walking there is forbidden.
-inline Entity SpawnGroundItem(MapWorld& world, std::uint32_t itemId, std::uint32_t quantity, std::uint32_t maxStack,
+inline Entity SpawnGroundItem(Map& world, std::uint32_t itemId, std::uint32_t quantity, std::uint32_t maxStack,
                               int x, int y)
 {
     if (quantity == 0)
@@ -52,20 +53,31 @@ inline Entity SpawnGroundItem(MapWorld& world, std::uint32_t itemId, std::uint32
 // barrier rather than inside the sweep -- the item is never the entity the
 // pickup view is visiting, so despawning it there would be reordering a
 // pool out from under an iteration.
-inline void InstallItemRules(MapWorld& world)
+class ItemRulesModule : public Module
 {
-    world.events.Listen<ItemPickedUpEvent>(
-        [&world](const ItemPickedUpEvent& event)
-        {
-            // An earlier handler in the same flush may already have removed
-            // it.
-            if (!world.registry.Exists(event.item))
-            {
-                return;
-            }
+public:
+    const char* Name() const override
+    {
+        return "ItemRules";
+    }
 
-            world.Despawn(event.item);
-        });
-}
+    void Setup(ModuleContext& context) override
+    {
+        Map& world = context.World();
+
+        context.Listen<ItemPickedUpEvent>(
+            [&world](const ItemPickedUpEvent& event)
+            {
+                // An earlier handler in the same flush may already have
+                // removed it.
+                if (!world.registry.Exists(event.item))
+                {
+                    return;
+                }
+
+                world.Despawn(event.item);
+            });
+    }
+};
 
 } // namespace world_v2

@@ -8,7 +8,11 @@
 #include "../component/Spawn.h"
 #include "../core/Entity.h"
 #include "../core/Test.h"
+#include "BroadcastModule.h"
 #include "BroadcastSystem.h"
+#include "CombatSystem.h"
+#include "CoreSimulationModule.h"
+#include "DeathSystem.h"
 #include "../world/Inventory.h"
 #include "CombatRules.h"
 #include "DespawnRules.h"
@@ -80,6 +84,8 @@ Entity AddViewer(Simulation& simulation, int x, int y, int radius)
 void MovementIsAnnouncedWithBothEndpoints()
 {
     Simulation simulation(64, 64, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
     Recorder recorder;
     simulation.OnNotice(recorder.Sink());
 
@@ -107,6 +113,8 @@ void MovementIsAnnouncedWithBothEndpoints()
 void RejectedMovesAnnounceNothing()
 {
     Simulation simulation(64, 64, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
     Recorder recorder;
     simulation.OnNotice(recorder.Sink());
 
@@ -124,11 +132,12 @@ void RejectedMovesAnnounceNothing()
 void SpawnsAreAnnounced()
 {
     Simulation simulation(64, 64, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
     Recorder recorder;
     simulation.OnNotice(recorder.Sink());
 
-    InstallSpawnRules(simulation.World(),
-                      [](MapWorld& world, Entity monster, std::uint32_t)
+    simulation.Install<SpawnRulesModule>([](Map& world, Entity monster, std::uint32_t)
                       {
                           world.registry.Assign<FactionComponent>(monster, kMonsterFaction);
                           world.registry.Assign<HealthComponent>(monster, 10, 10);
@@ -142,7 +151,7 @@ void SpawnsAreAnnounced()
 
     // Prime resolves its own barrier, so deliver the notices it produced by
     // running a tick.
-    simulation.PrimeSpawns();
+    simulation.Start();
     simulation.Tick(0.0f);
 
     const std::vector<Notice> spawns = recorder.For(viewer, NoticeKind::Spawned);
@@ -157,6 +166,8 @@ void SpawnsAreAnnounced()
 void DamageIsAnnouncedWithTheNumbers()
 {
     Simulation simulation(64, 64, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
     Recorder recorder;
     simulation.OnNotice(recorder.Sink());
 
@@ -184,7 +195,9 @@ void DamageIsAnnouncedWithTheNumbers()
 void DeathIsAnnouncedAfterTheCorpseIsGone()
 {
     Simulation simulation(64, 64, true);
-    InstallCombatRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<CombatRulesModule>();
     Recorder recorder;
     simulation.OnNotice(recorder.Sink());
 
@@ -217,6 +230,8 @@ void LootOnTheFloorIsAnnounced()
     // The client cannot be told an item vanished if it was never told the
     // item existed. This is the appearance half of that pair.
     Simulation simulation(32, 32, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
     Recorder recorder;
     simulation.OnNotice(recorder.Sink());
 
@@ -242,6 +257,8 @@ void LootOnTheFloorIsAnnounced()
 void LootOutOfSightIsNotAnnounced()
 {
     Simulation simulation(64, 64, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
     Recorder recorder;
     simulation.OnNotice(recorder.Sink());
 
@@ -259,7 +276,9 @@ void APickupIsAnnouncedAsARemovalWithItsTaker()
     // floor. `actor` is what lets a client show who took it instead of the
     // thing blinking out.
     Simulation simulation(32, 32, true);
-    InstallItemRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<ItemRulesModule>();
 
     Recorder recorder;
     simulation.OnNotice(recorder.Sink());
@@ -295,7 +314,9 @@ void ATimeoutIsAnnouncedWithNoTaker()
     // The other way an item leaves: nobody took it. Same kind, but no
     // actor -- a client showing "X picked up Y" must not invent an X.
     Simulation simulation(32, 32, true);
-    InstallDespawnRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<DespawnRulesModule>();
 
     Recorder recorder;
     simulation.OnNotice(recorder.Sink());
@@ -325,8 +346,10 @@ void EveryItemThatAppearsAlsoLeaves()
     // ever announced one half would leave the client either drawing ghosts
     // or missing loot entirely.
     Simulation simulation(32, 32, true);
-    InstallItemRules(simulation.World());
-    InstallDespawnRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<ItemRulesModule>();
+    simulation.Install<DespawnRulesModule>();
 
     Recorder recorder;
     simulation.OnNotice(recorder.Sink());
@@ -363,8 +386,11 @@ void ListenerOrderDoesNotMatter()
     // The same death, with the corpse-removing handler registered *before*
     // the notice collector. Every event these read carries its own
     // coordinates, so the result has to be identical.
-    MapWorld world(64, 64, true);
-    InstallCombatRules(world);
+    Simulation simulation(64, 64, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<CombatRulesModule>();
+    Map& world = simulation.World();
 
     BroadcastSystem broadcast;
     broadcast.Install(world);
@@ -399,6 +425,8 @@ void ListenerOrderDoesNotMatter()
 void ViewersOnlySeeWhatIsNear()
 {
     Simulation simulation(128, 128, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
     Recorder recorder;
     simulation.OnNotice(recorder.Sink());
 
@@ -418,6 +446,8 @@ void ViewersOnlySeeWhatIsNear()
 void AViewerHearsAboutItselfAndNothingElse()
 {
     Simulation simulation(128, 128, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
     Recorder recorder;
     simulation.OnNotice(recorder.Sink());
 
@@ -448,7 +478,9 @@ void AViewerHearsAboutItselfAndNothingElse()
 void ADespawnedViewerHearsNothing()
 {
     Simulation simulation(64, 64, true);
-    InstallCombatRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<CombatRulesModule>();
     Recorder recorder;
     simulation.OnNotice(recorder.Sink());
 
@@ -483,6 +515,8 @@ void ADespawnedViewerHearsNothing()
 void AStepOutOfRangeIsStillDelivered()
 {
     Simulation simulation(128, 128, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
     Recorder recorder;
     simulation.OnNotice(recorder.Sink());
 
@@ -508,6 +542,8 @@ void AStepOutOfRangeIsStillDelivered()
 void NoticesDoNotCarryOverBetweenTicks()
 {
     Simulation simulation(64, 64, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
     Recorder recorder;
     simulation.OnNotice(recorder.Sink());
 
@@ -517,7 +553,7 @@ void NoticesDoNotCarryOverBetweenTicks()
 
     simulation.Tick(0.25f);
     CHECK_EQ(recorder.For(viewer, NoticeKind::Moved).size(), 1u);
-    CHECK_EQ(simulation.Broadcast().Pending().size(), 0u);
+    CHECK_EQ(simulation.Find<BroadcastModule>()->System().Pending().size(), 0u);
 
     // A quiet tick says nothing, rather than repeating the last one.
     simulation.Tick(0.25f);
@@ -527,6 +563,8 @@ void NoticesDoNotCarryOverBetweenTicks()
 void AnUnwatchedSimulationDoesNotAccumulate()
 {
     Simulation simulation(64, 64, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
 
     // No sink at all. The notices still have to be cleared, or an
     // unwatched map grows a list forever.
@@ -536,13 +574,15 @@ void AnUnwatchedSimulationDoesNotAccumulate()
     {
         simulation.World().registry.Assign<MoveIntentComponent>(walker, 1, 0);
         simulation.Tick(0.25f);
-        CHECK_EQ(simulation.Broadcast().Pending().size(), 0u);
+        CHECK_EQ(simulation.Find<BroadcastModule>()->System().Pending().size(), 0u);
     }
 }
 
 void EachViewerGetsItsOwnSet()
 {
     Simulation simulation(128, 128, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
     Recorder recorder;
     simulation.OnNotice(recorder.Sink());
 
@@ -572,6 +612,8 @@ void EachViewerGetsItsOwnSet()
 void ANonViewerReceivesNothing()
 {
     Simulation simulation(64, 64, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
     Recorder recorder;
     simulation.OnNotice(recorder.Sink());
 

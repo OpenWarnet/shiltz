@@ -1,6 +1,6 @@
-#include "../core/Entity.h"
-#include "../core/Test.h"
-#include "TileGrid.h"
+#include "Entity.h"
+#include "Test.h"
+#include "Tile.h"
 
 #include <cstddef>
 
@@ -9,21 +9,21 @@ using namespace world_v2;
 namespace
 {
 
-// Stand-in handles; TileGrid never interprets them beyond comparing.
+// Stand-in handles; Tile never interprets them beyond comparing.
 constexpr Entity kA = 1;
 constexpr Entity kB = 2;
 constexpr Entity kC = 3;
 
-TileGrid OpenField(int width, int height)
+Tile OpenField(int width, int height)
 {
-    return TileGrid(width, height, true);
+    return Tile(width, height, true);
 }
 
 // The single occupant of a tile, for the many assertions that expect
 // exactly one. kNullEntity for an empty tile; deliberately fails rather
 // than picking one when the tile is shared, so a test that meant "only A is
 // here" cannot quietly pass while B is standing there too.
-Entity Only(const TileGrid& grid, int x, int y)
+Entity Only(const Tile& grid, int x, int y)
 {
     const std::vector<Entity>& occupants = grid.OccupantsAt(x, y);
     if (occupants.size() != 1)
@@ -38,18 +38,18 @@ void StartsBlockedUnlessToldOtherwise()
     // A grid nobody loaded terrain into must block everything, so a map
     // whose data failed to load leaves its occupants standing still rather
     // than walking through walls.
-    const TileGrid unloaded(4, 4);
+    const Tile unloaded(4, 4);
     CHECK(!unloaded.IsWalkable(0, 0));
     CHECK(!unloaded.IsWalkable(3, 3));
 
-    const TileGrid open = OpenField(4, 4);
+    const Tile open = OpenField(4, 4);
     CHECK(open.IsWalkable(0, 0));
     CHECK(open.IsWalkable(3, 3));
 }
 
 void Dimensions()
 {
-    const TileGrid grid = OpenField(8, 5);
+    const Tile grid = OpenField(8, 5);
     CHECK_EQ(grid.Width(), 8);
     CHECK_EQ(grid.Height(), 5);
 
@@ -63,7 +63,7 @@ void Dimensions()
 
 void OutOfBoundsIsInertNotFatal()
 {
-    TileGrid grid = OpenField(4, 4);
+    Tile grid = OpenField(4, 4);
 
     // Map data and AI wander rolls both produce out-of-range coordinates.
     // Reads answer "blocked and empty"; writes are dropped.
@@ -83,7 +83,7 @@ void OutOfBoundsIsInertNotFatal()
 
 void WalkabilityIsSeparateFromOccupancy()
 {
-    TileGrid grid = OpenField(4, 4);
+    Tile grid = OpenField(4, 4);
 
     grid.SetWalkable(1, 1, false);
     CHECK(!grid.IsWalkable(1, 1));
@@ -103,7 +103,7 @@ void ManyEntitiesShareOneTile()
     // The core reversal. A tile is a place things stand, not a slot one
     // thing owns: a whole party on one square is an ordinary state, not a
     // collision to resolve.
-    TileGrid grid = OpenField(4, 4);
+    Tile grid = OpenField(4, 4);
 
     CHECK(grid.Place(kA, 1, 1));
     CHECK(grid.Place(kB, 1, 1));
@@ -126,7 +126,7 @@ void PlacingTwiceDoesNotDuplicate()
     // Idempotent, so a caller that re-places an entity it never moved does
     // not leave it in the tile list twice -- which would make it visible to
     // two scans and removable only once.
-    TileGrid grid = OpenField(4, 4);
+    Tile grid = OpenField(4, 4);
 
     CHECK(grid.Place(kA, 1, 1));
     CHECK(grid.Place(kA, 1, 1));
@@ -141,7 +141,7 @@ void PlacementIgnoresTerrain()
     // Placement is authoring, not movement: loot lands where its corpse
     // fell, and a corpse can fall against a wall. Only walking onto a tile
     // consults the terrain.
-    TileGrid grid = OpenField(4, 4);
+    Tile grid = OpenField(4, 4);
     grid.SetWalkable(3, 3, false);
 
     CHECK(grid.Place(kB, 3, 3));
@@ -151,7 +151,7 @@ void PlacementIgnoresTerrain()
 
 void RemoveOnlyEvictsTheNamedOccupant()
 {
-    TileGrid grid = OpenField(4, 4);
+    Tile grid = OpenField(4, 4);
     CHECK(grid.Place(kA, 2, 2));
     CHECK(grid.Place(kB, 2, 2));
 
@@ -176,7 +176,7 @@ void RemoveOnlyEvictsTheNamedOccupant()
 
 void MoveTransfersTheTile()
 {
-    TileGrid grid = OpenField(4, 4);
+    Tile grid = OpenField(4, 4);
     CHECK(grid.Place(kA, 1, 1));
 
     CHECK(grid.Move(kA, 1, 1, 2, 1));
@@ -188,7 +188,7 @@ void MoveOntoAnOccupiedTileSucceeds()
 {
     // What used to be the headline rejection. Walking into someone is now
     // simply standing where they are.
-    TileGrid grid = OpenField(4, 4);
+    Tile grid = OpenField(4, 4);
     CHECK(grid.Place(kA, 1, 1));
     CHECK(grid.Place(kB, 2, 1));
 
@@ -202,7 +202,7 @@ void MoveOntoAnOccupiedTileSucceeds()
 
 void BlockedMoveChangesNothing()
 {
-    TileGrid grid = OpenField(4, 4);
+    Tile grid = OpenField(4, 4);
     CHECK(grid.Place(kA, 1, 1));
     grid.SetWalkable(1, 2, false);
 
@@ -222,7 +222,7 @@ void BlockedMoveChangesNothing()
 
 void MoveOntoOwnTile()
 {
-    TileGrid grid = OpenField(4, 4);
+    Tile grid = OpenField(4, 4);
     CHECK(grid.Place(kA, 1, 1));
 
     // Remove-then-place ordering has to leave the entity present, not gone.
@@ -232,7 +232,7 @@ void MoveOntoOwnTile()
 
 void MoveIntoATileJustVacated()
 {
-    TileGrid grid = OpenField(4, 4);
+    Tile grid = OpenField(4, 4);
     CHECK(grid.Place(kA, 1, 1));
     CHECK(grid.Place(kB, 2, 1));
 
@@ -248,12 +248,12 @@ void MoveIntoATileJustVacated()
 void DegenerateSizes()
 {
     // Not worth a crash: a zero-sized map is simply one nothing fits on.
-    TileGrid empty(0, 0, true);
+    Tile empty(0, 0, true);
     CHECK_EQ(empty.Width(), 0);
     CHECK(!empty.InBounds(0, 0));
     CHECK(!empty.Place(kA, 0, 0));
 
-    TileGrid negative(-4, -4, true);
+    Tile negative(-4, -4, true);
     CHECK_EQ(negative.Width(), 0);
     CHECK_EQ(negative.Height(), 0);
 }
@@ -277,5 +277,5 @@ int main()
     MoveIntoATileJustVacated();
     DegenerateSizes();
 
-    return world_v2::test::Summary("TileGrid");
+    return world_v2::test::Summary("Tile");
 }

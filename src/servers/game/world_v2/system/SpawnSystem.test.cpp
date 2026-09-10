@@ -1,4 +1,6 @@
 #include "../Simulation.h"
+#include "BroadcastModule.h"
+#include "CoreSimulationModule.h"
 #include "../component/Combat.h"
 #include "../component/Grid.h"
 #include "../component/Spawn.h"
@@ -25,7 +27,7 @@ constexpr float kStep = 0.25f;
 
 // What the game layer would supply: everything world_v2 cannot know from a
 // template id alone.
-void DressMonster(MapWorld& world, Entity monster, std::uint32_t templateId)
+void DressMonster(Map& world, Entity monster, std::uint32_t templateId)
 {
     world.registry.Assign<FactionComponent>(monster, kMonsterFaction);
     world.registry.Assign<HealthComponent>(monster, 10, 10);
@@ -40,7 +42,7 @@ Entity AddSpawner(Simulation& simulation, int x, int y, int radius, int desiredC
     return spawner;
 }
 
-std::vector<Entity> LiveMonsters(MapWorld& world)
+std::vector<Entity> LiveMonsters(Map& world)
 {
     std::vector<Entity> found;
     world.registry.view<SpawnedByComponent>().Each([&found](Entity entity, SpawnedByComponent&)
@@ -52,10 +54,12 @@ std::vector<Entity> LiveMonsters(MapWorld& world)
 void PrimeFillsToStrength()
 {
     Simulation simulation(64, 64, true);
-    InstallSpawnRules(simulation.World(), DressMonster);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<SpawnRulesModule>(DressMonster);
 
     const Entity spawner = AddSpawner(simulation, 20, 20, 3, 6);
-    simulation.PrimeSpawns();
+    simulation.Start();
 
     const std::vector<Entity> monsters = LiveMonsters(simulation.World());
     CHECK_EQ(monsters.size(), 6u);
@@ -81,7 +85,9 @@ void PrimeFillsToStrength()
 void ABurstSpreadsAcrossItsArea()
 {
     Simulation simulation(64, 64, true);
-    InstallSpawnRules(simulation.World(), DressMonster);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<SpawnRulesModule>(DressMonster);
 
     // Twenty monsters into a 5x5 area. Nothing stops them stacking now --
     // sharing a tile is legal -- so what is being checked is that the
@@ -89,7 +95,7 @@ void ABurstSpreadsAcrossItsArea()
     // the whole burst on one square, which would look like a bug even
     // though nothing would be broken.
     AddSpawner(simulation, 30, 30, 2, 20);
-    simulation.PrimeSpawns();
+    simulation.Start();
 
     const std::vector<Entity> monsters = LiveMonsters(simulation.World());
     CHECK_EQ(monsters.size(), 20u);
@@ -116,13 +122,15 @@ void ABurstSpreadsAcrossItsArea()
 void MonstersMayShareATile()
 {
     Simulation simulation(64, 64, true);
-    InstallSpawnRules(simulation.World(), DressMonster);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<SpawnRulesModule>(DressMonster);
 
     // A 1x1 area asked for four monsters. Under exclusive occupancy this
     // was a camp that could never reach strength -- three requests dropped
     // every tick, forever. Now the single tile takes all four.
     AddSpawner(simulation, 30, 30, 0, 4);
-    simulation.PrimeSpawns();
+    simulation.Start();
 
     CHECK_EQ(LiveMonsters(simulation.World()).size(), 4u);
     CHECK_EQ(simulation.World().tiles.OccupantCount(30, 30), std::size_t{4});
@@ -139,7 +147,9 @@ void MonstersMayShareATile()
 void ACrowdedAreaStillReachesStrength()
 {
     Simulation simulation(64, 64, true);
-    InstallSpawnRules(simulation.World(), DressMonster);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<SpawnRulesModule>(DressMonster);
 
     // A 3x3 area asked for 20 monsters -- nine tiles, one of them walled.
     //
@@ -150,7 +160,7 @@ void ACrowdedAreaStillReachesStrength()
     // tiles hold all twenty.
     AddSpawner(simulation, 30, 30, 1, 20);
     simulation.World().tiles.SetWalkable(30, 30, false);
-    simulation.PrimeSpawns();
+    simulation.Start();
 
     CHECK_EQ(LiveMonsters(simulation.World()).size(), 20u);
 
@@ -169,11 +179,13 @@ void ACrowdedAreaStillReachesStrength()
 void NoRoomAtAllIsHarmless()
 {
     Simulation simulation(64, 64, true);
-    InstallSpawnRules(simulation.World(), DressMonster);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<SpawnRulesModule>(DressMonster);
 
     AddSpawner(simulation, 30, 30, 0, 4);
     simulation.World().tiles.SetWalkable(30, 30, false);
-    simulation.PrimeSpawns();
+    simulation.Start();
 
     CHECK_EQ(LiveMonsters(simulation.World()).size(), 0u);
 
@@ -184,10 +196,12 @@ void NoRoomAtAllIsHarmless()
 void ALossIsReplacedAfterTheDelay()
 {
     Simulation simulation(64, 64, true);
-    InstallSpawnRules(simulation.World(), DressMonster);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<SpawnRulesModule>(DressMonster);
 
     AddSpawner(simulation, 20, 20, 3, 4);
-    simulation.PrimeSpawns();
+    simulation.Start();
     CHECK_EQ(LiveMonsters(simulation.World()).size(), 4u);
 
     simulation.World().Despawn(LiveMonsters(simulation.World()).front());
@@ -209,10 +223,12 @@ void ALossIsReplacedAfterTheDelay()
 void LossesComeBackOneAtATime()
 {
     Simulation simulation(64, 64, true);
-    InstallSpawnRules(simulation.World(), DressMonster);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<SpawnRulesModule>(DressMonster);
 
     AddSpawner(simulation, 20, 20, 4, 6);
-    simulation.PrimeSpawns();
+    simulation.Start();
 
     // Wipe the camp.
     for (const Entity monster : LiveMonsters(simulation.World()))
@@ -246,10 +262,12 @@ void LossesComeBackOneAtATime()
 void AFullSpawnerNeverOverfills()
 {
     Simulation simulation(64, 64, true);
-    InstallSpawnRules(simulation.World(), DressMonster);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<SpawnRulesModule>(DressMonster);
 
     const Entity spawner = AddSpawner(simulation, 20, 20, 4, 3);
-    simulation.PrimeSpawns();
+    simulation.Start();
 
     for (int i = 0; i < 100; ++i)
     {
@@ -263,10 +281,12 @@ void AFullSpawnerNeverOverfills()
 void CountIsDerivedNotBookkept()
 {
     Simulation simulation(64, 64, true);
-    InstallSpawnRules(simulation.World(), DressMonster);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<SpawnRulesModule>(DressMonster);
 
     const Entity spawner = AddSpawner(simulation, 20, 20, 4, 5);
-    simulation.PrimeSpawns();
+    simulation.Start();
 
     simulation.Tick(kStep);
     CHECK_EQ(simulation.World().registry.Get<SpawnerComponent>(spawner).aliveCount, 5);
@@ -285,10 +305,12 @@ void CountIsDerivedNotBookkept()
 void MonstersOfADestroyedSpawnerCountForNobody()
 {
     Simulation simulation(64, 64, true);
-    InstallSpawnRules(simulation.World(), DressMonster);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<SpawnRulesModule>(DressMonster);
 
     const Entity first = AddSpawner(simulation, 20, 20, 3, 3);
-    simulation.PrimeSpawns();
+    simulation.Start();
     CHECK_EQ(LiveMonsters(simulation.World()).size(), 3u);
 
     // The spawner goes away; its monsters stay, holding a stale link.
@@ -313,11 +335,13 @@ void MonstersOfADestroyedSpawnerCountForNobody()
 void CombatDeathsAreReplaced()
 {
     Simulation simulation(64, 64, true);
-    InstallSpawnRules(simulation.World(), DressMonster);
-    InstallCombatRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<SpawnRulesModule>(DressMonster);
+    simulation.Install<CombatRulesModule>();
 
     AddSpawner(simulation, 20, 20, 3, 2);
-    simulation.PrimeSpawns();
+    simulation.Start();
 
     const std::vector<Entity> monsters = LiveMonsters(simulation.World());
     CHECK_EQ(monsters.size(), 2u);
@@ -340,10 +364,12 @@ void CombatDeathsAreReplaced()
 void SpawnersAreNotOnTheMap()
 {
     Simulation simulation(64, 64, true);
-    InstallSpawnRules(simulation.World(), DressMonster);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<SpawnRulesModule>(DressMonster);
 
     const Entity spawner = AddSpawner(simulation, 20, 20, 3, 2);
-    simulation.PrimeSpawns();
+    simulation.Start();
 
     // A spawn point is bookkeeping, not a creature: nothing can walk into
     // it, target it, or see it.
@@ -370,6 +396,8 @@ void SpawnersAreNotOnTheMap()
 void SpawnedEventDescribesAFinishedMonster()
 {
     Simulation simulation(64, 64, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
 
     std::vector<MonsterSpawnedEvent> announced;
     bool dressedWhenAnnounced = true;
@@ -383,9 +411,9 @@ void SpawnedEventDescribesAFinishedMonster()
                 dressedWhenAnnounced && simulation.World().registry.Has<HealthComponent>(event.entity);
         });
 
-    InstallSpawnRules(simulation.World(), DressMonster);
+    simulation.Install<SpawnRulesModule>(DressMonster);
     AddSpawner(simulation, 20, 20, 3, 3);
-    simulation.PrimeSpawns();
+    simulation.Start();
 
     CHECK_EQ(announced.size(), 3u);
     CHECK(dressedWhenAnnounced);
@@ -406,9 +434,11 @@ void PlacementIsDeterministic()
     for (int run = 0; run < 3; ++run)
     {
         Simulation simulation(64, 64, true);
-        InstallSpawnRules(simulation.World(), DressMonster);
+        simulation.Install<CoreSimulationModule>();
+        simulation.Install<BroadcastModule>();
+        simulation.Install<SpawnRulesModule>(DressMonster);
         AddSpawner(simulation, 30, 30, 3, 8);
-        simulation.PrimeSpawns();
+        simulation.Start();
 
         std::vector<int> tiles;
         for (const Entity monster : LiveMonsters(simulation.World()))
@@ -432,11 +462,13 @@ void PlacementIsDeterministic()
 void SeveralSpawnersAreIndependent()
 {
     Simulation simulation(128, 128, true);
-    InstallSpawnRules(simulation.World(), DressMonster);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<SpawnRulesModule>(DressMonster);
 
     const Entity a = AddSpawner(simulation, 20, 20, 3, 4);
     const Entity b = AddSpawner(simulation, 80, 80, 3, 2);
-    simulation.PrimeSpawns();
+    simulation.Start();
 
     CHECK_EQ(simulation.World().registry.Get<SpawnerComponent>(a).aliveCount, 0);
 

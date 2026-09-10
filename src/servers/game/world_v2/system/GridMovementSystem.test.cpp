@@ -2,7 +2,7 @@
 #include "../core/Entity.h"
 #include "../core/Test.h"
 #include "../event/MovementEvents.h"
-#include "../world/MapWorld.h"
+#include "../core/Map.h"
 #include "GridMovementSystem.h"
 
 #include <cmath>
@@ -19,7 +19,7 @@ bool Near(float actual, float expected)
     return std::fabs(actual - expected) < 0.0001f;
 }
 
-void PositionIs(MapWorld& world, Entity entity, int x, int y)
+void PositionIs(Map& world, Entity entity, int x, int y)
 {
     const GridPositionComponent& position = world.registry.Get<GridPositionComponent>(entity);
     CHECK_EQ(position.x, x);
@@ -28,7 +28,7 @@ void PositionIs(MapWorld& world, Entity entity, int x, int y)
 
 void AcceptedStepMovesEverythingTogether()
 {
-    MapWorld world(8, 8, true);
+    Map world(8, 8, true);
     GridMovementSystem movement;
 
     const Entity entity = world.Spawn(3, 3);
@@ -58,7 +58,7 @@ void AcceptedStepMovesEverythingTogether()
 
 void TerrainBlocksTheStep()
 {
-    MapWorld world(8, 8, true);
+    Map world(8, 8, true);
     GridMovementSystem movement;
 
     const Entity entity = world.Spawn(3, 3);
@@ -81,7 +81,7 @@ void CreaturesWalkThroughEachOther()
     // Entities do not block entities. Walking into someone is just standing
     // where they are, so the step is committed like any other -- position
     // updated, tile index updated, a move announced.
-    MapWorld world(8, 8, true);
+    Map world(8, 8, true);
     GridMovementSystem movement;
 
     const Entity mover = world.Spawn(3, 3);
@@ -109,7 +109,7 @@ void AWholeCrowdCanStandOnOneTile()
 {
     // The stacking case at scale, driven through movement rather than
     // placement: eight creatures converging on one square all arrive.
-    MapWorld world(8, 8, true);
+    Map world(8, 8, true);
     GridMovementSystem movement;
 
     const Entity centre = world.Spawn(4, 4);
@@ -145,7 +145,7 @@ void AWholeCrowdCanStandOnOneTile()
 
 void NonAdjacentIntentIsRejected()
 {
-    MapWorld world(16, 16, true);
+    Map world(16, 16, true);
     GridMovementSystem movement;
 
     const Entity entity = world.Spawn(5, 5);
@@ -167,7 +167,7 @@ void NonAdjacentIntentIsRejected()
 
 void ZeroIntentIsConsumedWithoutMoving()
 {
-    MapWorld world(8, 8, true);
+    Map world(8, 8, true);
     GridMovementSystem movement;
 
     const Entity entity = world.Spawn(3, 3);
@@ -182,7 +182,7 @@ void ZeroIntentIsConsumedWithoutMoving()
 
 void DiagonalStep()
 {
-    MapWorld world(8, 8, true);
+    Map world(8, 8, true);
     GridMovementSystem movement;
 
     const Entity entity = world.Spawn(3, 3);
@@ -196,7 +196,7 @@ void DiagonalStep()
 
 void StepRetiresWhenProgressCompletes()
 {
-    MapWorld world(8, 8, true);
+    Map world(8, 8, true);
     GridMovementSystem movement;
 
     const Entity entity = world.Spawn(3, 3);
@@ -219,7 +219,7 @@ void StepRetiresWhenProgressCompletes()
 
 void IntentIsHeldWhileMidStep()
 {
-    MapWorld world(8, 8, true);
+    Map world(8, 8, true);
     GridMovementSystem movement;
 
     const Entity entity = world.Spawn(3, 3);
@@ -254,7 +254,7 @@ void IntentIsHeldWhileMidStep()
 
 void ManyMoversInOnePass()
 {
-    MapWorld world(64, 8, true);
+    Map world(64, 8, true);
     GridMovementSystem movement;
 
     // A column of movers all stepping right, spaced so none blocks another,
@@ -304,7 +304,7 @@ void ManyMoversInOnePass()
 
 void CommittedStepsAreAnnounced()
 {
-    MapWorld world(8, 8, true);
+    Map world(8, 8, true);
     GridMovementSystem movement;
 
     std::vector<EntityMovedEvent> moves;
@@ -334,7 +334,7 @@ void CommittedStepsAreAnnounced()
 
 void RejectedStepsAnnounceNothing()
 {
-    MapWorld world(8, 8, true);
+    Map world(8, 8, true);
     GridMovementSystem movement;
 
     int announced = 0;
@@ -357,7 +357,7 @@ void RejectedStepsAnnounceNothing()
 
 void MapEdgeBlocksTheStep()
 {
-    MapWorld world(4, 4, true);
+    Map world(4, 4, true);
     GridMovementSystem movement;
 
     const Entity entity = world.Spawn(0, 0);

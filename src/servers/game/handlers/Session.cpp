@@ -15,7 +15,7 @@
 #include "tables/GameData.h"
 #include "tables/MonsterTable.h"
 #include "stats/Stats.h"
-#include "world/World.h"
+#include "simulation/GameSimulation.h"
 
 #include <ctime>
 
@@ -95,12 +95,6 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
         sendFail();
         return;
     }
-    // Null if player.map_id isn't a map.scr id this World loaded -- the
-    // zone/creature lookups below stay empty in that case (known_zones is
-    // default-empty, so the CreaturesInZone loop below never runs).
-    Map* map = ctx.world.GetMap(player.map_id);
-    if (map)
-        player.known_zones = map->ZonesAround(player.x, player.y);
     RecalculateDerivedStats(player, ctx.data.items, ctx.data.setOptions, ctx.data.statusRates);
 
     GameSession session{
@@ -110,8 +104,15 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
         .player = player,
     };
     ctx.sessions.Set(ctx.clientSocket, session);
-    if (map)
-        map->SetPlayer(ctx.clientSocket, player.x, player.y);
+
+    // Hand the character to the simulation, which is authoritative for its
+    // position from here on. The saved position is taken on trust exactly
+    // once, right here; every CG_MOVE after this is a request the
+    // simulation decides. A refusal means the saved position is off the
+    // map -- the enter still succeeds, but movement will be pinned, which
+    // is better than silently relocating someone's character.
+    ctx.simulation.Join(ctx.clientSocket, player.map_id, player.x, player.y, player.instance_id,
+                        static_cast<float>(player.stats.derived.movement_speed));
 
     PayloadWriter writer;
     CharacterDataLoad response = session.player.ToCharacterDataLoad(
@@ -135,33 +136,13 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
 
     ctx.server.SendTo(ctx.clientSocket, inventoryPayload);
 
-    PayloadWriter crtLoadWriter;
-    CrtLoad crtLoadResponse;
-
-    for (const auto& [zoneX, zoneY] : session.player.known_zones)
-    {
-        for (const auto& creature : map->CreaturesInZone(zoneX, zoneY))
-        {
-            const MonsterRecord* monsterRecord = ctx.data.monsters.Find(creature.monster_id);
-
-            crtLoadResponse.records.push_back(CrtLoadRecord{
-                .id = creature.instance_id,
-                .x = static_cast<std::uint32_t>(creature.x),
-                .y = static_cast<std::uint32_t>(creature.y),
-                .monster_id = static_cast<std::uint32_t>(creature.monster_id),
-                .direction = static_cast<std::uint32_t>(creature.direction),
-                .hp = monsterRecord ? static_cast<std::uint64_t>(monsterRecord->hp) : 0,
-            });
-        }
-    }
-
-    crtLoadResponse.Serialize(crtLoadWriter);
-    auto crtLoadData = crtLoadWriter.Data();
-
-    GamePacket crtLoadPacket(GameOpcode::GC_CRT_LOAD, crtLoadData);
-    auto crtLoadPayload = crtLoadPacket.Serialize(ctx.key);
-
-    ctx.server.SendTo(ctx.clientSocket, crtLoadPayload);
+    // No GC_CRT_LOAD here any more.
+    //
+    // This used to walk the player's 3x3 zone view and send everything in
+    // it. ViewModule does that on the first tick after the join instead,
+    // by the same rule it uses every tick afterwards -- the client gets one
+    // batch either way, and there is now only one piece of code deciding
+    // what a player can see rather than three that had to agree.
     });
 }
 
@@ -187,10 +168,11 @@ void HandleCgExit(const GameContext& ctx)
         if (session)
         {
             session->player.SavePosition(ctx.db);
-
-            if (Map* map = ctx.world.GetMap(session->player.map_id))
-                map->RemovePlayer(ctx.clientSocket);
         }
+
+        // Takes the character out of its map's simulation. Safe from this
+        // thread -- it only pushes a command.
+        ctx.simulation.Leave(ctx.clientSocket);
 
         // Release the session/character claim immediately on exit-to-character-
         // select, rather than waiting for the socket to fully disconnect.

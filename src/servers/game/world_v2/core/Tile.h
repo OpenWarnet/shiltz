@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../core/Entity.h"
+#include "Entity.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -82,20 +82,20 @@ namespace world_v2
 // grows phantoms -- entities the AI can see at a tile they left, or a
 // creature standing somewhere nothing can find it. Nothing here can enforce
 // that on its own, since it cannot see components. So every position change
-// goes through MapWorld or GridMovementSystem, which update both together,
+// goes through Map or GridMovementSystem, which update both together,
 // and nothing else assigns a GridPositionComponent directly.
 //
 // Out-of-bounds coordinates are not an error: they read as unwalkable and
 // empty, and writes to them are dropped. Map data and AI wander rolls both
 // produce them, and neither is worth a crash.
-class TileGrid
+class Tile
 {
 public:
     // `walkableByDefault` is false so that a grid nobody has loaded terrain
     // into blocks everything. A map whose data failed to load should leave
     // its occupants standing still, not hand them an open field to walk
     // through walls in.
-    TileGrid(int width, int height, bool walkableByDefault = false)
+    Tile(int width, int height, bool walkableByDefault = false)
         : m_width(width < 0 ? 0 : width)
         , m_height(height < 0 ? 0 : height)
         , m_walkable(static_cast<std::size_t>(m_width) * m_height, walkableByDefault ? std::uint8_t{1} : std::uint8_t{0})

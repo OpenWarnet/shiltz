@@ -15,6 +15,8 @@
 // more than anything measured here and every comparison collapses.
 
 #include "Simulation.h"
+#include "system/BroadcastModule.h"
+#include "system/CoreSimulationModule.h"
 #include "component/Combat.h"
 #include "component/Grid.h"
 #include "component/Items.h"
@@ -29,7 +31,7 @@
 #include "system/AISystem.h"
 #include "system/BroadcastSystem.h"
 #include "system/CombatRules.h"
-#include "world/MapWorld.h"
+#include "core/Map.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -313,9 +315,9 @@ void CommandOverhead(std::size_t count)
         Entity entity = kNullEntity;
     };
 
-    MapWorld world(8, 8, true);
+    Map world(8, 8, true);
     CommandQueue queue;
-    queue.On<NoopCommand>([](MapWorld&, const NoopCommand&) {});
+    queue.On<NoopCommand>([](Map&, const NoopCommand&) {});
 
     Header("5. Command queue overhead (included in the tick below)");
 
@@ -340,8 +342,12 @@ void FullTick(std::size_t creatures, std::size_t moversEvery)
     };
 
     Simulation simulation(512, 512, true);
+
+    simulation.Install<CoreSimulationModule>();
+
+    simulation.Install<BroadcastModule>();
     simulation.Commands().On<MoveCommand>(
-        [](MapWorld& world, const MoveCommand& command)
+        [](Map& world, const MoveCommand& command)
         {
             if (world.registry.Exists(command.entity))
             {
@@ -441,7 +447,7 @@ constexpr int kPlayerFaction = 2;
 // holds a target validates it and skips the search entirely.
 struct AiScene
 {
-    MapWorld world;
+    Map world;
     std::size_t monsters = 0;
 
     AiScene(int size, std::size_t monsterCount, int visionRange, std::size_t distantCount, bool giveEachATarget)
@@ -551,7 +557,7 @@ void AiDensityScan()
 {
     struct Crowd
     {
-        MapWorld world;
+        Map world;
         std::size_t monsters = 0;
 
         explicit Crowd(std::size_t litterPerTile)
@@ -648,7 +654,9 @@ void AiVisionRangeScaling()
 void CombatSteadyState()
 {
     Simulation simulation(256, 256, true);
-    InstallCombatRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<CombatRulesModule>();
 
     // Clusters of monsters in melee with a player they cannot kill, so every
     // tick runs a full AI pass, movement, and combat resolution without the
@@ -726,7 +734,9 @@ void DeathCascade(std::size_t victims)
     const auto setup = [&]()
     {
         simulation = std::make_unique<Simulation>(512, 512, true);
-        InstallCombatRules(simulation->World());
+        simulation->Install<CoreSimulationModule>();
+        simulation->Install<BroadcastModule>();
+        simulation->Install<CombatRulesModule>();
 
         for (std::size_t i = 0; i < victims; ++i)
         {
@@ -768,7 +778,7 @@ void DeathCascade(std::size_t victims)
 // a guess. This is the measurement that guess was deferred to.
 void BroadcastDelivery(std::size_t viewerCount, std::size_t noticeCount)
 {
-    MapWorld world(512, 512, true);
+    Map world(512, 512, true);
     BroadcastSystem broadcast;
     broadcast.Install(world);
 

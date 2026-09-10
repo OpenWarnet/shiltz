@@ -4,7 +4,7 @@
 #include "../core/Entity.h"
 #include "../core/Test.h"
 #include "../event/CombatEvents.h"
-#include "../world/MapWorld.h"
+#include "../core/Map.h"
 #include "CombatSystem.h"
 #include "DeathSystem.h"
 
@@ -15,7 +15,7 @@ using namespace world_v2;
 namespace
 {
 
-Entity SpawnFighter(MapWorld& world, int x, int y, int health)
+Entity SpawnFighter(Map& world, int x, int y, int health)
 {
     const Entity entity = world.Spawn(x, y);
     world.registry.Assign<HealthComponent>(entity, health, health);
@@ -24,7 +24,7 @@ Entity SpawnFighter(MapWorld& world, int x, int y, int health)
 
 void LandedHitReducesHealth()
 {
-    MapWorld world(32, 32, true);
+    Map world(32, 32, true);
     CombatSystem combat;
 
     const Entity attacker = SpawnFighter(world, 5, 5, 100);
@@ -62,7 +62,7 @@ void LandedHitReducesHealth()
 
 void OutOfReachIsRejectedButStillConsumed()
 {
-    MapWorld world(32, 32, true);
+    Map world(32, 32, true);
     CombatSystem combat;
 
     // Reach defaults to melee for an attacker with no AIComponent, since
@@ -81,7 +81,7 @@ void OutOfReachIsRejectedButStillConsumed()
 
 void AttackRangeComesFromTheAiComponent()
 {
-    MapWorld world(32, 32, true);
+    Map world(32, 32, true);
     CombatSystem combat;
 
     const Entity attacker = SpawnFighter(world, 5, 5, 100);
@@ -96,7 +96,7 @@ void AttackRangeComesFromTheAiComponent()
 
 void MalformedRequestsAreDropped()
 {
-    MapWorld world(32, 32, true);
+    Map world(32, 32, true);
     CombatSystem combat;
 
     const Entity attacker = SpawnFighter(world, 5, 5, 100);
@@ -119,7 +119,7 @@ void MalformedRequestsAreDropped()
 
 void StaleTargetsAreRejected()
 {
-    MapWorld world(32, 32, true);
+    Map world(32, 32, true);
     CombatSystem combat;
 
     const Entity attacker = SpawnFighter(world, 5, 5, 100);
@@ -142,7 +142,7 @@ void StaleTargetsAreRejected()
 
 void OverkillClampsAtZero()
 {
-    MapWorld world(32, 32, true);
+    Map world(32, 32, true);
     CombatSystem combat;
     DeathSystem death;
 
@@ -161,7 +161,7 @@ void OverkillClampsAtZero()
 
 void DeathIsAnnouncedOnceAndCredited()
 {
-    MapWorld world(32, 32, true);
+    Map world(32, 32, true);
     CombatSystem combat;
     DeathSystem death;
 
@@ -198,7 +198,7 @@ void DeathIsAnnouncedOnceAndCredited()
 
 void DeathWithoutAnAttackerHasNoKiller()
 {
-    MapWorld world(32, 32, true);
+    Map world(32, 32, true);
     DeathSystem death;
 
     const Entity entity = SpawnFighter(world, 5, 5, 10);
@@ -223,7 +223,7 @@ void DeathWithoutAnAttackerHasNoKiller()
 
 void AlreadyDeadTargetsTakeNoMoreDamage()
 {
-    MapWorld world(32, 32, true);
+    Map world(32, 32, true);
     CombatSystem combat;
     DeathSystem death;
 
@@ -246,7 +246,7 @@ void AlreadyDeadTargetsTakeNoMoreDamage()
 
 void ManySimultaneousAttacks()
 {
-    MapWorld world(64, 64, true);
+    Map world(64, 64, true);
     CombatSystem combat;
     DeathSystem death;
 

@@ -6,6 +6,7 @@
 #include "../core/Entity.h"
 #include "../core/EventManager.h"
 #include "../core/Registry.h"
+#include "../core/System.h"
 #include "../event/CombatEvents.h"
 
 #include <cstdlib>
@@ -27,9 +28,22 @@ namespace world_v2
 //
 // Nothing here removes an entity. Health hitting zero is left standing for
 // DeathSystem to announce and the barrier to resolve.
-class CombatSystem
+class CombatSystem : public ISystem
 {
 public:
+    const char* Name() const override
+    {
+        return "CombatSystem";
+    }
+
+    // Stage-2 adapter. Update below is the real entry point, and its
+    // signature is what declares which parts of the Map this touches.
+    void Run(Map& world, float deltaSeconds) override
+    {
+        (void)deltaSeconds;
+        Update(world.registry, world.events);
+    }
+
     void Update(Registry& registry, EventManager& events)
     {
         registry.view<AttackRequestComponent>().Each(

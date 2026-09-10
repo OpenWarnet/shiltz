@@ -19,47 +19,60 @@
 #include "protocol/server/ItemPickupSuccess.h"
 #include "repositories/ItemRepository.h"
 #include "storage/Transaction.h"
-#include "world/GroundItem.h"
-#include "world/World.h"
+#include "simulation/GameSimulation.h"
 
 #include <algorithm>
 #include <optional>
-#include <random>
 
+// The request half: hand it to the simulation and stop.
+//
+// The claim used to happen right here, under a mutex on a flat item list.
+// It cannot any more -- ground items live in the simulation now, and only
+// the tick thread may touch a Registry. So this queues the request and the
+// answer arrives at CompleteItemPickup, on the world strand, once the
+// barrier has decided who actually got it.
+//
+// That also removes the race rather than guarding it: two players reaching
+// for the same item both drain at stage 1, and whichever claim resolves
+// first despawns the item, so the second one simply finds nothing.
 void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
+{
+    if (!ctx.sessions.Get(ctx.clientSocket))
+        return;
+
+    ctx.simulation.PushPickup(ctx.clientSocket, request.id, request.slot_id);
+}
+
+// The answer half, called from the tick once the claim succeeded.
+//
+// `item` is what was on the ground; the entity is already gone. Everything
+// here is database work and packets, so it goes straight onto the DB pool
+// -- the world strand must not block.
+void CompleteItemPickup(const GameContext& ctx, std::uint32_t itemNetworkId, std::uint32_t slotId, const Item& item)
 {
     auto session = ctx.sessions.Get(ctx.clientSocket);
     if (!session)
         return;
 
-    // Everything below touches World/Map state and/or blocking SQLite
-    // calls -- run it on the DB pool instead of the connection's reactor
-    // thread. Map access is safe from any thread (its own mutexes), and
-    // GameSessionStore already has its own mutex too; request/session are
-    // copied by value so they stay valid once this handler returns.
-    boost::asio::post(ctx.dbPool, [ctx, request, session]() mutable {
+    boost::asio::post(ctx.dbPool, [ctx, itemNetworkId, slotId, item, session]() mutable {
     const int64_t characterId = session->characterId;
     // Client-side slot_id is wire-relative (bag slots start at
     // InventoryItemList::kBagStartSlot, per GC_INVENTORY_ITEM_LIST's
     // layout), but inventory_slot.slot_index is bag-relative starting at 0
-    // -- convert before touching the DB. slot_id < kBagStartSlot (an
-    // equipment slot, which this table doesn't cover) lands on a wrapped
-    // uint32_t that will simply never match a real row.
-    const auto slotIndex = static_cast<std::uint32_t>(static_cast<int64_t>(request.slot_id) -
+    // -- convert before touching the DB.
+    const auto slotIndex = static_cast<std::uint32_t>(static_cast<int64_t>(slotId) -
                                                         static_cast<int64_t>(InventoryItemList::kBagStartSlot));
 
-    Map* map = ctx.world.GetMap(session->player.map_id);
-    if (!map)
-        return;
+    const std::uint32_t itemId = item.item_id;
 
-    // Atomically claim the ground item so two players racing the same
-    // pickup can't both grant it to themselves. Claimed before the DB
-    // write, so a failed write loses the item rather than duplicating it.
-    auto groundItem = map->TryTakeItem(request.id);
-    if (!groundItem)
-        return;
-
-    const std::uint32_t itemId = groundItem->item.item_id;
+    // Putting it back means dropping it again, since the entity is gone.
+    // It reappears at the player's feet rather than exactly where it lay --
+    // the original position is not carried through the claim, and a step or
+    // two is not worth a wider event for a path that only runs on a stale
+    // client or a failed write.
+    const auto putBack = [&ctx, &session, &item] {
+        ctx.simulation.DropItem(session->player.map_id, session->player.x, session->player.y, item);
+    };
 
     DatabaseTransaction txn(ctx.db);
 
@@ -76,9 +89,7 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
     {
         if (existing->item_id != itemId)
         {
-            // Put the claimed item back rather than dropping it -- this is
-            // a normal rejection (stale client state), not a failure.
-            map->AddItem(*groundItem);
+            putBack();
             return;
         }
 
@@ -94,15 +105,13 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
         // dropped item's item_level/option_bits survive the round-trip),
         // but pickup always claims one unit regardless of how many the
         // ground stack held.
-        updated = groundItem->item;
+        updated = item;
         updated.quantity = 1;
     }
 
     if (!ItemRepository::SaveInventorySlot(ctx.db, characterId, slotIndex, existing, updated))
     {
-        // Put the claimed item back rather than dropping it -- same
-        // reasoning as the item_id-mismatch rejection above.
-        map->AddItem(*groundItem);
+        putBack();
         return;
     }
 
@@ -113,28 +122,24 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
 
     PayloadWriter succWriter;
     ItemPickupSuccess succResponse{
-        .id = request.id,
-        .slot_id = request.slot_id,
+        .id = itemNetworkId,
+        .slot_id = slotId,
         .item_id = itemId,
         .qty_or_refine = updated.WireQuantityOrRefine(),
     };
     succResponse.Serialize(succWriter);
-    auto succData = succWriter.Data();
 
-    GamePacket succPacket(GameOpcode::GC_ITEM_PICKUP_SUCC, succData);
-    auto succPayload = succPacket.Serialize(ctx.key);
+    GamePacket succPacket(GameOpcode::GC_ITEM_PICKUP_SUCC, succWriter.Data());
+    ctx.server.SendTo(ctx.clientSocket, succPacket.Serialize(ctx.key));
 
-    ctx.server.SendTo(ctx.clientSocket, succPayload);
-
+    // The item leaving everyone else's view is ViewModule's job now; this
+    // one is the picker's own acknowledgement that its reach succeeded.
     PayloadWriter removeWriter;
-    ItemMapRemove removeResponse{.id = request.id};
+    ItemMapRemove removeResponse{.id = itemNetworkId};
     removeResponse.Serialize(removeWriter);
-    auto removeData = removeWriter.Data();
 
-    GamePacket removePacket(GameOpcode::GC_ITEM_MAP_REMOVE, removeData);
-    auto removePayload = removePacket.Serialize(ctx.key);
-
-    ctx.server.SendTo(ctx.clientSocket, removePayload);
+    GamePacket removePacket(GameOpcode::GC_ITEM_MAP_REMOVE, removeWriter.Data());
+    ctx.server.SendTo(ctx.clientSocket, removePacket.Serialize(ctx.key));
     });
 }
 
@@ -267,10 +272,6 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
     // this handler returns; server.SendTo() is safe to call from any
     // thread.
     boost::asio::post(ctx.dbPool, [ctx, request, session]() mutable {
-    Map* map = ctx.world.GetMap(session->player.map_id);
-    if (!map)
-        return;
-
     const int64_t characterId = session->characterId;
     // Same wire-relative -> bag-relative conversion as HandleItemPickup --
     // see the comment there.
@@ -350,17 +351,17 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
     const auto dropX = static_cast<std::uint32_t>(session->player.x);
     const auto dropY = static_cast<std::uint32_t>(session->player.y);
 
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<std::uint32_t> distrib(1, 1000000);
-    const std::uint32_t groundId = distrib(gen);
-
-    map->AddItem(GroundItem{
-        .id = groundId,
-        .x = dropX,
-        .y = dropY,
-        .item = droppedItem,
-    });
+    // The id comes from the simulation rather than a random draw, because
+    // it is the same id space every creature and player is named by now --
+    // a collision would have the client remove the wrong thing. Zero means
+    // the map is not loaded, which cannot happen for a map somebody is
+    // standing on, but is worth not pretending about.
+    const std::uint32_t groundId = ctx.simulation.DropItem(
+        session->player.map_id, static_cast<int>(dropX), static_cast<int>(dropY), droppedItem);
+    if (groundId == 0)
+    {
+        return;
+    }
 
     PayloadWriter succWriter;
     ItemDropSuccess succResponse{

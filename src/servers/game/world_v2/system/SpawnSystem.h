@@ -4,8 +4,9 @@
 #include "../core/Entity.h"
 #include "../core/EventManager.h"
 #include "../core/Registry.h"
+#include "../core/System.h"
+#include "../core/Tile.h"
 #include "../event/SpawnEvents.h"
-#include "../world/TileGrid.h"
 
 #include <cstdint>
 
@@ -35,9 +36,21 @@ namespace world_v2
 // interval rather than the whole pack reappearing at once. Filling a
 // spawner from empty at world load would take desiredCount intervals, which
 // is why Prime exists.
-class SpawnSystem
+class SpawnSystem : public ISystem
 {
 public:
+    const char* Name() const override
+    {
+        return "SpawnSystem";
+    }
+
+    // Stage-2 adapter. Update below is the real entry point, and its
+    // signature is what declares which parts of the Map this touches.
+    void Run(Map& world, float deltaSeconds) override
+    {
+        Update(world.registry, world.events, deltaSeconds);
+    }
+
     void Update(Registry& registry, EventManager& events, float deltaSeconds)
     {
         Recount(registry);
@@ -107,7 +120,7 @@ public:
     // Returns false only when every tile in the area is unwalkable: a spawn
     // point that has been built over, or one placed inside the terrain to
     // begin with.
-    static bool FindSpawnTile(const TileGrid& tiles, const SpawnerComponent& definition, int& outX, int& outY)
+    static bool FindSpawnTile(const Tile& tiles, const SpawnerComponent& definition, int& outX, int& outY)
     {
         const int span = definition.radius * 2 + 1;
         const int total = span * span;

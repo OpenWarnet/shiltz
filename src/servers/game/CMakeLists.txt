@@ -36,6 +36,13 @@ add_executable (
 	"handlers/Emotion.cpp"
 	"handlers/Emotion.h"
 	"GameServer.h"
+	"simulation/GameSimulation.cpp"
+	"simulation/GameSimulation.h"
+	"simulation/PlayerMoveModule.h"
+	"simulation/Components.h"
+	"simulation/CreatureModule.h"
+	"simulation/GroundItemModule.h"
+	"simulation/ViewModule.h"
 	"GameServer.cpp"
 	"GameSessionStore.h"
 	"GameSessionStore.cpp"
@@ -62,12 +69,6 @@ add_executable (
 	"world/Creature.h"
 	"world/Player.h"
 	"world/Player.cpp"
-	"world/Map.h"
-	"world/Map.cpp"
-	"world/MapLoader.h"
-	"world/MapLoader.cpp"
-	"world/World.h"
-	"world/World.cpp"
 	"stats/Stats.h"
 	"stats/Stats.cpp"
 	"stats/RawStatCalculator.h"
@@ -339,6 +340,10 @@ set(WORLD_V2_CORE
 	"world_v2/core/View.h"
 	"world_v2/core/Registry.h"
 	"world_v2/core/EventManager.h"
+	"world_v2/core/Tile.h"
+	"world_v2/core/Map.h"
+	"world_v2/core/System.h"
+	"world_v2/core/Module.h"
 	"world_v2/core/Test.h")
 
 set(WORLD_V2_COMPONENT
@@ -363,32 +368,56 @@ set(WORLD_V2_SYSTEM
 	"world_v2/system/DeathSystem.h"
 	"world_v2/system/DespawnSystem.h"
 	"world_v2/system/BroadcastSystem.h"
-	"world_v2/system/PickupSystem.h")
+	"world_v2/system/PickupSystem.h"
+	"world_v2/system/CoreSimulationModule.h"
+	"world_v2/system/BroadcastModule.h")
 
-add_world_v2_test(world_v2_tile_grid_test
+add_world_v2_test(world_v2_tile_test
 	"world_v2/core/Entity.h"
 	"world_v2/core/Test.h"
-	"world_v2/world/TileGrid.h"
-	"world_v2/world/TileGrid.test.cpp")
+	"world_v2/core/Tile.h"
+	"world_v2/core/Tile.test.cpp")
 
-add_world_v2_test(world_v2_map_world_test
+add_world_v2_test(world_v2_map_test
 	${WORLD_V2_CORE}
 	${WORLD_V2_COMPONENT}
-	"world_v2/world/TileGrid.h"
-	"world_v2/world/MapWorld.h"
-	"world_v2/world/MapWorld.test.cpp")
+	"world_v2/core/Map.test.cpp")
+
+# The first real packet path through world_v2. Needs the game tree's include
+# roots and CharMoveUpdate's serializer, unlike the pure world_v2 suites.
+add_world_v2_test(player_move_test
+	${WORLD_V2_CORE}
+	${WORLD_V2_COMPONENT}
+	"world_v2/CommandQueue.h"
+	"world_v2/Simulation.h"
+	"world_v2/system/BroadcastSystem.h"
+	"simulation/PlayerMoveModule.h"
+	"simulation/Components.h"
+	"simulation/CreatureModule.h"
+	"simulation/GroundItemModule.h"
+	"simulation/ViewModule.h"
+	"simulation/PlayerMoveSystem.test.cpp"
+	"protocol/server/CharMoveUpdate.cpp")
+
+target_include_directories(player_move_test PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${CMAKE_SOURCE_DIR}/src)
+
+add_world_v2_test(world_v2_module_test
+	${WORLD_V2_CORE}
+	${WORLD_V2_COMPONENT}
+	${WORLD_V2_SYSTEM}
+	"world_v2/CommandQueue.h"
+	"world_v2/Simulation.h"
+	"world_v2/core/Module.test.cpp")
 
 add_world_v2_test(world_v2_grid_movement_test
 	${WORLD_V2_CORE}
 	${WORLD_V2_COMPONENT}
-	"world_v2/world/TileGrid.h"
-	"world_v2/world/MapWorld.h"
 	"world_v2/system/GridMovementSystem.h"
 	"world_v2/system/GridMovementSystem.test.cpp")
 
 set(WORLD_V2_WORLD
-	"world_v2/world/TileGrid.h"
-	"world_v2/world/MapWorld.h"
 	"world_v2/world/Inventory.h")
 
 add_world_v2_test(world_v2_command_queue_test

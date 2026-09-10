@@ -7,11 +7,14 @@
 // with a pickup, or paying a killer for something nobody killed.
 
 #include "../Simulation.h"
+#include "BroadcastModule.h"
+#include "CoreSimulationModule.h"
 #include "../component/Combat.h"
 #include "../component/Despawn.h"
 #include "../component/Grid.h"
 #include "../component/Items.h"
 #include "../component/Network.h"
+#include "../component/Request.h"
 #include "../core/Entity.h"
 #include "../core/Test.h"
 #include "../event/CombatEvents.h"
@@ -37,7 +40,9 @@ constexpr float kStep = 0.25f;
 void TheTimerCountsDownAndRemoves()
 {
     Simulation simulation(32, 32, true);
-    InstallDespawnRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<DespawnRulesModule>();
 
     std::vector<EntityExpiredEvent> expired;
     simulation.World().events.Listen<EntityExpiredEvent>(
@@ -78,7 +83,9 @@ void ZeroMeansNextTickNotAlreadyExpired()
     // The countdown is applied before the test, so there is no way to build
     // a timer that never fires.
     Simulation simulation(32, 32, true);
-    InstallDespawnRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<DespawnRulesModule>();
 
     const Entity item = SpawnGroundItem(simulation.World(), kPotion, 1, 10, 5, 5);
     simulation.World().registry.Assign<DespawnTimerComponent>(item, 0.0f);
@@ -95,6 +102,8 @@ void AnExpiryIsAnnouncedOnlyOnce()
     // rather than vanishing -- leaves it sitting there with a spent timer,
     // and nothing may announce it a second time.
     Simulation simulation(32, 32, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
 
     std::size_t announced = 0;
     simulation.World().events.Listen<EntityExpiredEvent>([&announced](const EntityExpiredEvent&) { ++announced; });
@@ -125,8 +134,10 @@ void APickupOnTheExpiryTickIsNotADoubleRemove()
     // that was emitted for it. The Exists guard in InstallDespawnRules is
     // what makes the second one a no-op.
     Simulation simulation(32, 32, true);
-    InstallItemRules(simulation.World());
-    InstallDespawnRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<ItemRulesModule>();
+    simulation.Install<DespawnRulesModule>();
 
     std::vector<ItemPickedUpEvent> taken;
     simulation.World().events.Listen<ItemPickedUpEvent>([&taken](const ItemPickedUpEvent& e) { taken.push_back(e); });
@@ -152,8 +163,10 @@ void AnExpiryPaysNobodyAndDropsNothing()
     // the floor must not credit experience or roll a drop table -- if it
     // did, leaving a monster alone long enough would pay for killing it.
     Simulation simulation(32, 32, true);
-    InstallCombatRules(simulation.World());
-    InstallDespawnRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<CombatRulesModule>();
+    simulation.Install<DespawnRulesModule>();
 
     std::size_t deaths = 0;
     std::size_t drops = 0;
@@ -184,8 +197,10 @@ void ADeathOnTheSameTickWins()
     // its timer expires is reported as a death -- with its killer credited
     // and its loot rolled -- rather than as a silent expiry.
     Simulation simulation(32, 32, true);
-    InstallCombatRules(simulation.World());
-    InstallDespawnRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<CombatRulesModule>();
+    simulation.Install<DespawnRulesModule>();
 
     std::size_t deaths = 0;
     std::size_t expiries = 0;
@@ -212,7 +227,9 @@ void ExpiryIsBroadcastToViewersInRange()
     // A client told to draw something needs a way to be told to stop. The
     // Despawned notice is what pairs with Spawned.
     Simulation simulation(64, 64, true);
-    InstallDespawnRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<DespawnRulesModule>();
 
     std::vector<Notice> seen;
     simulation.OnNotice([&seen](Entity, const Notice& notice) { seen.push_back(notice); });
@@ -250,7 +267,9 @@ void ATimerOnNothingInParticularIsHarmless()
     // no position, no item, no health. A bare entity with a clock is a
     // valid thing.
     Simulation simulation(16, 16, true);
-    InstallDespawnRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<DespawnRulesModule>();
 
     const Entity bare = simulation.World().registry.Create();
     simulation.World().registry.Assign<DespawnTimerComponent>(bare, kStep);
@@ -275,7 +294,9 @@ void ATimerOnNothingInParticularIsHarmless()
 void ManyTimersExpireInOneTick()
 {
     Simulation simulation(64, 64, true);
-    InstallDespawnRules(simulation.World());
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
+    simulation.Install<DespawnRulesModule>();
 
     // Staggered, so a whole spread retires over several ticks rather than
     // all at once -- the shape a floor full of loot actually has.

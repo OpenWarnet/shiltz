@@ -49,6 +49,8 @@
 // is what would then be pointed at it instead.
 
 #include "Simulation.h"
+#include "system/BroadcastModule.h"
+#include "system/CoreSimulationModule.h"
 #include "component/Combat.h"
 #include "component/Despawn.h"
 #include "component/Grid.h"
@@ -56,7 +58,7 @@
 #include "component/Network.h"
 #include "component/Request.h"
 #include "component/Spawn.h"
-#include "world/MapWorld.h"
+#include "core/Map.h"
 #include "core/Entity.h"
 #include "core/Test.h"
 #include "event/CombatEvents.h"
@@ -194,6 +196,13 @@ public:
         : m_config(config)
         , m_simulation(kMapSize, kMapSize, true)
     {
+        // First, so the seven core systems lead stage 2 in the order
+        // CoreSimulationModule documents. Everything wired below adds
+        // listeners and command handlers, not systems, so nothing after
+        // this point can disturb that order.
+        m_simulation.Install<CoreSimulationModule>();
+        m_simulation.Install<BroadcastModule>();
+
         CarveTerrain();
         WireCommands();
 
@@ -209,7 +218,7 @@ public:
         PlaceSpawners();
         PlacePlayers();
 
-        m_simulation.PrimeSpawns();
+        m_simulation.Start();
     }
 
     // One tick: issue everyone's orders through the queue, advance, then
@@ -330,7 +339,7 @@ private:
     void WireCommands()
     {
         m_simulation.Commands().On<PickupCommand>(
-            [](MapWorld& world, const PickupCommand& command)
+            [](Map& world, const PickupCommand& command)
             {
                 if (!world.registry.Exists(command.picker) || !world.registry.Exists(command.item))
                 {
@@ -340,7 +349,7 @@ private:
             });
 
         m_simulation.Commands().On<MoveCommand>(
-            [](MapWorld& world, const MoveCommand& command)
+            [](Map& world, const MoveCommand& command)
             {
                 // A player can have died between the push and the drain.
                 if (!world.registry.Exists(command.entity))
@@ -351,7 +360,7 @@ private:
             });
 
         m_simulation.Commands().On<AttackCommand>(
-            [](MapWorld& world, const AttackCommand& command)
+            [](Map& world, const AttackCommand& command)
             {
                 if (!world.registry.Exists(command.attacker) || !world.registry.Exists(command.target))
                 {
@@ -376,7 +385,7 @@ private:
         // for free by ordering its own steps so that nothing after the
         // fallible part can fail.
         m_simulation.Commands().On<DropCommand>(
-            [this](MapWorld& world, const DropCommand& command)
+            [this](Map& world, const DropCommand& command)
             {
                 if (!world.registry.Exists(command.dropper))
                 {
@@ -418,9 +427,9 @@ private:
 
     void WireRules()
     {
-        InstallCombatRules(m_simulation.World());
-        InstallItemRules(m_simulation.World());
-        InstallDespawnRules(m_simulation.World());
+        m_simulation.Install<CombatRulesModule>();
+        m_simulation.Install<ItemRulesModule>();
+        m_simulation.Install<DespawnRulesModule>();
 
         // LootDropEvent is the seam world_v2 deliberately leaves unhandled,
         // because turning a table id into items needs .scr data it does not
@@ -478,8 +487,7 @@ private:
                 });
         }
 
-        InstallSpawnRules(m_simulation.World(),
-                          [](MapWorld& world, Entity monster, std::uint32_t templateId)
+        m_simulation.Install<SpawnRulesModule>([](Map& world, Entity monster, std::uint32_t templateId)
                           {
                               world.registry.Assign<FactionComponent>(monster, kMonsterFaction);
                               world.registry.Assign<HealthComponent>(monster, 24, 24);
@@ -818,7 +826,7 @@ private:
     // on.
     void CheckInvariants(int tick)
     {
-        MapWorld& world = m_simulation.World();
+        Map& world = m_simulation.World();
 
         // 1. Forward: everything the index lists at a tile is a living
         //    entity that agrees it is standing there. A stale listing is a
@@ -844,7 +852,7 @@ private:
                 // because the AI scan needs a dense probe. A cache that
                 // drifts low makes tiles invisible to targeting; one that
                 // drifts high costs nothing but is the same bug. Checked
-                // here because nothing inside TileGrid can.
+                // here because nothing inside Tile can.
                 if (here != world.tiles.OccupantsAt(x, y).size())
                 {
                     Fail(tick, "the tile occupant count disagrees with the tile list");
@@ -1142,7 +1150,7 @@ private:
     // So: nothing out of range arrived, and nothing in range was missed.
     void CheckNoticesReachedTheRightViewers(int tick)
     {
-        MapWorld& world = m_simulation.World();
+        Map& world = m_simulation.World();
 
         // Soundness. Note this re-derives the same rule BroadcastSystem
         // applies, so it does not police the rule itself -- what it catches
@@ -1246,7 +1254,7 @@ private:
 
     void Digest()
     {
-        MapWorld& world = m_simulation.World();
+        Map& world = m_simulation.World();
 
         Mix(world.registry.AliveCount());
         Mix(m_deaths);
@@ -1533,10 +1541,10 @@ void ItemsChangeHandsWithoutMultiplying()
 // want a world with two things in it, not a map with six spawner camps.
 void WirePickupOnly(Simulation& simulation)
 {
-    InstallItemRules(simulation.World());
+    simulation.Install<ItemRulesModule>();
 
     simulation.Commands().On<PickupCommand>(
-        [](MapWorld& world, const PickupCommand& command)
+        [](Map& world, const PickupCommand& command)
         {
             if (!world.registry.Exists(command.picker) || !world.registry.Exists(command.item))
             {
@@ -1560,6 +1568,8 @@ void TwoPlayersRacingForOneItemGetOneCopy()
     // inbound commands, drained together, resolved in one sweep, and the
     // husk cleaned up by ItemRules at the barrier.
     Simulation simulation(16, 16, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
     WirePickupOnly(simulation);
 
     std::size_t taken = 0;
@@ -1617,6 +1627,8 @@ void AFullBagLeavesTheLootWhereItFell()
     // step that can fail happens before the claim. This is the end-to-end
     // check that the ordering survived.
     Simulation simulation(16, 16, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
     WirePickupOnly(simulation);
 
     std::size_t refused = 0;
@@ -1729,7 +1741,7 @@ void APlayerDyingMidRunIsHandledCleanly()
 
 void MapsTickInParallelWithoutInterference()
 {
-    // The claim MapWorld and Simulation both make, and which nothing tested
+    // The claim Map and Simulation both make, and which nothing tested
     // before: maps share no mutable state, so several can tick on separate
     // threads at once provided no single one is ticked twice at once.
     //

@@ -1,10 +1,8 @@
 #include "GameServer.h"
 
 #include "GamePacket.h"
-#include "common/PayloadWriter.h"
-#include "protocol/server/CrtMove.h"
+#include "handlers/Inventory.h"
 
-#include <algorithm>
 #include <chrono>
 #include <iostream>
 
@@ -23,11 +21,22 @@ namespace
 
 GameServer::GameServer(uint16_t port, std::span<const uint8_t> key, IDatabase& db)
     : Server(port, "Game"), m_key(key), m_db(db),
+      m_simulation(*this, key, m_sessions, m_data),
       m_worldStrand(boost::asio::any_io_executor(IoContext().get_executor())), m_tickTimer(IoContext()),
       m_dbPool(1)
 {
     m_data.Load();
-    m_world.Start();
+    m_simulation.Start();
+
+    // The other half of a pickup. The simulation decides who got the item,
+    // on the world strand; this turns that into the database write and the
+    // acknowledgement, which CompleteItemPickup puts on the DB pool.
+    m_simulation.OnPickup([this](SOCKET socket, std::uint32_t itemNetworkId, std::uint32_t slotId,
+                                 const Item& item) {
+        CompleteItemPickup(
+            GameContext{*this, socket, m_key, m_db, m_sessions, m_data, m_simulation, m_dbPool},
+            itemNetworkId, slotId, item);
+    });
 
     m_lastTick = std::chrono::steady_clock::now();
     ScheduleTick();
@@ -36,7 +45,7 @@ GameServer::GameServer(uint16_t port, std::span<const uint8_t> key, IDatabase& d
 GameServer::~GameServer()
 {
     m_tickTimer.cancel();
-    m_world.Shutdown();
+    m_simulation.Shutdown();
 }
 
 void GameServer::ScheduleTick()
@@ -50,7 +59,8 @@ void GameServer::ScheduleTick()
         const auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_lastTick);
         m_lastTick = now;
 
-        BroadcastCreatureMoves(m_world.Tick(delta));
+        // Same strand, so this never overlaps itself.
+        m_simulation.Tick(std::chrono::duration<float>(delta).count());
 
         ScheduleTick();
     }));
@@ -66,65 +76,13 @@ void GameServer::OnFrame(SOCKET clientSocket, std::span<const uint8_t> frame)
               << " bytes)\n";
 
     m_dispatcher.Dispatch(
-        GameContext{*this, clientSocket, m_key, m_db, m_sessions, m_world, m_data, m_dbPool}, packet);
+        GameContext{*this, clientSocket, m_key, m_db, m_sessions, m_data, m_simulation, m_dbPool}, packet);
 }
 
 void GameServer::OnClientDisconnected(SOCKET clientSocket)
 {
-    // Look up the session before removing it -- it's the only place that
-    // still knows which map (if any) this socket's MapPlayer entry is on.
-    if (auto session = m_sessions.Get(clientSocket))
-    {
-        if (Map* map = m_world.GetMap(session->player.map_id))
-            map->RemovePlayer(clientSocket);
-    }
-
+    // Leave first: it reads the session to find which maps this socket is
+    // on, and the line below erases it.
+    m_simulation.Leave(clientSocket);
     m_sessions.Remove(clientSocket);
-}
-
-void GameServer::BroadcastCreatureMoves(const std::vector<MapTickResult>& tickResults)
-{
-    for (const auto& mapResult : tickResults)
-    {
-        if (mapResult.creature_moves.empty())
-            continue;
-
-        // The map produced these moves a moment ago on the map-pool thread,
-        // so it's still loaded.
-        Map* map = m_world.GetMap(mapResult.server_map_id);
-        if (!map)
-            continue;
-
-        // Everyone currently on this map -- "can see the monster" is then a
-        // per-player zone check below, same as HandleMovement's own
-        // known_zones logic (handlers/Movement.cpp).
-        const auto players = map->Players();
-        if (players.empty())
-            continue;
-
-        for (const auto& move : mapResult.creature_moves)
-        {
-            CrtMove crtMove{
-                .creature_id = move.creature_id,
-                .x = static_cast<std::uint32_t>(move.from_x),
-                .y = static_cast<std::uint32_t>(move.from_y),
-                .target_x = static_cast<std::uint32_t>(move.to_x),
-                .target_y = static_cast<std::uint32_t>(move.to_y),
-                .speed_raw = 0,
-            };
-
-            PayloadWriter writer;
-            crtMove.Serialize(writer);
-            GamePacket packet(GameOpcode::GC_CRT_MOVE, writer.Data());
-            const auto payload = packet.Serialize(m_key);
-
-            const auto creatureZone = Map::ZoneOf(move.to_x, move.to_y);
-
-            for (const auto& player : players)
-            {
-                if (Contains(map->ZonesAround(player.x, player.y), creatureZone))
-                    SendTo(player.socket, payload);
-            }
-        }
-    }
 }

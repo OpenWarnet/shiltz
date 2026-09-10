@@ -18,7 +18,7 @@ namespace world_v2::test
 {
 
 // Atomic because some tests drive several simulations on separate threads
-// -- one per map, which is the arrangement MapWorld is designed for -- and
+// -- one per map, which is the arrangement Map is designed for -- and
 // record failures from all of them. The printf itself is stream-locked, so
 // two threads failing at once interleave lines rather than corrupting the
 // tally.

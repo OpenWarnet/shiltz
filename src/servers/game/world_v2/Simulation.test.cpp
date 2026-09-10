@@ -1,4 +1,6 @@
 #include "Simulation.h"
+#include "system/BroadcastModule.h"
+#include "system/CoreSimulationModule.h"
 #include "component/Grid.h"
 #include "core/Entity.h"
 #include "core/Test.h"
@@ -26,7 +28,7 @@ struct NoteEvent
 void WireMovement(Simulation& simulation)
 {
     simulation.Commands().On<MoveCommand>(
-        [](MapWorld& world, const MoveCommand& command)
+        [](Map& world, const MoveCommand& command)
         {
             if (!world.registry.Exists(command.entity))
             {
@@ -39,6 +41,8 @@ void WireMovement(Simulation& simulation)
 void PacketToMovementInOneTick()
 {
     Simulation simulation(8, 8, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
     WireMovement(simulation);
 
     const Entity entity = simulation.World().Spawn(2, 2);
@@ -62,6 +66,8 @@ void PacketToMovementInOneTick()
 void StagesRunInOrder()
 {
     Simulation simulation(8, 8, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
 
     std::vector<std::string> log;
     int positionWhenEventFired = -1;
@@ -71,7 +77,7 @@ void StagesRunInOrder()
     // Stage 1: the command handler both creates the intent and queues an
     // event for the barrier.
     simulation.Commands().On<MoveCommand>(
-        [&log](MapWorld& world, const MoveCommand& command)
+        [&log](Map& world, const MoveCommand& command)
         {
             log.push_back("command");
             world.registry.Assign<MoveIntentComponent>(command.entity, command.directionX, command.directionY);
@@ -87,7 +93,9 @@ void StagesRunInOrder()
         });
 
     // Stage 4.
-    simulation.OnBroadcast([&log](MapWorld&) { log.push_back("broadcast"); });
+    simulation.Install<LambdaModule>("broadcast", [&log](ModuleContext& ctx) {
+        ctx.AddOutbound([&log](Map&) { log.push_back("broadcast"); });
+    });
 
     simulation.Commands().Push(MoveCommand{entity, 1, 0});
     simulation.Tick(0.0f);
@@ -103,11 +111,13 @@ void StagesRunInOrder()
 void EventsEmittedInAStageResolveThisTickNotNext()
 {
     Simulation simulation(4, 4, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
 
     int flushed = 0;
     simulation.World().events.Listen<NoteEvent>([&flushed](const NoteEvent& event) { flushed += event.value; });
 
-    simulation.Commands().On<MoveCommand>([](MapWorld& world, const MoveCommand&) { world.events.Emit(NoteEvent{7}); });
+    simulation.Commands().On<MoveCommand>([](Map& world, const MoveCommand&) { world.events.Emit(NoteEvent{7}); });
 
     simulation.Commands().Push(MoveCommand{});
     simulation.Tick(0.0f);
@@ -120,13 +130,16 @@ void EventsEmittedInAStageResolveThisTickNotNext()
 void CommandsPushedDuringBroadcastLandNextTick()
 {
     Simulation simulation(8, 8, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
     WireMovement(simulation);
 
     const Entity entity = simulation.World().Spawn(2, 2);
 
     bool pushed = false;
-    simulation.OnBroadcast(
-        [&](MapWorld&)
+    simulation.Install<LambdaModule>("broadcast", [&](ModuleContext& ctx) {
+        ctx.AddOutbound(
+        [&](Map&)
         {
             if (!pushed)
             {
@@ -134,6 +147,7 @@ void CommandsPushedDuringBroadcastLandNextTick()
                 simulation.Commands().Push(MoveCommand{entity, 1, 0});
             }
         });
+    });
 
     simulation.Tick(0.0f);
 
@@ -150,6 +164,8 @@ void CommandsPushedDuringBroadcastLandNextTick()
 void EmptyTicksAreHarmless()
 {
     Simulation simulation(4, 4, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
 
     for (int i = 0; i < 10; ++i)
     {
@@ -163,6 +179,8 @@ void EmptyTicksAreHarmless()
 void ContinuousMovementAcrossTicks()
 {
     Simulation simulation(16, 16, true);
+    simulation.Install<CoreSimulationModule>();
+    simulation.Install<BroadcastModule>();
     WireMovement(simulation);
 
     const Entity entity = simulation.World().Spawn(0, 5);
@@ -192,7 +210,11 @@ void ContinuousMovementAcrossTicks()
 void SeparateMapsDoNotShareState()
 {
     Simulation first(8, 8, true);
+    first.Install<CoreSimulationModule>();
+    first.Install<BroadcastModule>();
     Simulation second(8, 8, true);
+    second.Install<CoreSimulationModule>();
+    second.Install<BroadcastModule>();
     WireMovement(first);
     WireMovement(second);
 

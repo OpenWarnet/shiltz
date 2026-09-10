@@ -5,6 +5,7 @@
 #include "../core/Entity.h"
 #include "../core/EventManager.h"
 #include "../core/Registry.h"
+#include "../core/System.h"
 #include "../event/CombatEvents.h"
 
 namespace world_v2
@@ -27,9 +28,22 @@ namespace world_v2
 // Health reaching zero is the only trigger, so this covers anything that
 // can kill: a landed hit, a damage-over-time effect, a scripted event.
 // Nothing has to remember to call it.
-class DeathSystem
+class DeathSystem : public ISystem
 {
 public:
+    const char* Name() const override
+    {
+        return "DeathSystem";
+    }
+
+    // Stage-2 adapter. Update below is the real entry point, and its
+    // signature is what declares which parts of the Map this touches.
+    void Run(Map& world, float deltaSeconds) override
+    {
+        (void)deltaSeconds;
+        Update(world.registry, world.events);
+    }
+
     void Update(Registry& registry, EventManager& events)
     {
         registry.view<HealthComponent>().Each(

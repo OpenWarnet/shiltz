@@ -5,6 +5,7 @@
 #include "../core/Entity.h"
 #include "../core/EventManager.h"
 #include "../core/Registry.h"
+#include "../core/System.h"
 #include "../event/LifecycleEvents.h"
 
 namespace world_v2
@@ -25,9 +26,21 @@ namespace world_v2
 // with `remaining` at zero expires on the next tick rather than being
 // treated as already expired. There is no way to construct one that never
 // fires.
-class DespawnSystem
+class DespawnSystem : public ISystem
 {
 public:
+    const char* Name() const override
+    {
+        return "DespawnSystem";
+    }
+
+    // Stage-2 adapter. Update below is the real entry point, and its
+    // signature is what declares which parts of the Map this touches.
+    void Run(Map& world, float deltaSeconds) override
+    {
+        Update(world.registry, world.events, deltaSeconds);
+    }
+
     void Update(Registry& registry, EventManager& events, float deltaSeconds)
     {
         registry.view<DespawnTimerComponent>().Each(

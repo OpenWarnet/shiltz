@@ -6,6 +6,7 @@
 #include "../core/Entity.h"
 #include "../core/EventManager.h"
 #include "../core/Registry.h"
+#include "../core/System.h"
 #include "../event/ItemEvents.h"
 #include "../world/Inventory.h"
 
@@ -39,9 +40,22 @@ namespace world_v2
 // entity a moment later, sees nothing left on it, and is told it is gone.
 // The entity itself is cleaned up at the barrier by the standard handler
 // for ItemPickedUpEvent.
-class PickupSystem
+class PickupSystem : public ISystem
 {
 public:
+    const char* Name() const override
+    {
+        return "PickupSystem";
+    }
+
+    // Stage-2 adapter. Update below is the real entry point, and its
+    // signature is what declares which parts of the Map this touches.
+    void Run(Map& world, float deltaSeconds) override
+    {
+        (void)deltaSeconds;
+        Update(world.registry, world.events);
+    }
+
     // Chebyshev tiles. One means the item may be underfoot or on any
     // adjacent tile; zero would require standing exactly on it.
     int pickupRange = 1;

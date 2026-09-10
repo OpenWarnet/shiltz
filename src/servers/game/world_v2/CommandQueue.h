@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/TypeId.h"
-#include "world/MapWorld.h"
+#include "core/Map.h"
 
 #include <cstddef>
 #include <functional>
@@ -13,7 +13,7 @@
 namespace world_v2
 {
 
-// The one legal way for another thread to reach a MapWorld.
+// The one legal way for another thread to reach a Map.
 //
 // Everything below this is single-threaded on purpose: Registry does no
 // locking, and its pools reallocate as they grow, so a socket thread that
@@ -30,7 +30,7 @@ namespace world_v2
 //
 // Why commands are values, not callbacks
 // --------------------------------------
-// A queue of std::function<void(MapWorld&)> would be less code and is the
+// A queue of std::function<void(Map&)> would be less code and is the
 // obvious shortcut. It is also a lambda captured on a connection thread
 // whose frame is gone by the time it runs, which makes a dangling capture
 // an easy accident and an ugly crash. Command structs are copied into the
@@ -66,7 +66,7 @@ public:
     // first, because two independent interpretations of the same inbound
     // command is a wiring mistake rather than a feature.
     template <typename T>
-    void On(std::function<void(MapWorld&, const T&)> handler)
+    void On(std::function<void(Map&, const T&)> handler)
     {
         HandlerSlot<T>& slot = GetHandlerSlot<T>();
         slot.handler = std::move(handler);
@@ -95,7 +95,7 @@ public:
     // another thread, or by a handler itself -- belongs to the next tick,
     // not this one, which is what keeps a tick's inbound set a fixed thing
     // rather than a moving target.
-    std::size_t Drain(MapWorld& world)
+    std::size_t Drain(Map& world)
     {
         std::vector<std::unique_ptr<ICommand>> batch;
         {
@@ -141,13 +141,13 @@ private:
     template <typename T>
     struct HandlerSlot final : IHandlerSlot
     {
-        std::function<void(MapWorld&, const T&)> handler;
+        std::function<void(Map&, const T&)> handler;
     };
 
     struct ICommand
     {
         virtual ~ICommand() = default;
-        virtual void Apply(MapWorld& world, CommandQueue& queue) const = 0;
+        virtual void Apply(Map& world, CommandQueue& queue) const = 0;
     };
 
     template <typename T>
@@ -158,7 +158,7 @@ private:
         {
         }
 
-        void Apply(MapWorld& world, CommandQueue& queue) const override
+        void Apply(Map& world, CommandQueue& queue) const override
         {
             queue.Invoke<T>(world, data);
         }
@@ -167,7 +167,7 @@ private:
     };
 
     template <typename T>
-    void Invoke(MapWorld& world, const T& command)
+    void Invoke(Map& world, const T& command)
     {
         const TypeId id = TypeIdOf<CommandFamily>::Value<T>();
         if (id >= m_handlers.size() || !m_handlers[id])

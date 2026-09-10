@@ -2,7 +2,7 @@
 #include "component/Grid.h"
 #include "core/Entity.h"
 #include "core/Test.h"
-#include "world/MapWorld.h"
+#include "core/Map.h"
 
 #include <atomic>
 #include <cstddef>
@@ -34,13 +34,13 @@ struct UnwiredCommand
 
 void PushDefersUntilDrain()
 {
-    MapWorld world(8, 8, true);
+    Map world(8, 8, true);
     CommandQueue commands;
 
     const Entity entity = world.Spawn(2, 2);
 
     commands.On<MoveCommand>(
-        [](MapWorld& target, const MoveCommand& command)
+        [](Map& target, const MoveCommand& command)
         {
             if (!target.registry.Exists(command.entity))
             {
@@ -66,11 +66,11 @@ void PushDefersUntilDrain()
 
 void CommandsApplyInPushOrder()
 {
-    MapWorld world(8, 8, true);
+    Map world(8, 8, true);
     CommandQueue commands;
 
     std::vector<int> order;
-    commands.On<SpawnCommand>([&order](MapWorld&, const SpawnCommand& command) { order.push_back(command.x); });
+    commands.On<SpawnCommand>([&order](Map&, const SpawnCommand& command) { order.push_back(command.x); });
 
     for (int i = 0; i < 5; ++i)
     {
@@ -85,11 +85,11 @@ void CommandsApplyInPushOrder()
 
 void StaleHandlesAreRejectedNotMisapplied()
 {
-    MapWorld world(8, 8, true);
+    Map world(8, 8, true);
     CommandQueue commands;
 
     commands.On<MoveCommand>(
-        [](MapWorld& target, const MoveCommand& command)
+        [](Map& target, const MoveCommand& command)
         {
             if (!target.registry.Exists(command.entity))
             {
@@ -118,7 +118,7 @@ void StaleHandlesAreRejectedNotMisapplied()
 
 void UnhandledCommandsAreCountedNotSilent()
 {
-    MapWorld world(4, 4, true);
+    Map world(4, 4, true);
     CommandQueue commands;
 
     commands.Push(UnwiredCommand{1});
@@ -133,13 +133,13 @@ void UnhandledCommandsAreCountedNotSilent()
 
 void HandlerRegisteredLastWins()
 {
-    MapWorld world(4, 4, true);
+    Map world(4, 4, true);
     CommandQueue commands;
 
     int a = 0;
     int b = 0;
-    commands.On<SpawnCommand>([&a](MapWorld&, const SpawnCommand&) { ++a; });
-    commands.On<SpawnCommand>([&b](MapWorld&, const SpawnCommand&) { ++b; });
+    commands.On<SpawnCommand>([&a](Map&, const SpawnCommand&) { ++a; });
+    commands.On<SpawnCommand>([&b](Map&, const SpawnCommand&) { ++b; });
 
     commands.Push(SpawnCommand{0, 0});
     commands.Drain(world);
@@ -153,12 +153,12 @@ void HandlerRegisteredLastWins()
 
 void CommandsPushedDuringDrainWaitForNextTick()
 {
-    MapWorld world(8, 8, true);
+    Map world(8, 8, true);
     CommandQueue commands;
 
     int spawns = 0;
     commands.On<SpawnCommand>(
-        [&](MapWorld&, const SpawnCommand& command)
+        [&](Map&, const SpawnCommand& command)
         {
             ++spawns;
             if (command.x == 0)
@@ -183,11 +183,11 @@ void CommandsPushedDuringDrainWaitForNextTick()
 
 void ClearDiscardsWithoutApplying()
 {
-    MapWorld world(4, 4, true);
+    Map world(4, 4, true);
     CommandQueue commands;
 
     int applied = 0;
-    commands.On<SpawnCommand>([&applied](MapWorld&, const SpawnCommand&) { ++applied; });
+    commands.On<SpawnCommand>([&applied](Map&, const SpawnCommand&) { ++applied; });
 
     commands.Push(SpawnCommand{0, 0});
     commands.Clear();
@@ -199,11 +199,11 @@ void ClearDiscardsWithoutApplying()
 
 void ConcurrentPushersLoseNothing()
 {
-    MapWorld world(4, 4, true);
+    Map world(4, 4, true);
     CommandQueue commands;
 
     std::atomic<int> applied{0};
-    commands.On<SpawnCommand>([&applied](MapWorld&, const SpawnCommand&) { applied.fetch_add(1); });
+    commands.On<SpawnCommand>([&applied](Map&, const SpawnCommand&) { applied.fetch_add(1); });
 
     // The reason this class exists: many connection threads pushing at once
     // while the simulation thread is otherwise occupied. Every command must
@@ -237,11 +237,11 @@ void ConcurrentPushersLoseNothing()
 
 void DrainInterleavedWithLivePushers()
 {
-    MapWorld world(4, 4, true);
+    Map world(4, 4, true);
     CommandQueue commands;
 
     std::atomic<int> applied{0};
-    commands.On<SpawnCommand>([&applied](MapWorld&, const SpawnCommand&) { applied.fetch_add(1); });
+    commands.On<SpawnCommand>([&applied](Map&, const SpawnCommand&) { applied.fetch_add(1); });
 
     constexpr int kThreads = 4;
     constexpr int kPerThread = 1000;
