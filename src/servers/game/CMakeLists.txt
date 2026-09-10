@@ -64,8 +64,6 @@ add_executable (
 	"world/Player.cpp"
 	"world/Map.h"
 	"world/Map.cpp"
-	"world/MapLoader.h"
-	"world/MapLoader.cpp"
 	"world/World.h"
 	"world/World.cpp"
 	"stats/Stats.h"

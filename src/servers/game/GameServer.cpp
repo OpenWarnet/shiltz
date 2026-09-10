@@ -50,7 +50,7 @@ void GameServer::ScheduleTick()
         const auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_lastTick);
         m_lastTick = now;
 
-        BroadcastCreatureMoves(m_world.Tick(delta));
+        m_world.Tick(delta);
 
         ScheduleTick();
     }));
@@ -82,49 +82,3 @@ void GameServer::OnClientDisconnected(SOCKET clientSocket)
     m_sessions.Remove(clientSocket);
 }
 
-void GameServer::BroadcastCreatureMoves(const std::vector<MapTickResult>& tickResults)
-{
-    for (const auto& mapResult : tickResults)
-    {
-        if (mapResult.creature_moves.empty())
-            continue;
-
-        // The map produced these moves a moment ago on the map-pool thread,
-        // so it's still loaded.
-        Map* map = m_world.GetMap(mapResult.server_map_id);
-        if (!map)
-            continue;
-
-        // Everyone currently on this map -- "can see the monster" is then a
-        // per-player zone check below, same as HandleMovement's own
-        // known_zones logic (handlers/Movement.cpp).
-        const auto players = map->Players();
-        if (players.empty())
-            continue;
-
-        for (const auto& move : mapResult.creature_moves)
-        {
-            CrtMove crtMove{
-                .creature_id = move.creature_id,
-                .x = static_cast<std::uint32_t>(move.from_x),
-                .y = static_cast<std::uint32_t>(move.from_y),
-                .target_x = static_cast<std::uint32_t>(move.to_x),
-                .target_y = static_cast<std::uint32_t>(move.to_y),
-                .speed_raw = 0,
-            };
-
-            PayloadWriter writer;
-            crtMove.Serialize(writer);
-            GamePacket packet(GameOpcode::GC_CRT_MOVE, writer.Data());
-            const auto payload = packet.Serialize(m_key);
-
-            const auto creatureZone = Map::ZoneOf(move.to_x, move.to_y);
-
-            for (const auto& player : players)
-            {
-                if (Contains(map->ZonesAround(player.x, player.y), creatureZone))
-                    SendTo(player.socket, payload);
-            }
-        }
-    }
-}
