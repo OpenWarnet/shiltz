@@ -1,5 +1,7 @@
 #pragma once
 
+#include "protocol/Protocol.h"
+
 #include <cstdint>
 #include <vector>
 
@@ -19,7 +21,7 @@ struct QuestSuccItem
 
 // GC_QUEST_SUCC (wire code 521064, s2c) -- server's fixed reply to
 // CG_QUEST_RESULT, granting quest rewards.
-struct QuestSucc
+struct QuestSucc : ServerProtocol
 {
     std::vector<QuestSuccItem> items;
     std::uint32_t quest_id = 0;
@@ -29,5 +31,5 @@ struct QuestSucc
     std::uint32_t ap = 0;
     std::uint32_t hp = 0;
 
-    void Serialize(PayloadWriter& writer) const;
+    void Serialize(PayloadWriter& writer) const override;
 };

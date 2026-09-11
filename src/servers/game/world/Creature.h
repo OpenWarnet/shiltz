@@ -15,7 +15,7 @@ enum class CreatureKind : std::uint8_t
     Monster,
 };
 
-// A monster's current AI behavior -- see Map::TickCreature. NPCs (kind ==
+// A monster's current AI behavior -- see Zone::Tick. NPCs (kind ==
 // CreatureKind::Npc) never leave CreatureAiState::Idle; they're static
 // dialogue/shop/warp entities, not mobs.
 enum class CreatureAiState : std::uint8_t
@@ -42,7 +42,7 @@ struct Creature
     std::int32_t y = 0;
     std::int32_t direction = 0;
 
-    // AI state (Monster kind only -- see Map::TickCreature). ai_timer
+    // AI state (Monster kind only -- see Zone::Tick). ai_timer
     // counts down by each World tick's delta; when it reaches zero the
     // creature re-rolls its next state. ai_decision_seq bumps once per
     // roll and feeds the decision's pseudo-random seed alongside

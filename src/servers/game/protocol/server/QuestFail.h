@@ -1,5 +1,7 @@
 #pragma once
 
+#include "protocol/Protocol.h"
+
 #include <cstdint>
 
 class PayloadWriter;
@@ -9,9 +11,9 @@ class PayloadWriter;
 // CONDITIONS aren't met. See enums/QuestFailReason.h -- the payload shape
 // here (single result_code) is unverified, following the convention every
 // other *_FAIL packet in this codebase uses.
-struct QuestFail
+struct QuestFail : ServerProtocol
 {
     std::int32_t result_code = 0;
 
-    void Serialize(PayloadWriter& writer) const;
+    void Serialize(PayloadWriter& writer) const override;
 };

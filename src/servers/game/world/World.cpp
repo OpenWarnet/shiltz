@@ -3,30 +3,23 @@
 #include "world/common/Paths.h"
 #include "parser/MapScr.h"
 
-#include <boost/asio/post.hpp>
-#include <filesystem>
+#include <exception>
 #include <iostream>
-#include <latch>
-#include <stdexcept>
+#include <utility>
 
 void World::Start()
 {
     std::cout << "World started\n";
 
-    for (const auto& record : MapScr::Load(Paths::Data.root / "map.scr"))
+    for (auto& record : MapScr::Load(Paths::Data.root / "map.scr"))
     {
-        if (record.server_map_id <= 0)
-            continue;
-
         try
         {
-            Map map(record, [this] { return AllocateCreatureInstanceId(); });
-            m_maps.emplace(map.id, std::move(map));
+            m_atlas.Add(std::move(record));
         }
-        catch (const std::runtime_error& e)
+        catch (const std::exception& e)
         {
-            std::cout << "Skipping map server_map_id " << record.server_map_id << ": " << e.what()
-                      << "\n";
+            std::cout << "Skipping map: " << e.what() << "\n";
         }
     }
 }
@@ -36,54 +29,26 @@ void World::Shutdown()
     std::cout << "World shut down\n";
 }
 
-Map* World::GetMap(std::int64_t serverMapId)
+Map* World::GetMap(std::int64_t id)
 {
-    auto it = m_maps.find(serverMapId);
-    return it != m_maps.end() ? &it->second : nullptr;
+    return m_atlas.Get(id);
 }
 
-const Map* World::GetMap(std::int64_t serverMapId) const
+const Map* World::GetMap(std::int64_t id) const
 {
-    auto it = m_maps.find(serverMapId);
-    return it != m_maps.end() ? &it->second : nullptr;
+    return m_atlas.Get(id);
 }
 
-std::uint32_t World::AllocateCreatureInstanceId()
+void World::Receive(Request request)
 {
-    return m_nextCreatureInstanceId++;
+    ingress.Push(std::move(request));
 }
 
-std::vector<MapTickResult> World::Tick(std::chrono::milliseconds delta)
+void World::Tick(std::chrono::milliseconds delta)
 {
-    if (m_maps.empty())
-        return {};
+    ingress.DrainTo(m_requests);
+    for (const auto& request : m_requests)
+        request.message->Handle(request.context);
 
-    std::vector<MapTickResult> results(m_maps.size());
-    std::latch remaining(static_cast<std::ptrdiff_t>(m_maps.size()));
-
-    std::size_t i = 0;
-    for (auto& [serverMapId, map] : m_maps)
-    {
-        MapTickResult& result = results[i++];
-        result.server_map_id = serverMapId;
-
-        // Only maps with someone actually on them are worth simulating this
-        // tick -- an empty map's creatures just have their ai_timer left
-        // as-is (see the comment on Map::Tick) rather than being wandered
-        // around for nobody to see. Counting the latch down inline (instead
-        // of posting a no-op task) still leaves exactly m_maps.size()
-        // count_downs total, matching the latch's initial count above.
-        if (!map.HasPlayers())
-        {
-            remaining.count_down();
-            continue;
-        }
-    }
-
-    // Block the caller (GameServer's world strand) until every map posted
-    // above has finished -- this is the only synchronization point between
-    // maps; nothing else couples their ticks together.
-    remaining.wait();
-
-    return results;
+    m_atlas.Tick(delta);
 }

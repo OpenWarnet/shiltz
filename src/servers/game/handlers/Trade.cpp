@@ -152,14 +152,13 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
     // path doesn't yet distinguish stackable items from equippable ones
     // with a refine_level.
     PayloadWriter writer;
-    TradeBuySucc response{
-        .slot_id = request.slot_id,
-        .item_id = itemId,
-        .new_count = updated.WireQuantityOrRefine(),
-        .option = 0,
-        .option2 = 0,
-        .money = session->player.money,
-    };
+    TradeBuySucc response;
+    response.slot_id = request.slot_id;
+    response.item_id = itemId;
+    response.new_count = updated.WireQuantityOrRefine();
+    response.option = 0;
+    response.option2 = 0;
+    response.money = session->player.money;
     response.Serialize(writer);
     auto data = writer.Data();
 
@@ -291,14 +290,13 @@ void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
     // the client is told to clear that slot, rather than sending a
     // qty_or_refine of 0 - 1 for a slot that no longer holds itemId at all.
     PayloadWriter writer;
-    TradeSellSucc response{
-        .slot_id = request.slot_id,
-        .item_id = remainingCount > 0 ? itemId : 0,
-        .new_count = remainingCount > 0 ? remainingCount - 1 : 0,
-        .option = 0,
-        .option2 = 0,
-        .money_after = session->player.money,
-    };
+    TradeSellSucc response;
+    response.slot_id = request.slot_id;
+    response.item_id = remainingCount > 0 ? itemId : 0;
+    response.new_count = remainingCount > 0 ? remainingCount - 1 : 0;
+    response.option = 0;
+    response.option2 = 0;
+    response.money_after = session->player.money;
     response.Serialize(writer);
     auto data = writer.Data();
 

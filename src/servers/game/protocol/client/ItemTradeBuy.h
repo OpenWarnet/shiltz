@@ -1,12 +1,14 @@
 #pragma once
 
+#include "protocol/ClientProtocol.h"
+
 #include <cstdint>
 
 class PayloadReader;
 
 // CG_ITEM_TRADE_BUY (wire code 411020, c2s) -- request to buy an item from
 // an NPC shop.
-struct ItemTradeBuy
+struct ItemTradeBuy : ClientProtocol
 {
     // seller.scr row this shop's listing comes from (SellerRecord::shop_id).
     std::uint32_t shop_id = 0;
@@ -20,5 +22,6 @@ struct ItemTradeBuy
     // The shop NPC's Creature::instance_id.
     std::uint32_t creature_instance_id = 0;
 
-    bool Deserialize(PayloadReader& reader);
+    bool Deserialize(PayloadReader& reader) override;
+    void Handle(const GameContext& ctx) const override;
 };

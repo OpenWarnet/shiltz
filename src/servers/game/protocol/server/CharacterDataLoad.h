@@ -1,5 +1,7 @@
 #pragma once
 
+#include "protocol/Protocol.h"
+
 #include <array>
 #include <cstdint>
 #include <string>
@@ -26,7 +28,7 @@ struct CharacterSkillEntry
     void Serialize(PayloadWriter& writer) const;
 };
 
-struct CharacterDataLoad
+struct CharacterDataLoad : ServerProtocol
 {
     std::uint32_t origin_server_id =
         0; // Unity cross-server origin index (Duran/Arus/... lore-themed server names); 0 on single-server setups
@@ -89,5 +91,5 @@ struct CharacterDataLoad
 
     std::uint32_t local_user_dir = 0;
 
-    void Serialize(PayloadWriter& writer) const;
+    void Serialize(PayloadWriter& writer) const override;
 };

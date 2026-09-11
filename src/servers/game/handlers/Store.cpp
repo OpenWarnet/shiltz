@@ -46,11 +46,11 @@ constexpr std::int64_t kNegelValue = 100'000'000;
 
 StoreMoneySucc BuildStoreMoneySucc(std::int64_t playerMoney, std::int64_t bankMoney)
 {
-    return StoreMoneySucc{
-        .player_money = playerMoney,
-        .bank_negel = static_cast<std::int32_t>(bankMoney / kNegelValue),
-        .bank_remaining_cegel = static_cast<std::int32_t>(bankMoney % kNegelValue),
-    };
+    StoreMoneySucc response;
+    response.player_money = playerMoney;
+    response.bank_negel = static_cast<std::int32_t>(bankMoney / kNegelValue);
+    response.bank_remaining_cegel = static_cast<std::int32_t>(bankMoney % kNegelValue);
+    return response;
 }
 
 std::optional<Item> GetBankSlot(const GameSession& session, std::uint32_t slotId)
@@ -117,7 +117,9 @@ void HandleStoreOpen(const GameContext& ctx, const StoreOpen& request)
     auto sendFail = [ctx](std::int32_t reason = 1)
     {
         PayloadWriter failWriter;
-        StoreOpenFail{.reason = reason}.Serialize(failWriter);
+        StoreOpenFail response;
+        response.reason = reason;
+        response.Serialize(failWriter);
 
         GamePacket failPacket(GameOpcode::GC_STORE_OPEN_FAIL, failWriter.Data());
         ctx.server.SendTo(ctx.clientSocket, failPacket.Serialize(ctx.key));
@@ -361,18 +363,17 @@ void HandleStoreItemOut(const GameContext& ctx, const StoreItemOut& request)
     ctx.sessions.Set(ctx.clientSocket, *session);
 
     PayloadWriter writer;
-    StoreItemOutSuccess response{
-        .inventory_slot_id = request.inventory_slot_id,
-        .inventory_item_id = updatedInventory.item_id,
-        .inventory_qty_or_refine = updatedInventory.WireQuantityOrRefine(),
-        .inventory_option_bits = static_cast<std::int64_t>(updatedInventory.option_bits),
-        .bank_slot_id = request.bank_slot_id,
-        .bank_item_id = bankSlotCleared ? 0 : remainingBank.item_id,
-        .bank_qty_or_refine = bankSlotCleared ? 0 : remainingBank.WireQuantityOrRefine(),
-        .bank_option_bits =
-            bankSlotCleared ? 0 : static_cast<std::int64_t>(remainingBank.option_bits),
-        .money = session->player.money,
-    };
+    StoreItemOutSuccess response;
+    response.inventory_slot_id = request.inventory_slot_id;
+    response.inventory_item_id = updatedInventory.item_id;
+    response.inventory_qty_or_refine = updatedInventory.WireQuantityOrRefine();
+    response.inventory_option_bits = static_cast<std::int64_t>(updatedInventory.option_bits);
+    response.bank_slot_id = request.bank_slot_id;
+    response.bank_item_id = bankSlotCleared ? 0 : remainingBank.item_id;
+    response.bank_qty_or_refine = bankSlotCleared ? 0 : remainingBank.WireQuantityOrRefine();
+    response.bank_option_bits =
+        bankSlotCleared ? 0 : static_cast<std::int64_t>(remainingBank.option_bits);
+    response.money = session->player.money;
     response.Serialize(writer);
 
     GamePacket packet(GameOpcode::GC_STORE_ITEM_OUT, writer.Data());
@@ -478,17 +479,17 @@ void HandleStoreItemIn(const GameContext& ctx, const StoreItemIn& request)
     ctx.sessions.Set(ctx.clientSocket, *session);
 
     PayloadWriter writer;
-    StoreItemInSuccess response{
-        .inventory_slot_id = request.inventory_slot_id,
-        .inventory_item_id = inventorySlotCleared ? 0 : remainingInventory.item_id,
-        .inventory_qty_or_refine = inventorySlotCleared ? 0 : remainingInventory.WireQuantityOrRefine(),
-        .inventory_option_bits =
-            inventorySlotCleared ? 0 : static_cast<std::int64_t>(remainingInventory.option_bits),
-        .bank_slot_id = request.bank_slot_id,
-        .bank_item_id = updatedBank.item_id,
-        .bank_qty_or_refine = updatedBank.WireQuantityOrRefine(),
-        .bank_option_bits = static_cast<std::int64_t>(updatedBank.option_bits),
-    };
+    StoreItemInSuccess response;
+    response.inventory_slot_id = request.inventory_slot_id;
+    response.inventory_item_id = inventorySlotCleared ? 0 : remainingInventory.item_id;
+    response.inventory_qty_or_refine =
+        inventorySlotCleared ? 0 : remainingInventory.WireQuantityOrRefine();
+    response.inventory_option_bits =
+        inventorySlotCleared ? 0 : static_cast<std::int64_t>(remainingInventory.option_bits);
+    response.bank_slot_id = request.bank_slot_id;
+    response.bank_item_id = updatedBank.item_id;
+    response.bank_qty_or_refine = updatedBank.WireQuantityOrRefine();
+    response.bank_option_bits = static_cast<std::int64_t>(updatedBank.option_bits);
     response.Serialize(writer);
 
     GamePacket packet(GameOpcode::GC_STORE_ITEM_IN, writer.Data());

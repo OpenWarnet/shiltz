@@ -1,5 +1,7 @@
 #pragma once
 
+#include "protocol/Protocol.h"
+
 #include <cstdint>
 #include <vector>
 
@@ -11,11 +13,11 @@ class PayloadWriter;
 // player_ids, creature_ids, item_ids. Only creature_ids is populated for
 // now -- player/item view tracking isn't implemented yet, so those two
 // arrays are always sent empty.
-struct ViewRemoveAll
+struct ViewRemoveAll : ServerProtocol
 {
     std::vector<std::uint32_t> player_ids;
     std::vector<std::uint32_t> creature_ids;
     std::vector<std::uint32_t> item_ids;
 
-    void Serialize(PayloadWriter& writer) const;
+    void Serialize(PayloadWriter& writer) const override;
 };

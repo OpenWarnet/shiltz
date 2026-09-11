@@ -4,7 +4,6 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <winsock2.h>
 
 // Dev-facing packet capture: writes every decrypted inbound/outbound packet
 // to a human-readable log file per server, plus a dedicated log of opcodes
@@ -30,11 +29,11 @@ namespace PacketCapture
     void Init(const std::string& serverName);
 
     // Logs a packet that was (or is about to be) routed to a handler.
-    void LogHandled(Direction dir, SOCKET clientSocket, uint32_t opcode,
-                     std::string_view opcodeName, std::span<const uint8_t> payload);
+    void LogHandled(Direction dir, uint32_t opcode, std::string_view opcodeName,
+                    std::span<const uint8_t> payload);
 
     // Logs an inbound packet with no registered handler. Written to both the
     // main packet log (tagged UNHANDLED) and the dedicated unhandled log.
-    void LogUnhandled(SOCKET clientSocket, uint32_t opcode, std::string_view opcodeName,
-                       std::span<const uint8_t> payload);
+    void LogUnhandled(uint32_t opcode, std::string_view opcodeName,
+                      std::span<const uint8_t> payload);
 }

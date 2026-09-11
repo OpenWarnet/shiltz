@@ -18,7 +18,6 @@ namespace
     struct QueuedEntry
     {
         PacketCapture::Direction dir;
-        SOCKET clientSocket;
         uint32_t opcode;
         std::string opcodeName;
         std::vector<uint8_t> payload;
@@ -42,18 +41,8 @@ namespace
         return out.str();
     }
 
-    std::string SocketLabel(SOCKET clientSocket)
-    {
-        if (clientSocket == INVALID_SOCKET)
-        {
-            return "n/a";
-        }
-        return std::to_string(clientSocket);
-    }
-
-    void WriteEntry(std::ofstream& file, PacketCapture::Direction dir, SOCKET clientSocket,
-                     uint32_t opcode, std::string_view opcodeName, std::span<const uint8_t> payload,
-                     bool unhandled)
+    void WriteEntry(std::ofstream& file, PacketCapture::Direction dir, uint32_t opcode,
+                    std::string_view opcodeName, std::span<const uint8_t> payload, bool unhandled)
     {
         if (!file.is_open())
         {
@@ -62,9 +51,9 @@ namespace
 
         const char* arrow = dir == PacketCapture::Direction::Inbound ? "C -> S" : "S -> C";
 
-        file << '[' << Timestamp() << "] " << arrow << " | socket=" << SocketLabel(clientSocket)
-             << " | " << opcodeName << " (0x" << std::hex << opcode << " / " << std::dec << opcode
-             << ") | " << payload.size() << " bytes" << (unhandled ? " | UNHANDLED" : "") << '\n';
+        file << '[' << Timestamp() << "] " << arrow << " | " << opcodeName << " (0x" << std::hex
+             << opcode << " / " << std::dec << opcode << ") | " << payload.size() << " bytes"
+             << (unhandled ? " | UNHANDLED" : "") << '\n';
 
         file << FormatHexDump(payload) << '\n';
         file.flush();
@@ -135,12 +124,12 @@ namespace
 
             for (const auto& entry : batch)
             {
-                WriteEntry(g_packetsLog, entry.dir, entry.clientSocket, entry.opcode, entry.opcodeName,
-                           entry.payload, entry.unhandled);
+                WriteEntry(g_packetsLog, entry.dir, entry.opcode, entry.opcodeName, entry.payload,
+                           entry.unhandled);
                 if (entry.unhandled)
                 {
-                    WriteEntry(g_unhandledLog, PacketCapture::Direction::Inbound, entry.clientSocket,
-                               entry.opcode, entry.opcodeName, entry.payload, true);
+                    WriteEntry(g_unhandledLog, PacketCapture::Direction::Inbound, entry.opcode,
+                               entry.opcodeName, entry.payload, true);
                 }
             }
             batch.clear();
@@ -160,17 +149,17 @@ namespace PacketCapture
         g_writer.Start();
     }
 
-    void LogHandled(Direction dir, SOCKET clientSocket, uint32_t opcode,
-                     std::string_view opcodeName, std::span<const uint8_t> payload)
+    void LogHandled(Direction dir, uint32_t opcode, std::string_view opcodeName,
+                    std::span<const uint8_t> payload)
     {
-        g_writer.Push(QueuedEntry{dir, clientSocket, opcode, std::string(opcodeName),
+        g_writer.Push(QueuedEntry{dir, opcode, std::string(opcodeName),
                                    std::vector<uint8_t>(payload.begin(), payload.end()), false});
     }
 
-    void LogUnhandled(SOCKET clientSocket, uint32_t opcode, std::string_view opcodeName,
-                       std::span<const uint8_t> payload)
+    void LogUnhandled(uint32_t opcode, std::string_view opcodeName,
+                      std::span<const uint8_t> payload)
     {
-        g_writer.Push(QueuedEntry{Direction::Inbound, clientSocket, opcode, std::string(opcodeName),
+        g_writer.Push(QueuedEntry{Direction::Inbound, opcode, std::string(opcodeName),
                                    std::vector<uint8_t>(payload.begin(), payload.end()), true});
     }
 }

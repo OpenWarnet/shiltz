@@ -126,7 +126,8 @@ void HandleCharSkillUpEx(const GameContext& ctx, const CharSkillUpEx& request)
     if (!validation.ok)
     {
         PayloadWriter writer;
-        CharSkillUpExFail response{.reason = static_cast<std::int32_t>(validation.failReason)};
+        CharSkillUpExFail response;
+        response.reason = static_cast<std::int32_t>(validation.failReason);
         response.Serialize(writer);
 
         GamePacket packet(GameOpcode::GC_CHAR_SKILL_UP_EX_FAIL, writer.Data());
@@ -154,10 +155,9 @@ void HandleCharSkillUpEx(const GameContext& ctx, const CharSkillUpEx& request)
         player.SaveSkillLevels(ctx.db);
 
         PayloadWriter writer;
-        CharSkillUpExSucc response{
-            .remaining_sp = remainingSp,
-            .remaining_ep = remainingEp,
-        };
+        CharSkillUpExSucc response;
+        response.remaining_sp = remainingSp;
+        response.remaining_ep = remainingEp;
         response.Serialize(writer);
 
         GamePacket packet(GameOpcode::GC_CHAR_SKILL_UP_EX_SUCC, writer.Data());

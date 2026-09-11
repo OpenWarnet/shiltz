@@ -1,12 +1,14 @@
 #pragma once
 
+#include "protocol/Protocol.h"
+
 #include <cstdint>
 
 class PayloadWriter;
 
 // GC_TRADE_BUY_SUCC (wire code 521052, s2c) -- acknowledges a successful
 // CG_ITEM_TRADE_BUY.
-struct TradeBuySucc
+struct TradeBuySucc : ServerProtocol
 {
     std::uint32_t slot_id = 0;
     std::uint32_t item_id = 0;
@@ -15,5 +17,5 @@ struct TradeBuySucc
     std::uint32_t option2 = 0;
     std::int64_t money = 0;
 
-    void Serialize(PayloadWriter& writer) const;
+    void Serialize(PayloadWriter& writer) const override;
 };

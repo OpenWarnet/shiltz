@@ -1,12 +1,14 @@
 #pragma once
 
+#include "protocol/ClientProtocol.h"
+
 #include <cstdint>
 
 class PayloadReader;
 
 // CG_STORE_ITEM_OUT (wire code 411058, c2s) -- withdraw an item from the
 // bank into the inventory.
-struct StoreItemOut
+struct StoreItemOut : ClientProtocol
 {
     // Wire-relative, same convention as ItemPickup::slot_id.
     std::uint32_t inventory_slot_id = 0;
@@ -18,5 +20,6 @@ struct StoreItemOut
     std::uint32_t amount = 0;
     std::uint32_t unknown = 0;
 
-    bool Deserialize(PayloadReader& reader);
+    bool Deserialize(PayloadReader& reader) override;
+    void Handle(const GameContext& ctx) const override;
 };

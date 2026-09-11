@@ -45,10 +45,9 @@ void HandleLevelUpCheck(const GameContext& ctx, const LevelUpCheck& request)
     if (!leveledUp)
     {
         PayloadWriter writer;
-        LevelUpFail response{
-            .level = level,
-            .exp = static_cast<std::int32_t>(exp),
-        };
+        LevelUpFail response;
+        response.level = level;
+        response.exp = static_cast<std::int32_t>(exp);
         response.Serialize(writer);
 
         GamePacket packet(GameOpcode::GC_LEVEL_UP_FAIL, writer.Data());
@@ -76,13 +75,13 @@ void HandleLevelUpCheck(const GameContext& ctx, const LevelUpCheck& request)
         player.SaveSkillPoints(ctx.db);
 
         PayloadWriter writer;
-        LevelUpSucc response{
-            .level = level,
-            .unallocated_stat_points = static_cast<std::int32_t>(player.stats.raw.unallocated_stat_points),
-            .unallocated_sp = static_cast<std::int32_t>(player.skills.unallocated_sp),
-            .unallocated_ep = static_cast<std::int32_t>(player.skills.unallocated_ep),
-            .current_exp = exp,
-        };
+        LevelUpSucc response;
+        response.level = level;
+        response.unallocated_stat_points =
+            static_cast<std::int32_t>(player.stats.raw.unallocated_stat_points);
+        response.unallocated_sp = static_cast<std::int32_t>(player.skills.unallocated_sp);
+        response.unallocated_ep = static_cast<std::int32_t>(player.skills.unallocated_ep);
+        response.current_exp = exp;
         response.Serialize(writer);
 
         GamePacket packet(GameOpcode::GC_LEVEL_UP_SUCC, writer.Data());

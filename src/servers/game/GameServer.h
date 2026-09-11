@@ -1,6 +1,5 @@
 #pragma once
 
-#include "GameDispatcher.h"
 #include "GameSessionStore.h"
 #include "common/Server.h"
 #include "storage/IDatabase.h"
@@ -37,7 +36,6 @@ private:
     // from ScheduleTick, still on the world strand.
     void BroadcastCreatureMoves(const std::vector<MapTickResult>& tickResults);
 
-    GameDispatcher m_dispatcher;
     std::span<const uint8_t> m_key;
     IDatabase& m_db;
     GameSessionStore m_sessions;

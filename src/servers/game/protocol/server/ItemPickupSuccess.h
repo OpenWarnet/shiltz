@@ -1,5 +1,7 @@
 #pragma once
 
+#include "protocol/Protocol.h"
+
 #include <cstdint>
 
 class PayloadWriter;
@@ -10,12 +12,12 @@ class PayloadWriter;
 // as InventoryItemSlot::qty_or_refine -- an item with a refine_level shows
 // it as-is; a stackable item shows quantity - 1; see InventoryItemList.h),
 // then 4 reserved/unused zero dwords.
-struct ItemPickupSuccess
+struct ItemPickupSuccess : ServerProtocol
 {
     std::uint32_t id = 0;
     std::uint32_t slot_id = 0;
     std::uint32_t item_id = 0;
     std::uint32_t qty_or_refine = 0;
 
-    void Serialize(PayloadWriter& writer) const;
+    void Serialize(PayloadWriter& writer) const override;
 };

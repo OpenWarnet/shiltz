@@ -1,5 +1,7 @@
 #pragma once
 
+#include "protocol/Protocol.h"
+
 #include <cstdint>
 
 class PayloadWriter;
@@ -10,7 +12,7 @@ class PayloadWriter;
 // slot, and the last updates the money display -- all clamping/quantity
 // math has to be done server-side before this is built (see
 // handlers/Store.cpp).
-struct StoreItemOutSuccess
+struct StoreItemOutSuccess : ServerProtocol
 {
     std::uint32_t inventory_slot_id = 0;
     // 0 means "clear this slot" -- same convention as TradeSellSucc/
@@ -28,5 +30,5 @@ struct StoreItemOutSuccess
     // Character's wallet money after the flat 100 withdrawal fee.
     std::int64_t money = 0;
 
-    void Serialize(PayloadWriter& writer) const;
+    void Serialize(PayloadWriter& writer) const override;
 };

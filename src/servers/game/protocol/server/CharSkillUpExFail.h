@@ -1,5 +1,7 @@
 #pragma once
 
+#include "protocol/Protocol.h"
+
 #include <cstdint>
 
 class PayloadWriter;
@@ -14,9 +16,9 @@ class PayloadWriter;
 //   -6  character level too low for this skill
 //   -7  not enough skill points
 //   -8  skill's job doesn't match character's job
-struct CharSkillUpExFail
+struct CharSkillUpExFail : ServerProtocol
 {
     std::int32_t reason = 0;
 
-    void Serialize(PayloadWriter& writer) const;
+    void Serialize(PayloadWriter& writer) const override;
 };

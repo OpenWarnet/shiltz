@@ -1,5 +1,7 @@
 #pragma once
 
+#include "protocol/Protocol.h"
+
 #include <cstdint>
 
 class PayloadWriter;
@@ -11,9 +13,9 @@ class PayloadWriter;
 // so a bad slot index, an ineligible item type, an unmet level
 // requirement, and insufficient money are all indistinguishable to the
 // client (see handlers/ItemConfirmNpc.h).
-struct ItemConfirmNpcFail
+struct ItemConfirmNpcFail : ServerProtocol
 {
     std::int32_t result_code = 3;
 
-    void Serialize(PayloadWriter& writer) const;
+    void Serialize(PayloadWriter& writer) const override;
 };

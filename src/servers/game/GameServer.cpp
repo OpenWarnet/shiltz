@@ -2,11 +2,14 @@
 
 #include "GamePacket.h"
 #include "common/PayloadWriter.h"
+#include "protocol/ClientProtocol.h"
 #include "protocol/server/CrtMove.h"
+#include "world/common/Request.h"
 
 #include <algorithm>
 #include <chrono>
 #include <iostream>
+#include <utility>
 
 using namespace std::chrono_literals;
 
@@ -65,8 +68,15 @@ void GameServer::OnFrame(SOCKET clientSocket, std::span<const uint8_t> frame)
     std::cout << "Received (" << frame.size() << " bytes, payload " << packet.GetPayload().size()
               << " bytes)\n";
 
-    m_dispatcher.Dispatch(
-        GameContext{*this, clientSocket, m_key, m_db, m_sessions, m_world, m_data, m_dbPool}, packet);
+    auto message = ClientProtocol::Create(packet);
+    if (!message)
+        return;
+
+    m_world.Receive(Request{
+        .context = GameContext{*this, clientSocket, m_key, m_db, m_sessions, m_world, m_data,
+                               m_dbPool},
+        .message = std::move(message),
+    });
 }
 
 void GameServer::OnClientDisconnected(SOCKET clientSocket)

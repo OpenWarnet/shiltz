@@ -1,6 +1,6 @@
 #pragma once
 
-#include "GameDispatcher.h"
+#include "GameContext.h"
 
 struct LevelUpCheck;
 

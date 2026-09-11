@@ -1,5 +1,7 @@
 #pragma once
 
+#include "protocol/Protocol.h"
+
 #include <cstdint>
 
 class PayloadWriter;
@@ -14,7 +16,7 @@ class PayloadWriter;
 // speed, stop_direction) -- a prior x/direction swap here left the client
 // with a garbage confirmed x, which silently broke any client-side
 // proximity check keyed off it (e.g. the bank-NPC distance gate).
-struct CharMoveUpdate
+struct CharMoveUpdate : ServerProtocol
 {
     std::uint32_t user_instance_id = 0;
     std::uint32_t direction = 0;
@@ -23,5 +25,5 @@ struct CharMoveUpdate
     std::uint32_t speed = 0;
     std::uint32_t stop_direction = 0;
 
-    void Serialize(PayloadWriter& writer) const;
+    void Serialize(PayloadWriter& writer) const override;
 };

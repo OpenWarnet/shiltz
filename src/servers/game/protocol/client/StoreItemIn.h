@@ -1,12 +1,14 @@
 #pragma once
 
+#include "protocol/ClientProtocol.h"
+
 #include <cstdint>
 
 class PayloadReader;
 
 // CG_STORE_ITEM_IN (wire code 411057, c2s) -- deposit an item from the
 // inventory into the bank.
-struct StoreItemIn
+struct StoreItemIn : ClientProtocol
 {
     // Wire-relative, same convention as ItemPickup::slot_id.
     std::uint32_t inventory_slot_id = 0;
@@ -17,5 +19,6 @@ struct StoreItemIn
     // quantity-1 dual-purpose convention used elsewhere).
     std::uint32_t amount = 0;
 
-    bool Deserialize(PayloadReader& reader);
+    bool Deserialize(PayloadReader& reader) override;
+    void Handle(const GameContext& ctx) const override;
 };

@@ -197,9 +197,8 @@ void HandleCgExit(const GameContext& ctx)
         ctx.sessions.Remove(ctx.clientSocket);
 
         PayloadWriter exitWriter;
-        CharExitSucc exitResponse{
-            .unused = 0,
-        };
+        CharExitSucc exitResponse;
+        exitResponse.unused = 0;
         exitResponse.Serialize(exitWriter);
         auto exitData = exitWriter.Data();
 

@@ -57,8 +57,8 @@ std::vector<uint8_t> LoginPacket::Serialize(std::span<const uint8_t> key) const 
     std::memcpy(body.data(), &m_code, sizeof(uint32_t));
     std::memcpy(body.data() + sizeof(uint32_t), m_payload.data(), m_payload.size());
 
-    PacketCapture::LogHandled(PacketCapture::Direction::Outbound, INVALID_SOCKET,
-                               static_cast<uint32_t>(m_code), LoginOpcode::ToString(m_code), m_payload);
+    PacketCapture::LogHandled(PacketCapture::Direction::Outbound, static_cast<uint32_t>(m_code),
+                              LoginOpcode::ToString(m_code), m_payload);
 
     if (!key.empty()) {
         for (size_t i = 0; i < body.size(); ++i) {

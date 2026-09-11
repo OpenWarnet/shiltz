@@ -1,5 +1,7 @@
 #pragma once
 
+#include "protocol/Protocol.h"
+
 #include <cstdint>
 
 class PayloadWriter;
@@ -8,9 +10,9 @@ class PayloadWriter;
 // response to CG_EXIT. The 4-byte body is never read by the client; real
 // traffic shows it varying with no discernible pattern, consistent with
 // unread noise rather than a real field, so it's sent as 0.
-struct CharExitSucc
+struct CharExitSucc : ServerProtocol
 {
     std::uint32_t unused = 0;
 
-    void Serialize(PayloadWriter& writer) const;
+    void Serialize(PayloadWriter& writer) const override;
 };

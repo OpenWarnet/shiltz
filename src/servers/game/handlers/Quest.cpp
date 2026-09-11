@@ -246,11 +246,10 @@ void SendServerChange(const GameContext& ctx, std::int64_t sessionId)
     // either changes. server_port is confirmed against real captures to
     // always be 1818, regardless of server_ip/channel_id (see
     // ServerChange.h).
-    ServerChange response{
-        .server_ip = "45.58.9.172",
-        .session_id = static_cast<std::uint32_t>(sessionId),
-        .server_port = 1818,
-    };
+    ServerChange response;
+    response.server_ip = "45.58.9.172";
+    response.session_id = static_cast<std::uint32_t>(sessionId);
+    response.server_port = 1818;
 
     PayloadWriter writer;
     response.Serialize(writer);
@@ -342,23 +341,23 @@ std::optional<QuestSucc> ApplyConsequences(const GameContext& ctx, GameSession& 
 
     txn.Commit();
 
-    return QuestSucc{
-        .items = std::move(items),
-        // set_flag is the only stable per-quest identifier this
-        // consequence set carries -- 0 (no quest_id) if this node doesn't
-        // set one.
-        .quest_id = static_cast<std::uint32_t>(q.set_flag),
-        .money = static_cast<std::uint64_t>(player.money),
-        .fame = player.fame,
-        .exp = static_cast<std::uint64_t>(player.exp),
-        .ap = player.ap,
-        .hp = player.hp,
-    };
+    QuestSucc response;
+    response.items = std::move(items);
+    // set_flag is the only stable per-quest identifier this consequence
+    // set carries -- 0 (no quest_id) if this node doesn't set one.
+    response.quest_id = static_cast<std::uint32_t>(q.set_flag);
+    response.money = static_cast<std::uint64_t>(player.money);
+    response.fame = player.fame;
+    response.exp = static_cast<std::uint64_t>(player.exp);
+    response.ap = player.ap;
+    response.hp = player.hp;
+    return response;
 }
 
 void SendQuestFail(const GameContext& ctx)
 {
-    QuestFail response{.result_code = static_cast<std::int32_t>(QuestFailReason::ConditionsNotMet)};
+    QuestFail response;
+    response.result_code = static_cast<std::int32_t>(QuestFailReason::ConditionsNotMet);
 
     PayloadWriter writer;
     response.Serialize(writer);

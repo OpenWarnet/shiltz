@@ -112,12 +112,11 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
     ctx.sessions.Set(ctx.clientSocket, *session);
 
     PayloadWriter succWriter;
-    ItemPickupSuccess succResponse{
-        .id = request.id,
-        .slot_id = request.slot_id,
-        .item_id = itemId,
-        .qty_or_refine = updated.WireQuantityOrRefine(),
-    };
+    ItemPickupSuccess succResponse;
+    succResponse.id = request.id;
+    succResponse.slot_id = request.slot_id;
+    succResponse.item_id = itemId;
+    succResponse.qty_or_refine = updated.WireQuantityOrRefine();
     succResponse.Serialize(succWriter);
     auto succData = succWriter.Data();
 
@@ -127,7 +126,8 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
     ctx.server.SendTo(ctx.clientSocket, succPayload);
 
     PayloadWriter removeWriter;
-    ItemMapRemove removeResponse{.id = request.id};
+    ItemMapRemove removeResponse;
+    removeResponse.id = request.id;
     removeResponse.Serialize(removeWriter);
     auto removeData = removeWriter.Data();
 
@@ -143,7 +143,9 @@ void HandleItemMove(const GameContext& ctx, const ItemMove& request)
     auto sendFail = [ctx, request]
     {
         PayloadWriter failWriter;
-        ItemMoveFail{.source_slot_id = request.source_slot_id}.Serialize(failWriter);
+        ItemMoveFail response;
+        response.source_slot_id = request.source_slot_id;
+        response.Serialize(failWriter);
         auto failData = failWriter.Data();
 
         GamePacket failPacket(GameOpcode::GC_ITEM_MOVE_FAIL, failData);
@@ -238,10 +240,9 @@ void HandleItemMove(const GameContext& ctx, const ItemMove& request)
     ctx.sessions.Set(ctx.clientSocket, *session);
 
     PayloadWriter writer;
-    ItemMoveSuccess response{
-        .source_slot_id = request.source_slot_id,
-        .dest_slot_id = request.dest_slot_id,
-    };
+    ItemMoveSuccess response;
+    response.source_slot_id = request.source_slot_id;
+    response.dest_slot_id = request.dest_slot_id;
     response.Serialize(writer);
     auto data = writer.Data();
 
@@ -363,15 +364,14 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
     });
 
     PayloadWriter succWriter;
-    ItemDropSuccess succResponse{
-        .id = groundId,
-        .x = dropX,
-        .y = dropY,
-        .item_id = itemId,
-        .source_slot_id = request.slot_id,
-        .new_item_id = remainingQuantity > 0 ? itemId : 0,
-        .new_item_count = remainingQuantity > 0 ? remainingQuantity - 1 : 0,
-    };
+    ItemDropSuccess succResponse;
+    succResponse.id = groundId;
+    succResponse.x = dropX;
+    succResponse.y = dropY;
+    succResponse.item_id = itemId;
+    succResponse.source_slot_id = request.slot_id;
+    succResponse.new_item_id = remainingQuantity > 0 ? itemId : 0;
+    succResponse.new_item_count = remainingQuantity > 0 ? remainingQuantity - 1 : 0;
     succResponse.Serialize(succWriter);
     auto succData = succWriter.Data();
 
@@ -412,7 +412,8 @@ void HandleItemDelete(const GameContext& ctx, const ItemDelete& request)
     ctx.sessions.Set(ctx.clientSocket, *session);
 
     PayloadWriter succWriter;
-    ItemDeleteSuccess succResponse{.slot_id = request.slot_id};
+    ItemDeleteSuccess succResponse;
+    succResponse.slot_id = request.slot_id;
     succResponse.Serialize(succWriter);
     auto succData = succWriter.Data();
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "protocol/Protocol.h"
+
 #include <cstdint>
 
 class PayloadWriter;
@@ -11,7 +13,7 @@ class PayloadWriter;
 // between the two itself; the server doesn't send a second update once it
 // arrives. speed_raw is always 0 for now -- no monster movement-speed stat
 // exists yet (see tables/MonsterTable.h).
-struct CrtMove
+struct CrtMove : ServerProtocol
 {
     std::uint32_t creature_id = 0;
     std::uint32_t x = 0;
@@ -20,5 +22,5 @@ struct CrtMove
     std::uint32_t target_y = 0;
     std::uint32_t speed_raw = 0;
 
-    void Serialize(PayloadWriter& writer) const;
+    void Serialize(PayloadWriter& writer) const override;
 };

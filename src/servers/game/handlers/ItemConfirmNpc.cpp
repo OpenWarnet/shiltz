@@ -271,9 +271,9 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
 
     if (results.empty())
     {
-        ItemConfirmNpcFail response{
-            .result_code = static_cast<std::int32_t>(ItemConfirmFailReason::NoSlotsAppraised),
-        };
+        ItemConfirmNpcFail response;
+        response.result_code =
+            static_cast<std::int32_t>(ItemConfirmFailReason::NoSlotsAppraised);
         response.Serialize(writer);
 
         GamePacket packet(GameOpcode::GC_ITEM_CONFIRM_NPC_FAIL, writer.Data());
@@ -290,9 +290,9 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
     auto newMoney = CharacterRepository::TrySpendMoney(ctx.db, characterId, runningFee);
     if (!newMoney)
     {
-        ItemConfirmNpcFail response{
-            .result_code = static_cast<std::int32_t>(ItemConfirmFailReason::NoSlotsAppraised),
-        };
+        ItemConfirmNpcFail response;
+        response.result_code =
+            static_cast<std::int32_t>(ItemConfirmFailReason::NoSlotsAppraised);
         response.Serialize(writer);
 
         GamePacket packet(GameOpcode::GC_ITEM_CONFIRM_NPC_FAIL, writer.Data());
@@ -309,10 +309,9 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
         session->player.SetItemSlot(appraised.slot_id, appraised.item);
     ctx.sessions.Set(ctx.clientSocket, *session);
 
-    ItemConfirmNpcSucc response{
-        .results = results,
-        .total_fee = static_cast<std::uint32_t>(runningFee),
-    };
+    ItemConfirmNpcSucc response;
+    response.results = results;
+    response.total_fee = static_cast<std::uint32_t>(runningFee);
     response.Serialize(writer);
 
     GamePacket packet(GameOpcode::GC_ITEM_CONFIRM_NPC_SUCC, writer.Data());

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "protocol/ClientProtocol.h"
+
 #include <cstdint>
 
 class PayloadReader;
@@ -14,9 +16,10 @@ class PayloadReader;
 // capture seen (not branched on), then a trailing u32 that's always 0
 // (unused padding, not a field) -- confirmed against 4 real captures
 // decoded via OpenShiltz's tooling.
-struct ItemDelete
+struct ItemDelete : ClientProtocol
 {
     std::uint32_t slot_id = 0;
 
-    bool Deserialize(PayloadReader& reader);
+    bool Deserialize(PayloadReader& reader) override;
+    void Handle(const GameContext& ctx) const override;
 };

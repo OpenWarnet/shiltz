@@ -1,5 +1,7 @@
 #pragma once
 
+#include "protocol/Protocol.h"
+
 #include <cstdint>
 
 class PayloadWriter;
@@ -12,9 +14,9 @@ class PayloadWriter;
 // plausibly gold or some other per-character counter unrelated to the
 // deleted item, but not confirmed, so it's zeroed here rather than
 // guessed at.
-struct ItemDeleteSuccess
+struct ItemDeleteSuccess : ServerProtocol
 {
     std::uint32_t slot_id = 0;
 
-    void Serialize(PayloadWriter& writer) const;
+    void Serialize(PayloadWriter& writer) const override;
 };

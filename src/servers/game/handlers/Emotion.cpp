@@ -15,11 +15,10 @@ void HandleEmotion(const GameContext& ctx, const Emotion& request)
         return;
 
     PayloadWriter writer;
-    EmotionSucc response{
-        .char_instance_id = session->player.instance_id,
-        .emotion_id = request.emotion_id,
-        .unknown = 0,
-    };
+    EmotionSucc response;
+    response.char_instance_id = session->player.instance_id;
+    response.emotion_id = request.emotion_id;
+    response.unknown = 0;
     response.Serialize(writer);
 
     GamePacket packet(GameOpcode::GC_EMOTION_SUCC, writer.Data());

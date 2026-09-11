@@ -107,14 +107,13 @@ void HandleMovement(const GameContext& ctx, const CharMove& request)
 
     // Speed is this connection's own derived stat, not an echo of
     // CharMove::speed -- see protocol/server/CharMoveUpdate.h.
-    CharMoveUpdate moveResponse{
-        .user_instance_id = session->player.instance_id,
-        .direction = request.move_direction,
-        .x = request.x,
-        .y = request.y,
-        .speed = static_cast<std::uint32_t>(request.speed),
-        .stop_direction = static_cast<std::uint32_t>(request.stop_direction),
-    };
+    CharMoveUpdate moveResponse;
+    moveResponse.user_instance_id = session->player.instance_id;
+    moveResponse.direction = request.move_direction;
+    moveResponse.x = request.x;
+    moveResponse.y = request.y;
+    moveResponse.speed = static_cast<std::uint32_t>(request.speed);
+    moveResponse.stop_direction = static_cast<std::uint32_t>(request.stop_direction);
 
     PayloadWriter moveWriter;
     moveResponse.Serialize(moveWriter);

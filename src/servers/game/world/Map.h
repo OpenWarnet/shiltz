@@ -1,8 +1,8 @@
 #pragma once
 
 #include "../parser/MapScr.h"
-#include "Creature.h"
 #include "GroundItem.h"
+#include "Zone.h"
 
 #include <chrono>
 #include <cstdint>
@@ -21,19 +21,14 @@ public:
     using NextInstanceId = std::function<std::uint32_t()>;
 
     static constexpr std::int32_t kGridSize = 512;
-    static constexpr std::int32_t kZoneSize = 16;
+    static constexpr std::int32_t kZoneSize = Zone::kSize;
     static constexpr std::int32_t kZoneGridSize = kGridSize / kZoneSize;
+    static constexpr std::size_t kZoneCount =
+        static_cast<std::size_t>(kZoneGridSize) * kZoneGridSize;
 
     std::int64_t id = 0;
 
-    struct CreatureMove
-    {
-        std::uint32_t creature_id = 0;
-        std::int32_t from_x = 0;
-        std::int32_t from_y = 0;
-        std::int32_t to_x = 0;
-        std::int32_t to_y = 0;
-    };
+    using CreatureMove = Zone::CreatureMove;
 
     struct MapPlayer
     {
@@ -69,20 +64,20 @@ public:
 
     static std::pair<std::int32_t, std::int32_t> ZoneOf(std::int32_t x, std::int32_t y);
 
-    std::vector<CreatureMove> Tick(std::chrono::milliseconds delta);
+    void Tick(std::chrono::milliseconds delta);
 
 private:
     std::string monster_file;
     std::string npc_file;
 
+    static std::vector<Zone> CreateZones();
     std::vector<CreatureMove> TickCreature(std::chrono::milliseconds delta);
 
     mutable std::mutex m_itemsMutex;
     std::vector<GroundItem> m_items;
 
-    mutable std::shared_mutex m_creatureGridMutex;
-    std::vector<std::vector<Creature>> m_creatureGrid =
-        std::vector<std::vector<Creature>>(static_cast<std::size_t>(kZoneGridSize) * kZoneGridSize);
+    mutable std::shared_mutex m_zonesMutex;
+    std::vector<Zone> m_zones;
 
     mutable std::mutex m_playersMutex;
     std::unordered_map<SOCKET, MapPlayer> m_players;

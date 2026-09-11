@@ -1,5 +1,7 @@
 #pragma once
 
+#include "protocol/Protocol.h"
+
 #include <cstdint>
 
 class PayloadWriter;
@@ -11,7 +13,7 @@ class PayloadWriter;
 // unallocated_ep is carried as-is -- ep hasn't been granted on level-up
 // since a 2024 update (see LevelScr.h), so this is always the character's
 // pre-existing ep total, never incremented here.
-struct LevelUpSucc
+struct LevelUpSucc : ServerProtocol
 {
     std::int32_t level = 0;
     std::int32_t unallocated_stat_points = 0;
@@ -19,5 +21,5 @@ struct LevelUpSucc
     std::int32_t unallocated_ep = 0;
     std::int64_t current_exp = 0;
 
-    void Serialize(PayloadWriter& writer) const;
+    void Serialize(PayloadWriter& writer) const override;
 };

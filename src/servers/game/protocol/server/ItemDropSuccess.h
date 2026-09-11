@@ -1,5 +1,7 @@
 #pragma once
 
+#include "protocol/Protocol.h"
+
 #include <cstdint>
 
 class PayloadWriter;
@@ -13,7 +15,7 @@ class PayloadWriter;
 // empty both are 0, which is how the client knows to clear it -- then 2
 // still-reserved/unused zero dwords (2 of the original 4 turned out to be
 // new_item_id/new_item_count).
-struct ItemDropSuccess
+struct ItemDropSuccess : ServerProtocol
 {
     std::uint32_t id = 0;
     std::uint32_t x = 0;
@@ -23,5 +25,5 @@ struct ItemDropSuccess
     std::uint32_t new_item_id = 0;
     std::uint32_t new_item_count = 0;
 
-    void Serialize(PayloadWriter& writer) const;
+    void Serialize(PayloadWriter& writer) const override;
 };

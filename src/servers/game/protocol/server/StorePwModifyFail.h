@@ -1,5 +1,7 @@
 #pragma once
 
+#include "protocol/Protocol.h"
+
 #include <cstdint>
 
 class PayloadWriter;
@@ -9,9 +11,9 @@ class PayloadWriter;
 // confirmed against a real client) -- this handler only ever sends 1,
 // for either "no bank_accounts row" or "old password mismatch" (see
 // handlers/Store.cpp, which doesn't distinguish the two on the wire).
-struct StorePwModifyFail
+struct StorePwModifyFail : ServerProtocol
 {
     std::int32_t reason = 1;
 
-    void Serialize(PayloadWriter& writer) const;
+    void Serialize(PayloadWriter& writer) const override;
 };

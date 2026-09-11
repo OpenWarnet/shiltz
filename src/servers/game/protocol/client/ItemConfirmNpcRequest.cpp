@@ -1,6 +1,7 @@
 #include "ItemConfirmNpcRequest.h"
 
 #include "common/PayloadReader.h"
+#include "handlers/ItemConfirmNpc.h"
 
 bool ItemConfirmNpcRequest::Deserialize(PayloadReader& reader)
 {
@@ -22,4 +23,9 @@ bool ItemConfirmNpcRequest::Deserialize(PayloadReader& reader)
 
     std::uint32_t padding = 0;
     return reader.Read(padding);
+}
+
+void ItemConfirmNpcRequest::Handle(const GameContext& ctx) const
+{
+    HandleItemConfirmNpcRequest(ctx, *this);
 }

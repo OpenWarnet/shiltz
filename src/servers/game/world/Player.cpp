@@ -197,35 +197,34 @@ std::optional<Item> Player::GetItemSlot(std::uint32_t wireSlotId) const
 CharacterDataLoad Player::ToCharacterDataLoad(std::uint32_t epsUserFlag,
                                                std::uint32_t serverTimestamp) const
 {
-    CharacterDataLoad result{
-        .self_entity_id = instance_id,
-        .eps_user_flag = epsUserFlag,
-        .map_id = map_id,
-        .loc_x = static_cast<std::uint32_t>(x),
-        .loc_y = static_cast<std::uint32_t>(y),
-        .level = static_cast<std::uint32_t>(level),
-        .job_id = job_id,
-        .gender = gender,
-        .current_exp = exp,
-        .cegel = money,
-        .fame = fame,
-        .stats_str = stats.raw.strength,
-        .stats_int = stats.raw.intelligence,
-        .stats_dex = stats.raw.dexterity,
-        .stats_con = stats.raw.constitution,
-        .stats_men = stats.raw.mentality,
-        .stats_sen = stats.raw.sense,
-        .current_hp = hp,
-        .current_ap = ap,
-        .unused_stat_points = stats.raw.unallocated_stat_points,
-        .skill_points = skills.unallocated_sp,
-        .enforced_points = skills.unallocated_ep,
-        .hair_type = hairstyle_id,
-        .quest_flags = quest_flags,
-        .char_name = name,
-        .server_timestamp = serverTimestamp,
-        .face_type = face_id,
-    };
+    CharacterDataLoad result;
+    result.self_entity_id = instance_id;
+    result.eps_user_flag = epsUserFlag;
+    result.map_id = map_id;
+    result.loc_x = static_cast<std::uint32_t>(x);
+    result.loc_y = static_cast<std::uint32_t>(y);
+    result.level = static_cast<std::uint32_t>(level);
+    result.job_id = job_id;
+    result.gender = gender;
+    result.current_exp = exp;
+    result.cegel = money;
+    result.fame = fame;
+    result.stats_str = stats.raw.strength;
+    result.stats_int = stats.raw.intelligence;
+    result.stats_dex = stats.raw.dexterity;
+    result.stats_con = stats.raw.constitution;
+    result.stats_men = stats.raw.mentality;
+    result.stats_sen = stats.raw.sense;
+    result.current_hp = hp;
+    result.current_ap = ap;
+    result.unused_stat_points = stats.raw.unallocated_stat_points;
+    result.skill_points = skills.unallocated_sp;
+    result.enforced_points = skills.unallocated_ep;
+    result.hair_type = hairstyle_id;
+    result.quest_flags = quest_flags;
+    result.char_name = name;
+    result.server_timestamp = serverTimestamp;
+    result.face_type = face_id;
 
     // skill_list is a fixed 64-slot wire array -- silently drop anything
     // past that (no character has come close to 64 learned skills yet, but
@@ -243,7 +242,8 @@ CharacterDataLoad Player::ToCharacterDataLoad(std::uint32_t epsUserFlag,
 
 InventoryItemList Player::ToInventoryItemList() const
 {
-    InventoryItemList result{.total_count = 0};
+    InventoryItemList result;
+    result.total_count = 0;
 
     for (const auto& equipped : equipment)
     {

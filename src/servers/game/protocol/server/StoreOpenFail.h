@@ -1,5 +1,7 @@
 #pragma once
 
+#include "protocol/Protocol.h"
+
 #include <cstdint>
 
 class PayloadWriter;
@@ -8,9 +10,9 @@ class PayloadWriter;
 // reason defaults to 1 -- the only value seen so far (no bank_accounts row
 // for this character, or the submitted password didn't match) -- but
 // handlers/Store.cpp's sendFail() can override it per call site.
-struct StoreOpenFail
+struct StoreOpenFail : ServerProtocol
 {
     std::int32_t reason = 1;
 
-    void Serialize(PayloadWriter& writer) const;
+    void Serialize(PayloadWriter& writer) const override;
 };

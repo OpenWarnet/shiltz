@@ -53,9 +53,9 @@ void HandleCharStatusUp(const GameContext& ctx, const CharStatusUp& request)
     if (!canAfford)
     {
         PayloadWriter writer;
-        CharStatusUpFail response{
-            .unallocated_point_remaining = static_cast<std::int32_t>(raw.unallocated_stat_points),
-        };
+        CharStatusUpFail response;
+        response.unallocated_point_remaining =
+            static_cast<std::int32_t>(raw.unallocated_stat_points);
         response.Serialize(writer);
 
         GamePacket packet(GameOpcode::GC_CHAR_STATUS_UP_FAIL, writer.Data());
@@ -80,11 +80,10 @@ void HandleCharStatusUp(const GameContext& ctx, const CharStatusUp& request)
         player.SaveRawStats(ctx.db);
 
         PayloadWriter writer;
-        CharStatusUpSucc response{
-            .stat_id = statId,
-            .current_stat_point = currentStatPoint,
-            .unallocated_point_remaining = remaining,
-        };
+        CharStatusUpSucc response;
+        response.stat_id = statId;
+        response.current_stat_point = currentStatPoint;
+        response.unallocated_point_remaining = remaining;
         response.Serialize(writer);
 
         GamePacket packet(GameOpcode::GC_CHAR_STATUS_UP_SUCC, writer.Data());

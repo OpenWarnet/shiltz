@@ -1,6 +1,7 @@
 #include "CharSkillUpEx.h"
 
 #include "common/PayloadReader.h"
+#include "handlers/CharSkillUp.h"
 
 bool SkillLevelUpEntry::Deserialize(PayloadReader& reader)
 {
@@ -27,4 +28,9 @@ bool CharSkillUpEx::Deserialize(PayloadReader& reader)
 
     std::int32_t terminator = 0;
     return reader.Read(terminator);
+}
+
+void CharSkillUpEx::Handle(const GameContext& ctx) const
+{
+    HandleCharSkillUpEx(ctx, *this);
 }

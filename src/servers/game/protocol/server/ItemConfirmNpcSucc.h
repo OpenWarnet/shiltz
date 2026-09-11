@@ -1,5 +1,7 @@
 #pragma once
 
+#include "protocol/Protocol.h"
+
 #include <cstdint>
 #include <vector>
 
@@ -13,10 +15,10 @@ struct ItemConfirmNpcResult
     void Serialize(PayloadWriter& writer) const;
 };
 
-struct ItemConfirmNpcSucc
+struct ItemConfirmNpcSucc : ServerProtocol
 {
     std::vector<ItemConfirmNpcResult> results;
     std::uint32_t total_fee = 0;
 
-    void Serialize(PayloadWriter& writer) const;
+    void Serialize(PayloadWriter& writer) const override;
 };

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "protocol/Protocol.h"
+
 #include <array>
 #include <cstdint>
 
@@ -14,7 +16,7 @@ struct InventoryItemSlot
     void Serialize(PayloadWriter& writer) const;
 };
 
-struct InventoryItemList
+struct InventoryItemList : ServerProtocol
 {
     static constexpr std::size_t kTotalSlots = 256;
     static constexpr std::size_t kBodySize = 4104;
@@ -27,5 +29,5 @@ struct InventoryItemList
     std::uint32_t total_count = 0;
     std::array<InventoryItemSlot, kTotalSlots> slots{};
 
-    void Serialize(PayloadWriter& writer) const;
+    void Serialize(PayloadWriter& writer) const override;
 };

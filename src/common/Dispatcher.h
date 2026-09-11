@@ -34,13 +34,14 @@ public:
 
         if (it == m_handlers.end())
         {
-            PacketCapture::LogUnhandled(ctx.clientSocket, static_cast<uint32_t>(packet.GetCode()), name,
-                                         packet.GetPayload());
+            PacketCapture::LogUnhandled(static_cast<uint32_t>(packet.GetCode()), name,
+                                        packet.GetPayload());
             return;
         }
 
-        PacketCapture::LogHandled(PacketCapture::Direction::Inbound, ctx.clientSocket,
-                                   static_cast<uint32_t>(packet.GetCode()), name, packet.GetPayload());
+        PacketCapture::LogHandled(PacketCapture::Direction::Inbound,
+                                  static_cast<uint32_t>(packet.GetCode()), name,
+                                  packet.GetPayload());
         it->second(ctx, packet);
     }
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "protocol/Protocol.h"
+
 #include <array>
 #include <cstdint>
 #include <vector>
@@ -25,9 +27,9 @@ struct CrtLoadRecord
 // GC_CRT_LOAD (wire code 0x0007cc35 / 511029, s2c) -- nearby entity/creature
 // spawn list, sent as part of the post-CG_ENTER load burst. Wire shape is
 // `count` (u32) followed by `count` 112-byte CrtLoadRecord entries.
-struct CrtLoad
+struct CrtLoad : ServerProtocol
 {
     std::vector<CrtLoadRecord> records;
 
-    void Serialize(PayloadWriter& writer) const;
+    void Serialize(PayloadWriter& writer) const override;
 };

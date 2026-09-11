@@ -1,5 +1,7 @@
 #pragma once
 
+#include "protocol/Protocol.h"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -17,7 +19,7 @@ struct BankItemSlot
 
 // GC_STORE_OPEN_SUCC (wire code 521113, s2c) -- acknowledges a successful
 // CG_STORE_OPEN with the bank's full contents.
-struct StoreOpenSucc
+struct StoreOpenSucc : ServerProtocol
 {
     static constexpr std::size_t kSlotCount = 80;
 
@@ -30,5 +32,5 @@ struct StoreOpenSucc
     std::uint32_t unknown_a = 0;
     std::uint32_t unknown_b = 0;
 
-    void Serialize(PayloadWriter& writer) const;
+    void Serialize(PayloadWriter& writer) const override;
 };
