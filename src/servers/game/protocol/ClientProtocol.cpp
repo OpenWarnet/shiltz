@@ -30,6 +30,8 @@
 #include "protocol/client/StorePwModify.h"
 
 #include <concepts>
+#include <format>
+#include <iostream>
 #include <memory>
 
 namespace
@@ -45,7 +47,11 @@ namespace
         PayloadReader reader(packet.GetPayload());
         auto message = std::make_unique<T>();
         if (!message->Deserialize(reader))
+        {
+            std::cout << std::format("!! {} : dropped, failed to parse payload\n",
+                                     GameOpcode::Describe(packet.GetCode()));
             return nullptr;
+        }
 
         return message;
     }
@@ -106,6 +112,8 @@ std::unique_ptr<ClientProtocol> ClientProtocol::Create(const GamePacket& packet)
     default:
         PacketCapture::LogUnhandled(static_cast<std::uint32_t>(packet.GetCode()),
                                     GameOpcode::ToString(packet.GetCode()), packet.GetPayload());
+        std::cout << std::format("!! {} : dropped, no handler\n",
+                                 GameOpcode::Describe(packet.GetCode()));
         return nullptr;
     }
 }

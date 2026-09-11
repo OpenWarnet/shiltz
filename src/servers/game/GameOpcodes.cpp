@@ -1,7 +1,14 @@
 #include "GameOpcodes.h"
 
+#include <format>
+
 namespace GameOpcode
 {
+    namespace
+    {
+        constexpr std::string_view kUnknown = "UNKNOWN";
+    }
+
     std::string_view ToString(Code code)
     {
         // Derives the string from the enumerator token via # so it can never
@@ -80,9 +87,19 @@ namespace GameOpcode
             OPCODE_NAME(GC_ITEM_DELETE_SUCC)
             OPCODE_NAME(GC_SERVER_CHANGE)
         default:
-            return "UNKNOWN";
+            return kUnknown;
         }
 
 #undef OPCODE_NAME
+    }
+
+    std::string Describe(Code code)
+    {
+        const auto name = ToString(code);
+        if (name != kUnknown)
+            return std::string(name);
+
+        const auto value = static_cast<uint32_t>(code);
+        return std::format("0x{:x} / {}", value, value);
     }
 }

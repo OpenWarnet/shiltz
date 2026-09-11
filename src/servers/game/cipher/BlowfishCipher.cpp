@@ -159,7 +159,7 @@ bool BlowfishCipher::Decrypt(std::span<const uint8_t> ciphertext,
 
     if (CalculateCrc32(body) != crc)
     {
-        std::cout << "CRC is not right.." << "\n";
+        // TODO: Handle invalid CRC, maybe.
     }
 
     outPlaintext = std::move(body);

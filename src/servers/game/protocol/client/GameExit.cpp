@@ -5,7 +5,7 @@
 
 bool GameExit::Deserialize(PayloadReader& reader)
 {
-    return reader.Remaining() == 0;
+    return reader.Read(opcode_echo);
 }
 
 void GameExit::Handle(const GameContext& ctx) const

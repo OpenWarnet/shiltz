@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <string_view>
 
 namespace GameOpcode
@@ -90,4 +91,9 @@ namespace GameOpcode
     // Resolves an opcode to its constant's name, or "UNKNOWN" if not one of
     // the constants above. Used to make packet capture logs readable.
     std::string_view ToString(Code code);
+
+    // ToString's name, or "0x647a3 / 411555" (hex / decimal) when the opcode
+    // is unknown -- for console lines, where "UNKNOWN" alone isn't
+    // actionable.
+    std::string Describe(Code code);
 }

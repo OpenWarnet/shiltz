@@ -4,6 +4,7 @@
 #include "common/PacketCapture.h"
 
 #include <cstring>
+#include <format>
 #include <iomanip>
 #include <iostream>
 #include <winsock2.h>
@@ -31,10 +32,8 @@ bool GamePacket::Deserialize(std::span<const uint8_t> raw, std::span<const uint8
     }
 
     std::memcpy(&m_code, raw.data() + sizeof(uint32_t), sizeof(uint32_t));
-    std::cout << "Deserialized GamePacket: Code = " << static_cast<uint32_t>(m_code) << "\n";
 
     uint32_t payloadLength = totalLength - sizeof(uint32_t) - sizeof(uint32_t);
-    std::cout << "Payload length: " << payloadLength << "\n";
     std::vector<uint8_t> m_encrypted_payload(payloadLength);
     std::memcpy(m_encrypted_payload.data(), raw.data() + sizeof(uint32_t) + sizeof(uint32_t),
                 payloadLength);
@@ -53,6 +52,8 @@ std::vector<uint8_t> GamePacket::Serialize(std::span<const uint8_t> key) const
 
     PacketCapture::LogHandled(PacketCapture::Direction::Outbound, static_cast<uint32_t>(m_code),
                               GameOpcode::ToString(m_code), m_payload);
+    std::cout << std::format("<- {} : {} bytes, payload: {} bytes\n", GameOpcode::Describe(m_code),
+                             totalLength, m_payload.size());
 
     // No Encryption from Server -> Client
 
