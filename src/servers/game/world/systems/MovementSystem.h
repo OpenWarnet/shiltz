@@ -4,8 +4,9 @@ class GameData;
 class Map;
 class Outbox;
 struct CharacterMoveEvent;
+struct CharacterZoneChangeEvent;
 
-// Reacts to CharacterMoveEvent: updates the mover's view and acknowledges walks.
+// Updates a character's view when its zone changes and acknowledges walks.
 class MovementSystem
 {
 public:
@@ -15,13 +16,10 @@ public:
     MovementSystem(const MovementSystem&) = delete;
     MovementSystem& operator=(const MovementSystem&) = delete;
 
-    // Sends creatures in zones the client hasn't been sent yet (all of them right after joining).
-    void SendCrtLoad(const CharacterMoveEvent& event);
+    // Sends creatures in zones that entered the view (all of them on placement), then drops those that left it.
+    void SendViewChange(const CharacterZoneChangeEvent& event) const;
 
-    // Tells the client to drop creatures in zones that left its view.
-    void SendViewRemoveAll(const CharacterMoveEvent& event) const;
-
-    // GC_CHAR_MOVE back to a character that walked; placements aren't acknowledged.
+    // GC_CHAR_MOVE back to the character that walked.
     void SendCharMove(const CharacterMoveEvent& event) const;
 
 private:

@@ -34,6 +34,16 @@ public:
 
     static Coordinates Of(std::int32_t x, std::int32_t y) noexcept;
 
+    // True if moving from (fromX, fromY) to (toX, toY) lands in a different zone.
+    static bool Crossed(std::int32_t fromX, std::int32_t fromY, std::int32_t toX,
+                        std::int32_t toY) noexcept;
+
+    // The 3x3 block of zones centered on `zone`, clipped to the map's zone grid.
+    static std::vector<Coordinates> Around(Coordinates zone);
+
+    // True if the zones touch, diagonally included, or are the same zone.
+    static bool IsNeighboring(Coordinates a, Coordinates b) noexcept;
+
 private:
     friend class Map;
 

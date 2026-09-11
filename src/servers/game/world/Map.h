@@ -42,9 +42,6 @@ public:
 
     std::vector<Creature> CreaturesInZone(std::int32_t zoneX, std::int32_t zoneY) const;
 
-    std::vector<std::pair<std::int32_t, std::int32_t>> ZonesAround(std::int32_t x,
-                                                                   std::int32_t y) const;
-
     // Adds player to the pool and publishes CharacterJoinEvent; false if already here. World strand only.
     [[nodiscard]] bool Spawn(Player player);
 

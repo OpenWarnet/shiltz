@@ -197,26 +197,6 @@ std::vector<Map::CreatureMove> Map::TickCreature(std::chrono::milliseconds delta
     return moves;
 }
 
-std::vector<std::pair<std::int32_t, std::int32_t>> Map::ZonesAround(std::int32_t x,
-                                                                    std::int32_t y) const
-{
-    std::vector<std::pair<std::int32_t, std::int32_t>> zones;
-    const auto [zoneX, zoneY] = ZoneOf(x, y);
-
-    for (std::int32_t dy = -1; dy <= 1; ++dy)
-    {
-        for (std::int32_t dx = -1; dx <= 1; ++dx)
-        {
-            const std::int32_t neighborX = zoneX + dx;
-            const std::int32_t neighborY = zoneY + dy;
-            if (InZoneGrid(neighborX, neighborY))
-                zones.emplace_back(neighborX, neighborY);
-        }
-    }
-
-    return zones;
-}
-
 std::vector<Zone> Map::CreateZones()
 {
     std::vector<Zone> zones;

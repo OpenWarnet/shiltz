@@ -9,48 +9,35 @@
 #include "world/Map.h"
 #include "world/MapEvents.h"
 #include "world/Player.h"
+#include "world/Zone.h"
 
-#include <algorithm>
 #include <cstdint>
-
-namespace
-{
-bool Contains(const std::vector<std::pair<std::int32_t, std::int32_t>>& zones,
-              const std::pair<std::int32_t, std::int32_t>& zone)
-{
-    return std::find(zones.begin(), zones.end(), zone) != zones.end();
-}
-} // namespace
 
 MovementSystem::MovementSystem(Map& map, const Outbox& outbox, const GameData& data)
     : m_map(map), m_outbox(outbox), m_data(data)
 {
-    map.Events().On<CharacterMoveEvent>().Register<&MovementSystem::SendCrtLoad>(*this);
-    map.Events().On<CharacterMoveEvent>().Register<&MovementSystem::SendViewRemoveAll>(*this);
+    map.Events().On<CharacterZoneChangeEvent>().Register<&MovementSystem::SendViewChange>(*this);
     map.Events().On<CharacterMoveEvent>().Register<&MovementSystem::SendCharMove>(*this);
 }
 
-void MovementSystem::SendCrtLoad(const CharacterMoveEvent& event)
+void MovementSystem::SendViewChange(const CharacterZoneChangeEvent& event) const
 {
-    Player* player = m_map.GetPlayer(event.instance_id);
+    const Player* player = m_map.GetPlayer(event.instance_id);
     if (!player)
         return;
 
-    auto& knownZones = player->character.known_zones;
-    const bool firstView = knownZones.empty();
-    const auto zones = m_map.ZonesAround(event.to_x, event.to_y);
-
-    CrtLoad response;
-    for (const auto& zone : zones)
+    CrtLoad load;
+    for (const auto& zone : Zone::Around(event.to))
     {
-        if (Contains(knownZones, zone))
+        // Already in view before the change.
+        if (event.from && Zone::IsNeighboring(*event.from, zone))
             continue;
 
         for (const auto& creature : m_map.CreaturesInZone(zone.first, zone.second))
         {
             const MonsterRecord* monsterRecord = m_data.monsters.Find(creature.monster_id);
 
-            response.records.push_back(CrtLoadRecord{
+            load.records.push_back(CrtLoadRecord{
                 .id = creature.instance_id,
                 .x = static_cast<std::uint32_t>(creature.x),
                 .y = static_cast<std::uint32_t>(creature.y),
@@ -61,50 +48,41 @@ void MovementSystem::SendCrtLoad(const CharacterMoveEvent& event)
         }
     }
 
-    knownZones = zones;
+    // Always answer a placement (as the old enter flow did); zone changes only when something appeared.
+    if (!event.from || !load.records.empty())
+        m_outbox.Send(player->connection, load);
 
-    // Always answer the first view (as the old enter flow did); moves only when something appeared.
-    if (firstView || !response.records.empty())
-        m_outbox.Send(player->connection, response);
-}
-
-void MovementSystem::SendViewRemoveAll(const CharacterMoveEvent& event) const
-{
-    const Player* player = m_map.GetPlayer(event.instance_id);
-    if (!player)
+    // A placement has no previous view to clear.
+    if (!event.from)
         return;
 
-    const auto newZones = m_map.ZonesAround(event.to_x, event.to_y);
-
-    ViewRemoveAll response;
-    for (const auto& zone : m_map.ZonesAround(event.from_x, event.from_y))
+    ViewRemoveAll remove;
+    for (const auto& zone : Zone::Around(*event.from))
     {
-        if (Contains(newZones, zone))
+        // Still in view after the change.
+        if (Zone::IsNeighboring(event.to, zone))
             continue;
 
         for (const auto& creature : m_map.CreaturesInZone(zone.first, zone.second))
-            response.creature_ids.push_back(creature.instance_id);
+            remove.creature_ids.push_back(creature.instance_id);
     }
 
-    if (!response.creature_ids.empty())
-        m_outbox.Send(player->connection, response);
+    if (!remove.creature_ids.empty())
+        m_outbox.Send(player->connection, remove);
 }
 
 void MovementSystem::SendCharMove(const CharacterMoveEvent& event) const
 {
-    if (!event.walk)
-        return;
-
     const Player* player = m_map.GetPlayer(event.instance_id);
     if (!player)
         return;
 
     CharMoveUpdate response;
     response.user_instance_id = event.instance_id;
-    response.direction = event.walk->direction;
+    response.direction = event.direction;
     response.x = static_cast<std::uint32_t>(event.to_x);
     response.y = static_cast<std::uint32_t>(event.to_y);
-    response.speed = event.walk->speed;
-    response.stop_direction = event.walk->stop_direction;
+    response.speed = event.speed;
+    response.stop_direction = event.stop_direction;
     m_outbox.Send(player->connection, response);
 }

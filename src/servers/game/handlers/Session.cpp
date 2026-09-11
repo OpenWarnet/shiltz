@@ -13,6 +13,7 @@
 #include "world/MapEvents.h"
 #include "world/Player.h"
 #include "world/World.h"
+#include "world/Zone.h"
 #include "world/common/EntityIdGenerator.h"
 
 #include <optional>
@@ -88,7 +89,6 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
             character.instance_id = EntityIdGenerator::Next();
             RecalculateDerivedStats(character, ctx.data.items, ctx.data.setOptions, ctx.data.statusRates);
 
-            // Joined with empty known_zones, so MovementSystem's first CrtLoad covers the whole view.
             if (!ctx.world.Join(Player{
                     .connection = ctx.connection,
                     .session_id = request.session_id,
@@ -99,13 +99,10 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
 
             Map* map = ctx.world.GetMap(character.map_id);
 
-            // Arriving is a placement onto the DB position; MovementSystem sends the creatures in view.
-            map->Events().Publish(CharacterMoveEvent{
+            // Arriving is a placement with no previous view, so MovementSystem sends every creature in view.
+            map->Events().Publish(CharacterZoneChangeEvent{
                 .instance_id = character.instance_id,
-                .from_x = character.x,
-                .from_y = character.y,
-                .to_x = character.x,
-                .to_y = character.y,
+                .to = Zone::Of(character.x, character.y),
             });
         },
         [sendFail](const std::string&) { sendFail(); });

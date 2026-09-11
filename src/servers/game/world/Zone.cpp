@@ -1,7 +1,10 @@
 #include "Zone.h"
 
+#include "Map.h"
+
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <iterator>
 
 namespace
@@ -73,6 +76,37 @@ std::int32_t Zone::Y() const noexcept
 Zone::Coordinates Zone::Of(std::int32_t x, std::int32_t y) noexcept
 {
     return {x / kSize, y / kSize};
+}
+
+bool Zone::Crossed(std::int32_t fromX, std::int32_t fromY, std::int32_t toX,
+                   std::int32_t toY) noexcept
+{
+    return Of(fromX, fromY) != Of(toX, toY);
+}
+
+std::vector<Zone::Coordinates> Zone::Around(Coordinates zone)
+{
+    std::vector<Coordinates> zones;
+    const auto [zoneX, zoneY] = zone;
+
+    for (std::int32_t dy = -1; dy <= 1; ++dy)
+    {
+        for (std::int32_t dx = -1; dx <= 1; ++dx)
+        {
+            const std::int32_t neighborX = zoneX + dx;
+            const std::int32_t neighborY = zoneY + dy;
+            if (neighborX >= 0 && neighborX < Map::kZoneGridSize && neighborY >= 0 &&
+                neighborY < Map::kZoneGridSize)
+                zones.emplace_back(neighborX, neighborY);
+        }
+    }
+
+    return zones;
+}
+
+bool Zone::IsNeighboring(Coordinates a, Coordinates b) noexcept
+{
+    return std::abs(a.first - b.first) <= 1 && std::abs(a.second - b.second) <= 1;
 }
 
 void Zone::AddCreature(Creature creature)

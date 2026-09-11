@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Zone.h"
+
 #include <cstdint>
 #include <optional>
 
@@ -9,15 +11,7 @@ struct CharacterJoinEvent
     std::uint32_t instance_id = 0;
 };
 
-// How a character walked, as sent in CG_MOVE.
-struct CharacterWalk
-{
-    std::uint32_t direction = 0;
-    std::uint32_t speed = 0;
-    std::uint32_t stop_direction = 0;
-};
-
-// A character moved on its map; `from` is kept because character.x/y already holds `to` at dispatch.
+// A character walked on its map, as sent in CG_MOVE; `from` is kept because character.x/y already holds `to` at dispatch.
 struct CharacterMoveEvent
 {
     std::uint32_t instance_id = 0;
@@ -25,7 +19,15 @@ struct CharacterMoveEvent
     std::int32_t from_y = 0;
     std::int32_t to_x = 0;
     std::int32_t to_y = 0;
+    std::uint32_t direction = 0;
+    std::uint32_t speed = 0;
+    std::uint32_t stop_direction = 0;
+};
 
-    // Empty when the character was placed (enter, warp) rather than walked.
-    std::optional<CharacterWalk> walk;
+// A character's 3x3 view moved to another zone; `from` is empty when it was just placed on the map.
+struct CharacterZoneChangeEvent
+{
+    std::uint32_t instance_id = 0;
+    std::optional<Zone::Coordinates> from;
+    Zone::Coordinates to;
 };

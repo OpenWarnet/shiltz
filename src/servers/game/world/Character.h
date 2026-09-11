@@ -105,8 +105,6 @@ struct Character
     std::int32_t y = 0;
     std::int32_t direction = 0;
 
-    std::vector<std::pair<std::int32_t, std::int32_t>> known_zones;
-
     std::int64_t money = 0;
 
     std::uint32_t hp = 1;

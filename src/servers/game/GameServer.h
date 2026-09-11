@@ -35,7 +35,7 @@ private:
 
     // Turns each map's World::Tick() result into GC_CRT_MOVE broadcasts --
     // one per creature move, sent only to sessions on that map whose own
-    // 3x3 zone view (Map::ZonesAround, same rule as HandleMovement in
+    // 3x3 zone view (Zone::Around, same rule as HandleMovement in
     // handlers/Movement.cpp) currently covers the creature's zone. Called
     // from ScheduleTick, still on the world strand.
     void BroadcastCreatureMoves(const std::vector<MapTickResult>& tickResults);
