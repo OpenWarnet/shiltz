@@ -5,13 +5,4 @@
 add_subdirectory ("servers/game")
 add_subdirectory ("servers/login")
 
-add_executable (
-	client
-	"client.cpp"
-)
-
-if (CMAKE_VERSION VERSION_GREATER 3.12)
-  set_property(TARGET client PROPERTY CXX_STANDARD 20)
-endif()
-
 # TODO: Add tests and install targets if needed.

@@ -32,5 +32,5 @@ void GameData::Load()
     skills.Load(SkillDataDir());
     quests.Load(DataDir() / "quest.scr");
     warps.Load(DataDir() / "warp.scr");
-    aiScripts.Load(DataDir() / "ai_mon.scr");
+    aiScripts.Load(DataDir() / "AI_Mon.scr");
 }

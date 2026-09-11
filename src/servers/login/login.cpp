@@ -9,9 +9,6 @@
 #include <iomanip>
 #include <iostream>
 #include <string_view>
-#include <winsock2.h>
-
-#pragma comment(lib, "ws2_32.lib")
 
 int main()
 {

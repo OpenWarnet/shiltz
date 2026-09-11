@@ -7,7 +7,6 @@
 #include <format>
 #include <iomanip>
 #include <iostream>
-#include <winsock2.h>
 
 bool GamePacket::Deserialize(std::span<const uint8_t> raw, std::span<const uint8_t> key)
 {

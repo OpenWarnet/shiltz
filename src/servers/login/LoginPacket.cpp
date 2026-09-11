@@ -2,7 +2,6 @@
 #include "LoginOpcodes.h"
 #include "cipher/DESCipher.h"
 #include "common/PacketCapture.h"
-#include <winsock2.h>
 #include <cstring>
 #include <iostream>
 #include <iomanip>

@@ -2,8 +2,6 @@
 
 #include "ConnectionId.h"
 
-#include <winsock2.h>
-
 #include <boost/asio.hpp>
 
 #include <atomic>

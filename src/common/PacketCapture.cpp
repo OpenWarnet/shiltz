@@ -33,7 +33,11 @@ namespace
         std::time_t t = system_clock::to_time_t(now);
 
         std::tm tm{};
+#ifdef _WIN32
         localtime_s(&tm, &t);
+#else
+        localtime_r(&t, &tm);
+#endif
 
         std::ostringstream out;
         out << std::put_time(&tm, "%Y-%m-%d %H:%M:%S") << '.' << std::setw(3) << std::setfill('0')

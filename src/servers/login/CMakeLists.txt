@@ -71,14 +71,22 @@ target_include_directories(login PRIVATE
 )
 
 target_compile_definitions(login PRIVATE
-	SHILTZ_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
-	WIN32_LEAN_AND_MEAN
-	_WIN32_WINNT=0x0601)
+	SHILTZ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
+if (WIN32)
+  target_compile_definitions(login PRIVATE
+	  WIN32_LEAN_AND_MEAN
+	  _WIN32_WINNT=0x0601)
+endif()
 
 find_package(cryptopp CONFIG REQUIRED)
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_package(boost_asio CONFIG REQUIRED)
-target_link_libraries(login PRIVATE cryptopp::cryptopp unofficial::sqlite3::sqlite3 Boost::asio ws2_32 mswsock)
+target_link_libraries(login PRIVATE cryptopp::cryptopp unofficial::sqlite3::sqlite3 Boost::asio)
+
+if (WIN32)
+  target_link_libraries(login PRIVATE ws2_32 mswsock)
+endif()
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET login PROPERTY CXX_STANDARD 20)
