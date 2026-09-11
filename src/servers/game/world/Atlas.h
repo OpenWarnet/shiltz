@@ -8,12 +8,14 @@
 #include <memory>
 #include <vector>
 
+class MonsterTable;
+
 // One Map's contribution to an Atlas::Tick() call -- which map, and every
 // creature that moved on it this tick.
 struct MapTickResult
 {
     std::int64_t server_map_id = 0;
-    std::vector<Map::CreatureMove> creature_moves;
+    std::vector<Zone::CreatureMove> creature_moves;
 };
 
 // Fixed-capacity collection of every live Map in one World. server_map_id
@@ -25,7 +27,7 @@ public:
 
     // Non-positive IDs are unused map.scr slots and are ignored. Throws if
     // the ID is out of range, duplicated, or the Map cannot load its data.
-    void Add(MapRecord record);
+    void Add(MapRecord record, const MonsterTable& monsters);
 
     Map* Get(std::int64_t mapId);
     const Map* Get(std::int64_t mapId) const;

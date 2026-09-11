@@ -201,8 +201,8 @@ CharacterDataLoad Character::ToCharacterDataLoad(std::uint32_t epsUserFlag,
     result.self_entity_id = instance_id;
     result.eps_user_flag = epsUserFlag;
     result.map_id = map_id;
-    result.loc_x = static_cast<std::uint32_t>(x);
-    result.loc_y = static_cast<std::uint32_t>(y);
+    result.loc_x = x;
+    result.loc_y = y;
     result.level = static_cast<std::uint32_t>(level);
     result.job_id = job_id;
     result.gender = gender;

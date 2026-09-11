@@ -5,6 +5,7 @@
 #include "Player.h"
 #include "parser/MonsterSpawnScr.h"
 #include "parser/NpcScr.h"
+#include "tables/MonsterTable.h"
 #include "world/common/EntityIdGenerator.h"
 #include "world/common/Paths.h"
 
@@ -14,20 +15,15 @@
 
 namespace
 {
-bool InZoneGrid(std::int32_t zoneX, std::int32_t zoneY)
+std::int64_t MaxHp(const MonsterTable& monsters, std::int64_t monsterId)
 {
-    return zoneX >= 0 && zoneX < Map::kZoneGridSize && zoneY >= 0 && zoneY < Map::kZoneGridSize;
-}
-
-std::size_t ZoneIndex(std::int32_t zoneX, std::int32_t zoneY)
-{
-    return static_cast<std::size_t>(zoneY) * static_cast<std::size_t>(Map::kZoneGridSize) +
-           static_cast<std::size_t>(zoneX);
+    const MonsterRecord* record = monsters.Find(monsterId);
+    return record ? record->hp : 0;
 }
 
 } // namespace
 
-Map::Map(MapRecord record)
+Map::Map(MapRecord record, const MonsterTable& monsters)
     : id(record.server_map_id), monster_file(std::move(record.monster_file)),
       npc_file(std::move(record.npc_file)), m_zones(CreateZones())
 {
@@ -38,10 +34,11 @@ Map::Map(MapRecord record)
             AddCreature(Creature{
                 .instance_id = EntityIdGenerator::Next(),
                 .kind = CreatureKind::Npc,
-                .monster_id = spawn.id,
-                .x = instance.x,
-                .y = instance.y,
-                .direction = instance.direction,
+                .monster_id = static_cast<std::uint64_t>(spawn.id),
+                .x = static_cast<std::uint32_t>(instance.x),
+                .y = static_cast<std::uint32_t>(instance.y),
+                .direction = static_cast<std::uint32_t>(instance.direction),
+                .hp = MaxHp(monsters, spawn.id),
             });
         }
     }
@@ -54,10 +51,11 @@ Map::Map(MapRecord record)
             AddCreature(Creature{
                 .instance_id = EntityIdGenerator::Next(),
                 .kind = CreatureKind::Monster,
-                .monster_id = group.monster_id,
-                .x = instance.x,
-                .y = instance.y,
-                .direction = instance.direction,
+                .monster_id = static_cast<std::uint64_t>(group.monster_id),
+                .x = static_cast<std::uint32_t>(instance.x),
+                .y = static_cast<std::uint32_t>(instance.y),
+                .direction = static_cast<std::uint32_t>(instance.direction),
+                .hp = MaxHp(monsters, group.monster_id),
             });
         }
     }
@@ -100,27 +98,30 @@ std::vector<GroundItem> Map::Items() const
     return m_items;
 }
 
+bool Map::IsInBounds(std::uint32_t x, std::uint32_t y) noexcept
+{
+    constexpr auto kLimit = static_cast<std::uint32_t>(kGridSize);
+    return x < kLimit && y < kLimit;
+}
+
 void Map::AddCreature(Creature creature)
 {
-    const auto [zoneX, zoneY] = ZoneOf(creature.x, creature.y);
-    if (!InZoneGrid(zoneX, zoneY))
+    if (!IsInBounds(creature.x, creature.y))
     {
         std::cout << "Ignoring creature " << creature.monster_id << " with out-of-range position ("
                   << creature.x << ", " << creature.y << ")\n";
         return;
     }
 
-    std::unique_lock lock(m_zonesMutex);
-    m_zones[ZoneIndex(zoneX, zoneY)].AddCreature(std::move(creature));
+    m_zones[Zone::Of(creature.x, creature.y).Index()].AddCreature(std::move(creature));
 }
 
-std::vector<Creature> Map::CreaturesInZone(std::int32_t zoneX, std::int32_t zoneY) const
+std::span<const Creature> Map::CreaturesInZone(Zone::Coordinates zone) const
 {
-    if (!InZoneGrid(zoneX, zoneY))
+    if (!Zone::IsInGrid(zone))
         return {};
 
-    std::shared_lock lock(m_zonesMutex);
-    return m_zones[ZoneIndex(zoneX, zoneY)].CreatureSnapshot();
+    return m_zones[zone.Index()].Creatures();
 }
 
 bool Map::Spawn(Player player)
@@ -153,11 +154,6 @@ bool Map::HasPlayers() const
     return !m_players.Empty();
 }
 
-std::pair<std::int32_t, std::int32_t> Map::ZoneOf(std::int32_t x, std::int32_t y)
-{
-    return Zone::Of(x, y);
-}
-
 EventBus& Map::Events()
 {
     return m_events;
@@ -173,12 +169,11 @@ void Map::Tick(std::chrono::milliseconds delta)
         TickCreature(delta);
 }
 
-std::vector<Map::CreatureMove> Map::TickCreature(std::chrono::milliseconds delta)
+std::vector<Zone::CreatureMove> Map::TickCreature(std::chrono::milliseconds delta)
 {
     std::vector<Creature> relocated;
-    std::vector<CreatureMove> moves;
+    std::vector<Zone::CreatureMove> moves;
 
-    std::unique_lock lock(m_zonesMutex);
     for (Zone& zone : m_zones)
     {
         auto result = zone.Tick(delta, kGridSize - 1);
@@ -189,10 +184,7 @@ std::vector<Map::CreatureMove> Map::TickCreature(std::chrono::milliseconds delta
     }
 
     for (Creature& creature : relocated)
-    {
-        const auto [zoneX, zoneY] = ZoneOf(creature.x, creature.y);
-        m_zones[ZoneIndex(zoneX, zoneY)].AddCreature(std::move(creature));
-    }
+        m_zones[Zone::Of(creature.x, creature.y).Index()].AddCreature(std::move(creature));
 
     return moves;
 }

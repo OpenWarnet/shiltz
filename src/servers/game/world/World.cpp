@@ -5,6 +5,7 @@
 #include "world/systems/EnterSystem.h"
 #include "world/systems/MovementSystem.h"
 #include "parser/MapScr.h"
+#include "tables/GameData.h"
 
 #include <exception>
 #include <iostream>
@@ -21,7 +22,7 @@ void World::Start(const Outbox& outbox, const GameData& data)
     {
         try
         {
-            m_atlas.Add(std::move(record));
+            m_atlas.Add(std::move(record), data.monsters);
         }
         catch (const std::exception& e)
         {

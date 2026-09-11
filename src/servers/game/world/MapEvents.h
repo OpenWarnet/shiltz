@@ -15,10 +15,10 @@ struct CharacterJoinEvent
 struct CharacterMoveEvent
 {
     std::uint32_t instance_id = 0;
-    std::int32_t from_x = 0;
-    std::int32_t from_y = 0;
-    std::int32_t to_x = 0;
-    std::int32_t to_y = 0;
+    std::uint32_t from_x = 0;
+    std::uint32_t from_y = 0;
+    std::uint32_t to_x = 0;
+    std::uint32_t to_y = 0;
     std::uint32_t direction = 0;
     std::uint32_t speed = 0;
     std::uint32_t stop_direction = 0;

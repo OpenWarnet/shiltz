@@ -11,24 +11,27 @@
 #include <cstdint>
 #include <mutex>
 #include <optional>
-#include <shared_mutex>
+#include <span>
 #include <utility>
 #include <vector>
+
+class MonsterTable;
 
 class Map
 {
 public:
     static constexpr std::int32_t kGridSize = 512;
-    static constexpr std::int32_t kZoneSize = Zone::kSize;
-    static constexpr std::int32_t kZoneGridSize = kGridSize / kZoneSize;
+    static constexpr std::int32_t kZoneGridSize = kGridSize / Zone::kSize;
     static constexpr std::size_t kZoneCount =
         static_cast<std::size_t>(kZoneGridSize) * kZoneGridSize;
 
     std::int64_t id = 0;
 
-    using CreatureMove = Zone::CreatureMove;
+    // True if tile (x, y) is on the map; anything else must be rejected before it reaches the world.
+    static bool IsInBounds(std::uint32_t x, std::uint32_t y) noexcept;
 
-    explicit Map(MapRecord record);
+    // monsters seeds each spawned creature's instance stats; not retained.
+    Map(MapRecord record, const MonsterTable& monsters);
 
     void AddItem(GroundItem item);
 
@@ -38,9 +41,11 @@ public:
 
     std::vector<GroundItem> Items() const; // snapshot copy, safe from any thread.
 
+    // World strand only.
     void AddCreature(Creature creature);
 
-    std::vector<Creature> CreaturesInZone(std::int32_t zoneX, std::int32_t zoneY) const;
+    // Invalidated by AddCreature and the next Tick. World strand only.
+    std::span<const Creature> CreaturesInZone(Zone::Coordinates zone) const;
 
     // Adds player to the pool and publishes CharacterJoinEvent; false if already here. World strand only.
     [[nodiscard]] bool Spawn(Player player);
@@ -56,8 +61,6 @@ public:
     // World strand only.
     bool HasPlayers() const;
 
-    static std::pair<std::int32_t, std::int32_t> ZoneOf(std::int32_t x, std::int32_t y);
-
     // Register listeners and publish this map's events; dispatched in Tick.
     EventBus& Events();
 
@@ -68,12 +71,12 @@ private:
     std::string npc_file;
 
     static std::vector<Zone> CreateZones();
-    std::vector<CreatureMove> TickCreature(std::chrono::milliseconds delta);
+    std::vector<Zone::CreatureMove> TickCreature(std::chrono::milliseconds delta);
 
     mutable std::mutex m_itemsMutex;
     std::vector<GroundItem> m_items;
 
-    mutable std::shared_mutex m_zonesMutex;
+    // Not locked -- world strand only.
     std::vector<Zone> m_zones;
 
     // Keyed by character.instance_id. Not locked -- world strand only.

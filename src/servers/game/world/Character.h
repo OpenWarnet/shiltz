@@ -101,9 +101,9 @@ struct Character
     std::uint32_t face_id = 0;
 
     std::uint32_t map_id = 0;
-    std::int32_t x = 0;
-    std::int32_t y = 0;
-    std::int32_t direction = 0;
+    std::uint32_t x = 0;
+    std::uint32_t y = 0;
+    std::uint32_t direction = 0;
 
     std::int64_t money = 0;
 

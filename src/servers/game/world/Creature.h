@@ -27,8 +27,8 @@ enum class CreatureAiState : std::uint8_t
 // A single spawned creature on a Map -- one instance from either an
 // npcNN.scr NpcInstance (kind == Npc) or an mNN.scr MonsterSpawnInstance
 // (kind == Monster). `monster_id` joins NpcSpawn::id or MonsterRecord::id
-// depending on `kind` -- this struct only carries placement, not the
-// template's own stats/behavior data. `instance_id` has nothing to do with
+// depending on `kind` -- this struct only carries per-instance state
+// (placement, current HP), not the template's own stats/behavior data. `instance_id` has nothing to do with
 // the .scr data itself -- it's assigned at spawn from EntityIdGenerator::Next()
 // (world/common/EntityIdGenerator.h) to identify this one spawned instance
 // uniquely across the whole World, the way GC_CRT_LOAD's own entity id
@@ -37,10 +37,13 @@ struct Creature
 {
     std::uint32_t instance_id = 0;
     CreatureKind kind = CreatureKind::Monster;
-    std::int64_t monster_id = 0;
-    std::int32_t x = 0;
-    std::int32_t y = 0;
-    std::int32_t direction = 0;
+    std::uint64_t monster_id = 0;
+    std::uint32_t x = 0;
+    std::uint32_t y = 0;
+    std::uint32_t direction = 0;
+
+    // Current HP; starts at the monster.scr template's max at spawn.
+    std::int64_t hp = 0;
 
     // AI state (Monster kind only -- see Zone::Tick). ai_timer
     // counts down by each World tick's delta; when it reaches zero the

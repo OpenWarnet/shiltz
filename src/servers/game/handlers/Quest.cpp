@@ -318,8 +318,8 @@ std::optional<QuestOutcome> ApplyConsequences(IDatabase& db, const ItemTable& it
     if (warp)
     {
         character.map_id = static_cast<std::uint32_t>(warp->server_map_id);
-        character.x = static_cast<std::int32_t>(warp->x);
-        character.y = static_cast<std::int32_t>(warp->y);
+        character.x = static_cast<std::uint32_t>(warp->x);
+        character.y = static_cast<std::uint32_t>(warp->y);
         character.SavePosition(db);
     }
 

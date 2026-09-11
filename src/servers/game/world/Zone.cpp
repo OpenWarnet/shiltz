@@ -36,6 +36,14 @@ std::uint64_t MixDecisionSeed(std::uint32_t instanceId, std::uint32_t decisionSe
     return x ^ (x >> 31);
 }
 
+// Signed so a -1 step at coordinate 0 clamps instead of wrapping.
+std::uint32_t StepCoordinate(std::uint32_t coordinate, std::int32_t delta,
+                             std::int32_t maxCoordinate)
+{
+    return static_cast<std::uint32_t>(
+        std::clamp<std::int64_t>(std::int64_t{coordinate} + delta, 0, maxCoordinate));
+}
+
 void RollNextAiState(Creature& creature, std::int32_t maxCoordinate)
 {
     const std::uint64_t roll = MixDecisionSeed(creature.instance_id, creature.ai_decision_seq++);
@@ -43,8 +51,8 @@ void RollNextAiState(Creature& creature, std::int32_t maxCoordinate)
     if (roll & 1)
     {
         const auto [dx, dy] = kWanderOffsets[(roll >> 1) % kWanderOffsets.size()];
-        creature.x = std::clamp(creature.x + dx, 0, maxCoordinate);
-        creature.y = std::clamp(creature.y + dy, 0, maxCoordinate);
+        creature.x = StepCoordinate(creature.x, dx, maxCoordinate);
+        creature.y = StepCoordinate(creature.y, dy, maxCoordinate);
 
         creature.ai_state = CreatureAiState::Wander;
         creature.ai_timer =
@@ -73,13 +81,26 @@ std::int32_t Zone::Y() const noexcept
     return m_y;
 }
 
-Zone::Coordinates Zone::Of(std::int32_t x, std::int32_t y) noexcept
+std::size_t Zone::Coordinates::Index() const noexcept
 {
-    return {x / kSize, y / kSize};
+    return static_cast<std::size_t>(y) * static_cast<std::size_t>(Map::kZoneGridSize) +
+           static_cast<std::size_t>(x);
 }
 
-bool Zone::Crossed(std::int32_t fromX, std::int32_t fromY, std::int32_t toX,
-                   std::int32_t toY) noexcept
+Zone::Coordinates Zone::Of(std::uint32_t x, std::uint32_t y) noexcept
+{
+    constexpr auto kTiles = static_cast<std::uint32_t>(kSize);
+    return {static_cast<std::int32_t>(x / kTiles), static_cast<std::int32_t>(y / kTiles)};
+}
+
+bool Zone::IsInGrid(Coordinates zone) noexcept
+{
+    return zone.x >= 0 && zone.x < Map::kZoneGridSize && zone.y >= 0 &&
+           zone.y < Map::kZoneGridSize;
+}
+
+bool Zone::Crossed(std::uint32_t fromX, std::uint32_t fromY, std::uint32_t toX,
+                   std::uint32_t toY) noexcept
 {
     return Of(fromX, fromY) != Of(toX, toY);
 }
@@ -87,17 +108,14 @@ bool Zone::Crossed(std::int32_t fromX, std::int32_t fromY, std::int32_t toX,
 std::vector<Zone::Coordinates> Zone::Around(Coordinates zone)
 {
     std::vector<Coordinates> zones;
-    const auto [zoneX, zoneY] = zone;
 
     for (std::int32_t dy = -1; dy <= 1; ++dy)
     {
         for (std::int32_t dx = -1; dx <= 1; ++dx)
         {
-            const std::int32_t neighborX = zoneX + dx;
-            const std::int32_t neighborY = zoneY + dy;
-            if (neighborX >= 0 && neighborX < Map::kZoneGridSize && neighborY >= 0 &&
-                neighborY < Map::kZoneGridSize)
-                zones.emplace_back(neighborX, neighborY);
+            const Coordinates neighbor{zone.x + dx, zone.y + dy};
+            if (IsInGrid(neighbor))
+                zones.push_back(neighbor);
         }
     }
 
@@ -106,7 +124,7 @@ std::vector<Zone::Coordinates> Zone::Around(Coordinates zone)
 
 bool Zone::IsNeighboring(Coordinates a, Coordinates b) noexcept
 {
-    return std::abs(a.first - b.first) <= 1 && std::abs(a.second - b.second) <= 1;
+    return std::abs(a.x - b.x) <= 1 && std::abs(a.y - b.y) <= 1;
 }
 
 void Zone::AddCreature(Creature creature)
@@ -114,7 +132,7 @@ void Zone::AddCreature(Creature creature)
     m_creatures.push_back(std::move(creature));
 }
 
-std::vector<Creature> Zone::CreatureSnapshot() const
+std::span<const Creature> Zone::Creatures() const noexcept
 {
     return m_creatures;
 }
@@ -134,8 +152,8 @@ Zone::TickResult Zone::Tick(std::chrono::milliseconds delta, std::int32_t maxCoo
             continue;
         }
 
-        const std::int32_t fromX = creature.x;
-        const std::int32_t fromY = creature.y;
+        const std::uint32_t fromX = creature.x;
+        const std::uint32_t fromY = creature.y;
 
         RollNextAiState(creature, maxCoordinate);
 
@@ -162,7 +180,7 @@ Zone::TickResult Zone::Tick(std::chrono::milliseconds delta, std::int32_t maxCoo
     return result;
 }
 
-bool Zone::Contains(std::int32_t x, std::int32_t y) const noexcept
+bool Zone::Contains(std::uint32_t x, std::uint32_t y) const noexcept
 {
     return Of(x, y) == Coordinates{m_x, m_y};
 }

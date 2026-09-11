@@ -4,8 +4,6 @@
 #include "protocol/server/CharMoveUpdate.h"
 #include "protocol/server/CrtLoad.h"
 #include "protocol/server/ViewRemoveAll.h"
-#include "tables/GameData.h"
-#include "tables/MonsterTable.h"
 #include "world/Map.h"
 #include "world/MapEvents.h"
 #include "world/Player.h"
@@ -33,17 +31,15 @@ void MovementSystem::SendViewChange(const CharacterZoneChangeEvent& event) const
         if (event.from && Zone::IsNeighboring(*event.from, zone))
             continue;
 
-        for (const auto& creature : m_map.CreaturesInZone(zone.first, zone.second))
+        for (const auto& creature : m_map.CreaturesInZone(zone))
         {
-            const MonsterRecord* monsterRecord = m_data.monsters.Find(creature.monster_id);
-
             load.records.push_back(CrtLoadRecord{
                 .id = creature.instance_id,
-                .x = static_cast<std::uint32_t>(creature.x),
-                .y = static_cast<std::uint32_t>(creature.y),
+                .x = creature.x,
+                .y = creature.y,
                 .monster_id = static_cast<std::uint32_t>(creature.monster_id),
-                .direction = static_cast<std::uint32_t>(creature.direction),
-                .hp = monsterRecord ? static_cast<std::uint64_t>(monsterRecord->hp) : 0,
+                .direction = creature.direction,
+                .hp = static_cast<std::uint64_t>(creature.hp),
             });
         }
     }
@@ -63,7 +59,7 @@ void MovementSystem::SendViewChange(const CharacterZoneChangeEvent& event) const
         if (Zone::IsNeighboring(event.to, zone))
             continue;
 
-        for (const auto& creature : m_map.CreaturesInZone(zone.first, zone.second))
+        for (const auto& creature : m_map.CreaturesInZone(zone))
             remove.creature_ids.push_back(creature.instance_id);
     }
 
@@ -80,8 +76,8 @@ void MovementSystem::SendCharMove(const CharacterMoveEvent& event) const
     CharMoveUpdate response;
     response.user_instance_id = event.instance_id;
     response.direction = event.direction;
-    response.x = static_cast<std::uint32_t>(event.to_x);
-    response.y = static_cast<std::uint32_t>(event.to_y);
+    response.x = event.to_x;
+    response.y = event.to_y;
     response.speed = event.speed;
     response.stop_direction = event.stop_direction;
     m_outbox.Send(player->connection, response);

@@ -30,8 +30,8 @@ namespace CharacterRepository
         std::int64_t money = 0;
 
         std::uint32_t map_id = 0;
-        std::int32_t x = 0;
-        std::int32_t y = 0;
+        std::uint32_t x = 0;
+        std::uint32_t y = 0;
 
         std::int64_t exp = 1;
         std::uint32_t hp = 1;
@@ -53,8 +53,8 @@ namespace CharacterRepository
     // rather than one big rewrite, so a handler that only changed money
     // doesn't also clobber position/stats with stale in-memory values.
 
-    void SavePosition(IDatabase& db, std::int64_t characterId, std::uint32_t mapId, std::int32_t x,
-                       std::int32_t y);
+    void SavePosition(IDatabase& db, std::int64_t characterId, std::uint32_t mapId, std::uint32_t x,
+                       std::uint32_t y);
 
     // Money/fame/exp are relative (money = money +/- ?) rather than an
     // absolute SET computed from a possibly-stale in-memory read, so two

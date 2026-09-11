@@ -46,8 +46,8 @@ std::optional<CoreData> Load(IDatabase& db, std::int64_t characterId)
     data.money = std::get<int64_t>(findCharacter->Column(12)); // "cegel" on the wire
 
     data.map_id = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(13)));
-    data.x = static_cast<std::int32_t>(std::get<int64_t>(findCharacter->Column(14)));
-    data.y = static_cast<std::int32_t>(std::get<int64_t>(findCharacter->Column(15)));
+    data.x = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(14)));
+    data.y = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(15)));
 
     data.raw_stats.unallocated_stat_points =
         static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(16)));
@@ -60,8 +60,8 @@ std::optional<CoreData> Load(IDatabase& db, std::int64_t characterId)
     return data;
 }
 
-void SavePosition(IDatabase& db, std::int64_t characterId, std::uint32_t mapId, std::int32_t x,
-                   std::int32_t y)
+void SavePosition(IDatabase& db, std::int64_t characterId, std::uint32_t mapId, std::uint32_t x,
+                   std::uint32_t y)
 {
     auto updatePosition = db.Prepare(
         "UPDATE character_position SET map_id = ?, location_x = ?, location_y = ? "
