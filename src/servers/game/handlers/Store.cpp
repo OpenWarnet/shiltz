@@ -1,8 +1,7 @@
 #include "Store.h"
 
-#include "GamePacket.h"
-#include "GameSessionStore.h"
-#include "common/Server.h"
+#include "Outbox.h"
+#include "Persistence.h"
 #include "protocol/client/StoreClose.h"
 #include "protocol/client/StoreCreate.h"
 #include "protocol/client/StoreItemIn.h"
@@ -27,10 +26,14 @@
 #include "repositories/ItemRepository.h"
 #include "storage/Transaction.h"
 #include "world/Item.h"
+#include "world/Player.h"
+#include "world/World.h"
 
 #include <algorithm>
 #include <cstdint>
 #include <optional>
+#include <string>
+#include <utility>
 
 namespace
 {
@@ -53,231 +56,175 @@ Response BuildStoreMoneySucc(std::int64_t characterMoney, std::int64_t bankMoney
     return response;
 }
 
-std::optional<Item> GetBankSlot(const GameSession& session, std::uint32_t slotId)
+// Wire slot ids count bag slots from InventoryItemList::kBagStartSlot; inventory_slot is 0-based.
+std::uint32_t BagIndex(std::uint32_t wireSlotId)
 {
-    for (const auto& entry : session.bankItems)
-    {
-        if (entry.slot_id == slotId)
-            return entry.item;
-    }
-
-    return std::nullopt;
+    return static_cast<std::uint32_t>(static_cast<std::int64_t>(wireSlotId) -
+                                      static_cast<std::int64_t>(InventoryItemList::kBagStartSlot));
 }
 
-void SetBankSlot(GameSession& session, std::uint32_t slotId, const Item& item)
+// Sends an empty-bodied store reply; copyable into DB job callbacks.
+template <typename Response> auto Reply(const GameContext& ctx)
 {
-    for (auto& entry : session.bankItems)
-    {
-        if (entry.slot_id == slotId)
-        {
-            entry.item = item;
-            return;
-        }
-    }
-
-    session.bankItems.push_back(BankRepository::SlotItem{.slot_id = slotId, .item = item});
+    return [ctx] { ctx.outbox.Send(ctx.connection, Response{}); };
 }
 
-void ClearBankSlot(GameSession& session, std::uint32_t slotId)
+struct MoneyAfter
 {
-    std::erase_if(session.bankItems,
-                   [slotId](const BankRepository::SlotItem& entry) { return entry.slot_id == slotId; });
+    std::int64_t character = 0;
+    std::int64_t bank = 0;
+};
+
+// Applies a committed transfer to the player and replies with the new balances.
+template <typename Response> void FinishTransfer(const GameContext& ctx, std::int64_t bankId, MoneyAfter after)
+{
+    if (Player* player = ctx.world.FindPlayer(ctx.connection))
+    {
+        player->character.money = after.character;
+        if (player->bank && player->bank->id == bankId)
+            player->bank->money = after.bank;
+    }
+    ctx.outbox.Send(ctx.connection, BuildStoreMoneySucc<Response>(after.character, after.bank));
 }
 } // namespace
 
-void HandleStoreCreate(const GameContext& ctx, const StoreCreate& request)
+void HandleStoreCreate(const GameContext& ctx, const StoreCreate& request, Player& player)
 {
-    auto session = ctx.sessions.Get(ctx.clientSocket);
-    if (!session)
-        return;
+    // No GC_STORE_CREATE fail variant on the wire; an existing account is never re-provisioned.
+    auto create = [accountId = player.account_id, password = request.password](IDatabase& db)
+    {
+        if (BankRepository::FindAccount(db, accountId))
+            return false;
+        BankRepository::CreateAccount(db, accountId, password);
+        return true;
+    };
 
-    // Everything below is blocking SQLite work -- run it on the DB pool
-    // instead of the connection's reactor thread. request/session are
-    // copied by value so they stay valid once this handler returns;
-    // server.SendTo() is safe to call from any thread.
-    boost::asio::post(ctx.dbPool, [ctx, request, session]() {
-    // No GC_STORE_CREATE fail variant on the wire -- same silent-drop policy
-    // as HandleStoreItemOut/In. Refuse to stomp an existing bank_accounts
-    // row (and its password/contents) rather than silently re-provisioning it.
-    if (BankRepository::FindAccount(ctx.db, session->accountId))
-        return;
-
-    BankRepository::CreateAccount(ctx.db, session->accountId, request.password);
-
-    ctx.server.SendTo(ctx.clientSocket, StoreCreateSucc{}.Packet().Serialize(ctx.key));
-    });
+    ctx.persistence.Run(
+        create,
+        [ctx](bool created)
+        {
+            if (created)
+                Reply<StoreCreateSucc>(ctx)();
+        },
+        [](const std::string&) {});
 }
 
-void HandleStoreOpen(const GameContext& ctx, const StoreOpen& request)
+void HandleStoreOpen(const GameContext& ctx, const StoreOpen& request, Player& player)
 {
-    auto sendFail = [ctx](std::int32_t reason = 1)
+    auto sendFail = [ctx](std::int32_t reason)
     {
         StoreOpenFail response;
         response.reason = reason;
-        ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
+        ctx.outbox.Send(ctx.connection, response);
     };
 
-    auto session = ctx.sessions.Get(ctx.clientSocket);
-    if (!session)
-        return;
-
-    // Everything below is blocking SQLite work -- run it on the DB pool
-    // instead of the connection's reactor thread. request/session/sendFail
-    // are copied by value so they stay valid once this handler returns;
-    // server.SendTo() is safe to call from any thread.
-    boost::asio::post(ctx.dbPool, [ctx, request, session, sendFail]() mutable {
-    auto account = BankRepository::FindAccount(ctx.db, session->accountId);
-    if (!account)
+    struct Opened
     {
-        sendFail(2);
-        return;
-    }
+        std::int32_t failReason = 0;
+        Bank bank;
+    };
 
-    if (account->password != request.password)
+    auto open = [accountId = player.account_id, password = request.password](IDatabase& db)
     {
-        sendFail();
-        return;
-    }
+        auto account = BankRepository::FindAccount(db, accountId);
+        if (!account)
+            return Opened{.failReason = 2};
+        if (account->password != password)
+            return Opened{.failReason = 1};
+        return Opened{.bank = Bank{.id = account->id,
+                                   .money = account->money,
+                                   .items = BankRepository::LoadAllItems(db, account->id)}};
+    };
 
-    session->bankAccountId = account->id;
-    session->bankItems = BankRepository::LoadAllItems(ctx.db, account->id);
-    session->bankMoney = account->money;
-    ctx.sessions.Set(ctx.clientSocket, *session);
+    ctx.persistence.Run(
+        open,
+        [ctx, sendFail](Opened opened)
+        {
+            if (opened.failReason != 0)
+                return sendFail(opened.failReason);
 
-    StoreOpenSucc response{};
-    for (const auto& entry : session->bankItems)
-    {
-        if (entry.slot_id >= StoreOpenSucc::kSlotCount)
-            continue; // out-of-range row -- shouldn't happen, don't write out of bounds
+            StoreOpenSucc response{};
+            for (const auto& entry : opened.bank.items)
+            {
+                if (entry.slot_id >= StoreOpenSucc::kSlotCount)
+                    continue; // out-of-range row -- shouldn't happen, don't write out of bounds
 
-        response.slots[entry.slot_id] = BankItemSlot{
-            .item_id = entry.item.item_id,
-            .qty_or_refine = entry.item.WireQuantityOrRefine(),
-            .option_bits = static_cast<std::int64_t>(entry.item.option_bits),
-        };
-    }
-    ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
-    });
+                response.slots[entry.slot_id] = BankItemSlot{
+                    .item_id = entry.item.item_id,
+                    .qty_or_refine = entry.item.WireQuantityOrRefine(),
+                    .option_bits = static_cast<std::int64_t>(entry.item.option_bits),
+                };
+            }
+
+            if (Player* player = ctx.world.FindPlayer(ctx.connection))
+                player->bank = std::move(opened.bank);
+
+            ctx.outbox.Send(ctx.connection, response);
+        },
+        [sendFail](const std::string&) { sendFail(1); });
 }
 
-void HandleStorePwModify(const GameContext& ctx, const StorePwModify& request)
+void HandleStorePwModify(const GameContext& ctx, const StorePwModify& request, Player& player)
 {
-    auto sendFail = [ctx]
+    // Looks the account up itself, so it doesn't need CG_STORE_OPEN first.
+    auto modify = [accountId = player.account_id, request](IDatabase& db)
     {
-        ctx.server.SendTo(ctx.clientSocket, StorePwModifyFail{}.Packet().Serialize(ctx.key));
+        auto account = BankRepository::FindAccount(db, accountId);
+        if (!account || account->password != request.old_password)
+            return false;
+        BankRepository::SavePassword(db, account->id, request.new_password);
+        return true;
     };
 
-    auto session = ctx.sessions.Get(ctx.clientSocket);
-    if (!session)
-        return;
-
-    // Everything below is blocking SQLite work -- run it on the DB pool
-    // instead of the connection's reactor thread. request/session/sendFail
-    // are copied by value so they stay valid once this handler returns;
-    // server.SendTo() is safe to call from any thread.
-    boost::asio::post(ctx.dbPool, [ctx, request, session, sendFail]() {
-    // Independently re-resolves the bank_accounts row from account_id --
-    // doesn't require CG_STORE_OPEN to have already succeeded on this
-    // connection, the same way HandleStoreOpen does its own lookup rather
-    // than trusting session->bankAccountId.
-    auto account = BankRepository::FindAccount(ctx.db, session->accountId);
-    if (!account)
-    {
-        sendFail();
-        return;
-    }
-
-    if (account->password != request.old_password)
-    {
-        sendFail();
-        return;
-    }
-
-    BankRepository::SavePassword(ctx.db, account->id, request.new_password);
-
-    ctx.server.SendTo(ctx.clientSocket, StorePwModifySucc{}.Packet().Serialize(ctx.key));
-    });
+    auto sendFail = Reply<StorePwModifyFail>(ctx);
+    ctx.persistence.Run(
+        modify,
+        [ctx, sendFail](bool modified) { modified ? Reply<StorePwModifySucc>(ctx)() : sendFail(); },
+        [sendFail](const std::string&) { sendFail(); });
 }
 
-void HandleStoreClose(const GameContext& ctx, const StoreClose& request)
+void HandleStoreClose(const GameContext& ctx, const StoreClose& request, Player& player)
 {
     (void)request; // constant 1 -- read for framing only, nothing to act on
 
-    auto session = ctx.sessions.Get(ctx.clientSocket);
-    if (!session)
-        return;
-
-    // Drop this connection's bank authorization -- a later CG_STORE_ITEM_IN/
-    // OUT or CG_STORE_MONEY_IN/OUT must go through CG_STORE_OPEN again.
-    session->bankAccountId.reset();
-    session->bankItems.clear();
-    session->bankMoney = 0;
-    ctx.sessions.Set(ctx.clientSocket, *session);
-
-    ctx.server.SendTo(ctx.clientSocket, StoreCloseSucc{}.Packet().Serialize(ctx.key));
+    // Later item/money requests must go through CG_STORE_OPEN again.
+    player.bank.reset();
+    ctx.outbox.Send(ctx.connection, StoreCloseSucc{});
 }
 
-void HandleStoreItemOut(const GameContext& ctx, const StoreItemOut& request)
+void HandleStoreItemOut(const GameContext& ctx, const StoreItemOut& request, Player& player)
 {
-    // There's no GC_STORE_ITEM_OUT fail variant on the wire -- every
-    // rejection below just drops the request silently, same as a malformed
-    // CG_ITEM_CONFIRM_NPC_REQUEST slot.
-    if (request.amount == 0)
+    // No GC_STORE_ITEM_OUT fail variant on the wire: every rejection is a silent drop.
+    if (request.amount == 0 || request.bank_slot_id >= StoreOpenSucc::kSlotCount || !player.bank)
         return;
 
-    if (request.bank_slot_id >= StoreOpenSucc::kSlotCount)
-        return;
-
-    auto session = ctx.sessions.Get(ctx.clientSocket);
-    if (!session)
-        return;
-
-    // Everything below is blocking SQLite work -- run it on the DB pool
-    // instead of the connection's reactor thread. request/session are
-    // copied by value so they stay valid once this handler returns;
-    // server.SendTo() is safe to call from any thread.
-    boost::asio::post(ctx.dbPool, [ctx, request, session]() mutable {
-    if (!session->bankAccountId)
-        return;
-
-    auto bankContent = GetBankSlot(*session, request.bank_slot_id);
+    auto bankContent = player.bank->GetSlot(request.bank_slot_id);
     if (!bankContent)
         return;
 
-    // Character's wallet money, not bank_accounts.money -- see
-    // handlers/Store.cpp's design note in the repository header.
-    if (session->character.money < kWithdrawalFee)
+    // The fee comes from the character's wallet, not the bank.
+    if (player.character.money < kWithdrawalFee)
         return;
 
-    const std::int64_t bankAccountId = *session->bankAccountId;
-    const std::int64_t characterId = session->characterId;
+    const std::int64_t bankId = player.bank->id;
+    const std::int64_t characterId = player.character.id;
+    const std::uint32_t inventorySlotIndex = BagIndex(request.inventory_slot_id);
 
-    // Same wire-relative -> bag-relative conversion as HandleItemPickup/HandleItemDrop.
-    const auto inventorySlotIndex =
-        static_cast<std::uint32_t>(static_cast<int64_t>(request.inventory_slot_id) -
-                                    static_cast<int64_t>(InventoryItemList::kBagStartSlot));
-
-    // Trust the client-given slot but verify it's consistent with the
-    // withdrawal -- empty is fine (new stack), holding the same item_id is
-    // fine (stack onto it), anything else (different item, or either side
-    // non-stackable while the other is occupied) means stale client state.
-    auto existingInventory = session->character.GetInventorySlot(inventorySlotIndex);
+    // Stacking needs the same stackable item on both sides; anything else means stale client state.
+    auto existingInventory = player.character.GetInventorySlot(inventorySlotIndex);
     if (existingInventory &&
         (existingInventory->item_id != bankContent->item_id || existingInventory->has_refine_level ||
          bankContent->has_refine_level))
         return;
 
-    Item updatedInventory;
+    Item updatedInventory = *bankContent;
     Item remainingBank = *bankContent;
-    std::uint32_t movedAmount;
-    bool bankSlotCleared;
+    bool bankSlotCleared = true;
 
+    // Equippable items always move whole, regardless of the requested amount.
     if (!bankContent->has_refine_level)
     {
-        // Explicit template argument dodges the Windows.h min/max macro
-        // collision -- see HexDump.h for the same idiom.
-        movedAmount = std::min<std::uint32_t>(request.amount, bankContent->quantity);
-
+        const std::uint32_t movedAmount = std::min<std::uint32_t>(request.amount, bankContent->quantity);
         if (existingInventory)
         {
             updatedInventory = *existingInventory;
@@ -285,7 +232,6 @@ void HandleStoreItemOut(const GameContext& ctx, const StoreItemOut& request)
         }
         else
         {
-            updatedInventory = *bankContent;
             updatedInventory.quantity = movedAmount;
         }
 
@@ -293,115 +239,93 @@ void HandleStoreItemOut(const GameContext& ctx, const StoreItemOut& request)
         if (!bankSlotCleared)
             remainingBank.quantity = bankContent->quantity - movedAmount;
     }
-    else
+
+    const std::uint32_t bankSlotId = request.bank_slot_id;
+
+    // Inventory, bank and fee land together; nullopt if a slot or the money changed underneath.
+    auto writes = [=](IDatabase& db) -> std::optional<std::int64_t>
     {
-        // Equippable-style item (refine_level, not stackable) -- always
-        // moves whole, regardless of requested amount.
-        movedAmount = 1;
-        updatedInventory = *bankContent;
-        bankSlotCleared = true;
-    }
+        DatabaseTransaction txn(db);
+        if (!ItemRepository::SaveInventorySlot(db, characterId, inventorySlotIndex, existingInventory,
+                                               updatedInventory))
+            return std::nullopt;
 
-    // The inventory write, the bank write, and the fee debit must land
-    // together, or a crash between them duplicates/loses the item or moves
-    // it for free.
-    DatabaseTransaction txn(ctx.db);
+        const bool bankWritten =
+            bankSlotCleared ? BankRepository::ClearItemSlot(db, bankId, bankSlotId, bankContent)
+                            : BankRepository::SaveItemSlot(db, bankId, bankSlotId, bankContent, remainingBank);
+        if (!bankWritten)
+            return std::nullopt;
 
-    if (!ItemRepository::SaveInventorySlot(ctx.db, characterId, inventorySlotIndex, existingInventory,
-                                            updatedInventory))
-        return;
+        auto newMoney = CharacterRepository::TrySpendMoney(db, characterId, kWithdrawalFee);
+        if (!newMoney)
+            return std::nullopt;
+        txn.Commit();
+        return newMoney;
+    };
 
-    const bool bankWriteOk =
-        bankSlotCleared
-            ? BankRepository::ClearItemSlot(ctx.db, bankAccountId, request.bank_slot_id, bankContent)
-            : BankRepository::SaveItemSlot(ctx.db, bankAccountId, request.bank_slot_id, bankContent,
-                                            remainingBank);
-    if (!bankWriteOk)
-        return;
+    ctx.persistence.Run(
+        writes,
+        [=](std::optional<std::int64_t> newMoney)
+        {
+            if (!newMoney)
+                return;
 
-    // Authoritative fee check against the DB's *current* money -- the
-    // session->character.money precheck above could be stale under the
-    // pipelined-request race (see CharacterRepository.h).
-    auto newCharacterMoney = CharacterRepository::TrySpendMoney(ctx.db, characterId, kWithdrawalFee);
-    if (!newCharacterMoney)
-        return;
+            if (Player* player = ctx.world.FindPlayer(ctx.connection))
+            {
+                player->character.money = *newMoney;
+                player->character.SetInventorySlot(inventorySlotIndex, updatedInventory);
+                if (player->bank && player->bank->id == bankId)
+                {
+                    if (bankSlotCleared)
+                        player->bank->ClearSlot(bankSlotId);
+                    else
+                        player->bank->SetSlot(bankSlotId, remainingBank);
+                }
+            }
 
-    txn.Commit();
-
-    // Only mirror into the cache / session store once the transaction is
-    // actually durable -- see the equivalent comment in ItemConfirmNpc.cpp.
-    session->character.money = *newCharacterMoney;
-    session->character.SetInventorySlot(inventorySlotIndex, updatedInventory);
-    if (bankSlotCleared)
-        ClearBankSlot(*session, request.bank_slot_id);
-    else
-        SetBankSlot(*session, request.bank_slot_id, remainingBank);
-    ctx.sessions.Set(ctx.clientSocket, *session);
-
-    StoreItemOutSuccess response;
-    response.inventory_slot_id = request.inventory_slot_id;
-    response.inventory_item_id = updatedInventory.item_id;
-    response.inventory_qty_or_refine = updatedInventory.WireQuantityOrRefine();
-    response.inventory_option_bits = static_cast<std::int64_t>(updatedInventory.option_bits);
-    response.bank_slot_id = request.bank_slot_id;
-    response.bank_item_id = bankSlotCleared ? 0 : remainingBank.item_id;
-    response.bank_qty_or_refine = bankSlotCleared ? 0 : remainingBank.WireQuantityOrRefine();
-    response.bank_option_bits =
-        bankSlotCleared ? 0 : static_cast<std::int64_t>(remainingBank.option_bits);
-    response.money = session->character.money;
-    ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
-    });
+            StoreItemOutSuccess response;
+            response.inventory_slot_id = request.inventory_slot_id;
+            response.inventory_item_id = updatedInventory.item_id;
+            response.inventory_qty_or_refine = updatedInventory.WireQuantityOrRefine();
+            response.inventory_option_bits = static_cast<std::int64_t>(updatedInventory.option_bits);
+            response.bank_slot_id = bankSlotId;
+            response.bank_item_id = bankSlotCleared ? 0 : remainingBank.item_id;
+            response.bank_qty_or_refine = bankSlotCleared ? 0 : remainingBank.WireQuantityOrRefine();
+            response.bank_option_bits = bankSlotCleared ? 0 : static_cast<std::int64_t>(remainingBank.option_bits);
+            response.money = *newMoney;
+            ctx.outbox.Send(ctx.connection, response);
+        },
+        [](const std::string&) {});
 }
 
-void HandleStoreItemIn(const GameContext& ctx, const StoreItemIn& request)
+void HandleStoreItemIn(const GameContext& ctx, const StoreItemIn& request, Player& player)
 {
-    // No GC_STORE_ITEM_IN fail variant either -- same silent-drop policy as
-    // HandleStoreItemOut.
-    if (request.amount == 0)
+    // No GC_STORE_ITEM_IN fail variant either: every rejection is a silent drop.
+    if (request.amount == 0 || request.bank_slot_id >= StoreOpenSucc::kSlotCount || !player.bank)
         return;
 
-    if (request.bank_slot_id >= StoreOpenSucc::kSlotCount)
-        return;
+    const std::int64_t bankId = player.bank->id;
+    const std::int64_t characterId = player.character.id;
+    const std::uint32_t inventorySlotIndex = BagIndex(request.inventory_slot_id);
 
-    auto session = ctx.sessions.Get(ctx.clientSocket);
-    if (!session)
-        return;
-
-    // Everything below is blocking SQLite work -- run it on the DB pool
-    // instead of the connection's reactor thread. request/session are
-    // copied by value so they stay valid once this handler returns;
-    // server.SendTo() is safe to call from any thread.
-    boost::asio::post(ctx.dbPool, [ctx, request, session]() mutable {
-    if (!session->bankAccountId)
-        return;
-
-    const std::int64_t bankAccountId = *session->bankAccountId;
-    const std::int64_t characterId = session->characterId;
-
-    // Same wire-relative -> bag-relative conversion as HandleItemPickup/HandleItemDrop.
-    const auto inventorySlotIndex =
-        static_cast<std::uint32_t>(static_cast<int64_t>(request.inventory_slot_id) -
-                                    static_cast<int64_t>(InventoryItemList::kBagStartSlot));
-
-    auto existingInventory = session->character.GetInventorySlot(inventorySlotIndex);
+    auto existingInventory = player.character.GetInventorySlot(inventorySlotIndex);
     if (!existingInventory)
         return;
 
-    auto existingBank = GetBankSlot(*session, request.bank_slot_id);
+    auto existingBank = player.bank->GetSlot(request.bank_slot_id);
     if (existingBank &&
         (existingBank->item_id != existingInventory->item_id || existingBank->has_refine_level ||
          existingInventory->has_refine_level))
         return;
 
-    Item updatedBank;
+    Item updatedBank = *existingInventory;
     Item remainingInventory = *existingInventory;
-    std::uint32_t movedAmount;
-    bool inventorySlotCleared;
+    bool inventorySlotCleared = true;
 
+    // Equippable items always move whole, regardless of the requested amount.
     if (!existingInventory->has_refine_level)
     {
-        movedAmount = std::min<std::uint32_t>(request.amount, existingInventory->quantity);
-
+        const std::uint32_t movedAmount = std::min<std::uint32_t>(request.amount, existingInventory->quantity);
         if (existingBank)
         {
             updatedBank = *existingBank;
@@ -409,7 +333,6 @@ void HandleStoreItemIn(const GameContext& ctx, const StoreItemIn& request)
         }
         else
         {
-            updatedBank = *existingInventory;
             updatedBank.quantity = movedAmount;
         }
 
@@ -417,182 +340,115 @@ void HandleStoreItemIn(const GameContext& ctx, const StoreItemIn& request)
         if (!inventorySlotCleared)
             remainingInventory.quantity = existingInventory->quantity - movedAmount;
     }
-    else
+
+    const std::uint32_t bankSlotId = request.bank_slot_id;
+
+    // Bank and inventory land together; false if either slot changed underneath.
+    auto writes = [=](IDatabase& db)
     {
-        // Equippable-style item -- always moves whole, regardless of
-        // requested amount.
-        movedAmount = 1;
-        updatedBank = *existingInventory;
-        inventorySlotCleared = true;
-    }
+        DatabaseTransaction txn(db);
+        if (!BankRepository::SaveItemSlot(db, bankId, bankSlotId, existingBank, updatedBank))
+            return false;
 
-    // Same all-or-nothing reasoning as HandleStoreItemOut, minus the fee.
-    DatabaseTransaction txn(ctx.db);
-
-    if (!BankRepository::SaveItemSlot(ctx.db, bankAccountId, request.bank_slot_id, existingBank,
-                                       updatedBank))
-        return;
-
-    const bool inventoryWriteOk =
-        inventorySlotCleared
-            ? ItemRepository::ClearInventorySlot(ctx.db, characterId, inventorySlotIndex, existingInventory)
-            : ItemRepository::SaveInventorySlot(ctx.db, characterId, inventorySlotIndex, existingInventory,
-                                                 remainingInventory);
-    if (!inventoryWriteOk)
-        return;
-
-    txn.Commit();
-
-    SetBankSlot(*session, request.bank_slot_id, updatedBank);
-    if (inventorySlotCleared)
-        session->character.ClearInventorySlot(inventorySlotIndex);
-    else
-        session->character.SetInventorySlot(inventorySlotIndex, remainingInventory);
-    ctx.sessions.Set(ctx.clientSocket, *session);
-
-    StoreItemInSuccess response;
-    response.inventory_slot_id = request.inventory_slot_id;
-    response.inventory_item_id = inventorySlotCleared ? 0 : remainingInventory.item_id;
-    response.inventory_qty_or_refine =
-        inventorySlotCleared ? 0 : remainingInventory.WireQuantityOrRefine();
-    response.inventory_option_bits =
-        inventorySlotCleared ? 0 : static_cast<std::int64_t>(remainingInventory.option_bits);
-    response.bank_slot_id = request.bank_slot_id;
-    response.bank_item_id = updatedBank.item_id;
-    response.bank_qty_or_refine = updatedBank.WireQuantityOrRefine();
-    response.bank_option_bits = static_cast<std::int64_t>(updatedBank.option_bits);
-    ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
-    });
-}
-
-void HandleStoreMoneyOut(const GameContext& ctx, const StoreMoneyOut& request)
-{
-    auto sendFail = [ctx]
-    {
-        ctx.server.SendTo(ctx.clientSocket, StoreMoneyFail{}.Packet().Serialize(ctx.key));
+        const bool inventoryWritten =
+            inventorySlotCleared
+                ? ItemRepository::ClearInventorySlot(db, characterId, inventorySlotIndex, existingInventory)
+                : ItemRepository::SaveInventorySlot(db, characterId, inventorySlotIndex, existingInventory,
+                                                    remainingInventory);
+        if (!inventoryWritten)
+            return false;
+        txn.Commit();
+        return true;
     };
 
-    if (request.amount <= 0)
-    {
-        sendFail();
-        return;
-    }
+    ctx.persistence.Run(
+        writes,
+        [=](bool saved)
+        {
+            if (!saved)
+                return;
 
-    auto session = ctx.sessions.Get(ctx.clientSocket);
-    if (!session)
-    {
-        sendFail();
-        return;
-    }
+            if (Player* player = ctx.world.FindPlayer(ctx.connection))
+            {
+                if (player->bank && player->bank->id == bankId)
+                    player->bank->SetSlot(bankSlotId, updatedBank);
+                if (inventorySlotCleared)
+                    player->character.ClearInventorySlot(inventorySlotIndex);
+                else
+                    player->character.SetInventorySlot(inventorySlotIndex, remainingInventory);
+            }
 
-    // Everything below is blocking SQLite work -- run it on the DB pool
-    // instead of the connection's reactor thread. request/session/sendFail
-    // are copied by value so they stay valid once this handler returns;
-    // server.SendTo() is safe to call from any thread.
-    boost::asio::post(ctx.dbPool, [ctx, request, session, sendFail]() mutable {
-    if (!session->bankAccountId)
-    {
-        sendFail();
-        return;
-    }
-
-    if (session->bankMoney < request.amount)
-    {
-        sendFail();
-        return;
-    }
-
-    const std::int64_t bankAccountId = *session->bankAccountId;
-
-    // The bank debit and the wallet credit must land together, or a crash
-    // between them creates or destroys money. Authoritative check against
-    // the DB's *current* bank balance -- the session->bankMoney precheck
-    // above could be stale under the pipelined-request race (see
-    // CharacterRepository.h).
-    DatabaseTransaction txn(ctx.db);
-
-    auto newBankMoney = BankRepository::TrySpendMoney(ctx.db, bankAccountId, request.amount);
-    if (!newBankMoney)
-    {
-        sendFail();
-        return;
-    }
-
-    const std::int64_t newCharacterMoney =
-        CharacterRepository::AddMoney(ctx.db, session->characterId, request.amount);
-
-    txn.Commit();
-
-    session->bankMoney = *newBankMoney;
-    session->character.money = newCharacterMoney;
-    ctx.sessions.Set(ctx.clientSocket, *session);
-
-    const auto response =
-        BuildStoreMoneySucc<StoreMoneyOutSucc>(newCharacterMoney, *newBankMoney);
-    ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
-    });
+            StoreItemInSuccess response;
+            response.inventory_slot_id = request.inventory_slot_id;
+            response.inventory_item_id = inventorySlotCleared ? 0 : remainingInventory.item_id;
+            response.inventory_qty_or_refine = inventorySlotCleared ? 0 : remainingInventory.WireQuantityOrRefine();
+            response.inventory_option_bits =
+                inventorySlotCleared ? 0 : static_cast<std::int64_t>(remainingInventory.option_bits);
+            response.bank_slot_id = bankSlotId;
+            response.bank_item_id = updatedBank.item_id;
+            response.bank_qty_or_refine = updatedBank.WireQuantityOrRefine();
+            response.bank_option_bits = static_cast<std::int64_t>(updatedBank.option_bits);
+            ctx.outbox.Send(ctx.connection, response);
+        },
+        [](const std::string&) {});
 }
 
-void HandleStoreMoneyIn(const GameContext& ctx, const StoreMoneyIn& request)
+void HandleStoreMoneyOut(const GameContext& ctx, const StoreMoneyOut& request, Player& player)
 {
-    auto sendFail = [ctx]
+    auto sendFail = Reply<StoreMoneyFail>(ctx);
+
+    if (request.amount <= 0 || !player.bank || player.bank->money < request.amount)
+        return sendFail();
+
+    const std::int64_t bankId = player.bank->id;
+    const std::int64_t characterId = player.character.id;
+    const std::int64_t amount = request.amount;
+
+    // Debit and credit land together, checked against the bank's current balance.
+    auto writes = [=](IDatabase& db) -> std::optional<MoneyAfter>
     {
-        ctx.server.SendTo(ctx.clientSocket, StoreMoneyFail{}.Packet().Serialize(ctx.key));
+        DatabaseTransaction txn(db);
+        auto newBankMoney = BankRepository::TrySpendMoney(db, bankId, amount);
+        if (!newBankMoney)
+            return std::nullopt;
+        const std::int64_t newCharacterMoney = CharacterRepository::AddMoney(db, characterId, amount);
+        txn.Commit();
+        return MoneyAfter{.character = newCharacterMoney, .bank = *newBankMoney};
     };
 
-    if (request.amount <= 0)
+    ctx.persistence.Run(
+        writes,
+        [ctx, bankId, sendFail](std::optional<MoneyAfter> after)
+        { after ? FinishTransfer<StoreMoneyOutSucc>(ctx, bankId, *after) : sendFail(); },
+        [sendFail](const std::string&) { sendFail(); });
+}
+
+void HandleStoreMoneyIn(const GameContext& ctx, const StoreMoneyIn& request, Player& player)
+{
+    auto sendFail = Reply<StoreMoneyFail>(ctx);
+
+    if (request.amount <= 0 || !player.bank || player.character.money < request.amount)
+        return sendFail();
+
+    const std::int64_t bankId = player.bank->id;
+    const std::int64_t characterId = player.character.id;
+    const std::int64_t amount = request.amount;
+
+    // Debit and credit land together, checked against the wallet's current balance.
+    auto writes = [=](IDatabase& db) -> std::optional<MoneyAfter>
     {
-        sendFail();
-        return;
-    }
+        DatabaseTransaction txn(db);
+        auto newCharacterMoney = CharacterRepository::TrySpendMoney(db, characterId, amount);
+        if (!newCharacterMoney)
+            return std::nullopt;
+        const std::int64_t newBankMoney = BankRepository::AddMoney(db, bankId, amount);
+        txn.Commit();
+        return MoneyAfter{.character = *newCharacterMoney, .bank = newBankMoney};
+    };
 
-    auto session = ctx.sessions.Get(ctx.clientSocket);
-    if (!session)
-    {
-        sendFail();
-        return;
-    }
-
-    // Everything below is blocking SQLite work -- run it on the DB pool
-    // instead of the connection's reactor thread. request/session/sendFail
-    // are copied by value so they stay valid once this handler returns;
-    // server.SendTo() is safe to call from any thread.
-    boost::asio::post(ctx.dbPool, [ctx, request, session, sendFail]() mutable {
-    if (!session->bankAccountId)
-    {
-        sendFail();
-        return;
-    }
-
-    if (session->character.money < request.amount)
-    {
-        sendFail();
-        return;
-    }
-
-    const std::int64_t bankAccountId = *session->bankAccountId;
-
-    // Same all-or-nothing reasoning as HandleStoreMoneyOut, and same
-    // authoritative-check-against-current-DB-state reasoning.
-    DatabaseTransaction txn(ctx.db);
-
-    auto newCharacterMoney = CharacterRepository::TrySpendMoney(ctx.db, session->characterId, request.amount);
-    if (!newCharacterMoney)
-    {
-        sendFail();
-        return;
-    }
-
-    const std::int64_t newBankMoney = BankRepository::AddMoney(ctx.db, bankAccountId, request.amount);
-
-    txn.Commit();
-
-    session->character.money = *newCharacterMoney;
-    session->bankMoney = newBankMoney;
-    ctx.sessions.Set(ctx.clientSocket, *session);
-
-    const auto response =
-        BuildStoreMoneySucc<StoreMoneyInSucc>(*newCharacterMoney, newBankMoney);
-    ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
-    });
+    ctx.persistence.Run(
+        writes,
+        [ctx, bankId, sendFail](std::optional<MoneyAfter> after)
+        { after ? FinishTransfer<StoreMoneyInSucc>(ctx, bankId, *after) : sendFail(); },
+        [sendFail](const std::string&) { sendFail(); });
 }

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "GameSessionStore.h"
 #include "Outbox.h"
 #include "Persistence.h"
 #include "common/Server.h"
@@ -19,11 +18,12 @@ public:
     ~GameServer() override;
 
 protected:
-    void OnFrame(SOCKET clientSocket, std::span<const uint8_t> frame) override;
-    void OnClientDisconnected(SOCKET clientSocket) override;
+    void OnClientConnected(ConnectionId connection) override;
+    void OnFrame(ConnectionId connection, std::span<const uint8_t> frame) override;
+    void OnClientDisconnected(ConnectionId connection) override;
 
 private:
-    GameContext MakeContext(SOCKET clientSocket);
+    GameContext MakeContext(ConnectionId connection);
 
     // Re-arms m_tickTimer and, on the world strand, advances m_world.Tick()
     // by the actual elapsed time -- replaces the old dedicated tick thread
@@ -41,9 +41,7 @@ private:
     void BroadcastCreatureMoves(const std::vector<MapTickResult>& tickResults);
 
     std::span<const uint8_t> m_key;
-    IDatabase& m_db;
     Outbox m_outbox;
-    GameSessionStore m_sessions;
     GameData m_data;
     World m_world;
 

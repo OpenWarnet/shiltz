@@ -1,10 +1,8 @@
 #include "Session.h"
 
 #include "GamePacket.h"
-#include "GameSessionStore.h"
 #include "Outbox.h"
 #include "Persistence.h"
-#include "common/Server.h"
 #include "protocol/client/GameEnter.h"
 #include "protocol/client/GameExit.h"
 #include "protocol/server/CharExitSucc.h"
@@ -63,9 +61,14 @@ std::optional<LoadedCharacter> LoadForEnter(IDatabase& db, const GameEnter& requ
 }
 } // namespace
 
+void HandleConnect(const GameContext& ctx)
+{
+    ctx.world.Connect(ctx.connection);
+}
+
 void HandleEnter(const GameContext& ctx, const GameEnter& request)
 {
-    auto sendFail = [ctx] { ctx.outbox.Send(ctx.clientSocket, EnterFail{}); };
+    auto sendFail = [ctx] { ctx.outbox.Send(ctx.connection, EnterFail{}); };
 
     ctx.persistence.Run(
         [request](IDatabase& db) { return LoadForEnter(db, request); },
@@ -74,7 +77,7 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
                 return sendFail();
 
             // The client may have disconnected while the character was loading.
-            if (!ctx.server.IsConnected(ctx.clientSocket))
+            if (!ctx.world.IsConnected(ctx.connection))
                 return;
 
             // Checked before an instance id is handed out, so a rejected duplicate doesn't use one up.
@@ -87,22 +90,14 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
 
             // Joined with empty known_zones, so MovementSystem's first CrtLoad covers the whole view.
             if (!ctx.world.Join(Player{
-                    .socket = ctx.clientSocket,
+                    .connection = ctx.connection,
                     .session_id = request.session_id,
+                    .account_id = loaded->accountId,
                     .character = character,
                 }))
                 return sendFail();
 
             Map* map = ctx.world.GetMap(character.map_id);
-
-            // Legacy copy for handlers not yet on the map's Player.
-            ctx.sessions.Set(ctx.clientSocket, GameSession{
-                                                   .sessionId = static_cast<int64_t>(request.session_id),
-                                                   .accountId = loaded->accountId,
-                                                   .characterId = loaded->characterId,
-                                                   .character = character,
-                                               });
-            map->SetPlayer(ctx.clientSocket, character.x, character.y);
 
             // Arriving is a placement onto the DB position; MovementSystem sends the creatures in view.
             map->Events().Publish(CharacterMoveEvent{
@@ -125,23 +120,19 @@ void HandleCgExit(const GameContext& ctx, const GameExit& request)
     // Runs after the save attempt; a quick re-login's load is queued behind this save anyway.
     auto finish = [ctx, reply = !request.disconnected]
     {
-        ctx.sessions.Remove(ctx.clientSocket);
         if (reply)
-            ctx.outbox.Send(ctx.clientSocket, CharExitSucc{});
+            ctx.outbox.Send(ctx.connection, CharExitSucc{});
     };
 
-    auto session = ctx.sessions.Get(ctx.clientSocket);
-    if (!session)
+    if (request.disconnected)
+        ctx.world.Disconnect(ctx.connection);
+
+    // No player: never entered, or already left (a quest warp saves its own destination).
+    const std::optional<Player> player = ctx.world.Leave(ctx.connection);
+    if (!player)
         return finish();
 
-    const std::optional<Player> player = ctx.world.Leave(ctx.clientSocket);
-    if (Map* map = ctx.world.GetMap(session->character.map_id))
-        map->RemovePlayer(ctx.clientSocket);
-
-    // The map's Player holds the live position; the session copy only if it never spawned.
-    const Character character = player ? player->character : session->character;
-
     // A failed save just leaves the character at its last saved position.
-    ctx.persistence.Run([character](IDatabase& db) { character.SavePosition(db); }, finish,
+    ctx.persistence.Run([character = player->character](IDatabase& db) { character.SavePosition(db); }, finish,
                         [finish](const std::string&) { finish(); });
 }

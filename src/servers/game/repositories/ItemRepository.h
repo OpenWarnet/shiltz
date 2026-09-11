@@ -15,7 +15,7 @@ class IDatabase;
 // path and Character's slot methods used to: dropping and picking an appraised
 // item back up used to silently erase its rolled option_bits.
 //
-// No per-slot reads here -- session->character's equipment/inventory is kept
+// No per-slot reads here -- the Player's character equipment/inventory is kept
 // in step with every write below (see Character::SetItemSlot/ClearItemSlot),
 // so callers read that cache instead of round-tripping through a SELECT.
 // The one read still owned here is the full-character load that seeds that
@@ -26,8 +26,8 @@ class IDatabase;
 // believes it's empty), and the write only applies if the DB's actual
 // current content still matches that. Returns false (no write applied) on a
 // mismatch -- meaning some other write for this same character landed
-// between the caller's snapshot and this call (see the pipelined-request
-// race described in GameSessionStore.h), and the caller must treat this as
+// between the caller's snapshot and this call (an earlier request's write
+// still queued in Persistence when this one was validated), and the caller must treat this as
 // a conflict/rejection, not assume the write happened. Both tables keep a
 // row rather than deleting it once cleared (item_id = NULL means empty),
 // so a CAS attempt can always tell "already emptied by someone else" apart

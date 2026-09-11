@@ -12,7 +12,7 @@
 
 void HandleGameServerConnection(const LoginContext& ctx, const GameConnect& request)
 {
-    auto sessionId = ctx.sessions.GetSessionId(ctx.clientSocket);
+    auto sessionId = ctx.sessions.GetSessionId(ctx.connection);
     if (!sessionId)
     {
         std::cout << "Rejecting CL_GAMESERVER_CONNECT: socket has no session (never logged in)\n";
@@ -34,5 +34,5 @@ void HandleGameServerConnection(const LoginContext& ctx, const GameConnect& requ
     LoginPacket responsePacket(LoginOpcode::LC_GSERV_CONNECT_SUCCESS, data);
     auto responsePayload = responsePacket.Serialize(ctx.key);
 
-    ctx.server.SendTo(ctx.clientSocket, responsePayload);
+    ctx.server.SendTo(ctx.connection, responsePayload);
 }

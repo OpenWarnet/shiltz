@@ -8,7 +8,7 @@ bool StoreCreate::Deserialize(PayloadReader& reader)
     return reader.ReadString(password, 16);
 }
 
-void StoreCreate::Handle(const GameContext& ctx, Player&) const
+void StoreCreate::Handle(const GameContext& ctx, Player& player) const
 {
-    HandleStoreCreate(ctx, *this);
+    HandleStoreCreate(ctx, *this, player);
 }

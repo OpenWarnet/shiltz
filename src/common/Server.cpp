@@ -19,13 +19,13 @@ using boost::asio::ip::tcp;
 class Server::Connection : public std::enable_shared_from_this<Connection>
 {
 public:
-    Connection(tcp::socket socket, Server& owner)
+    Connection(tcp::socket socket, Server& owner, ConnectionId id)
         : m_socket(std::move(socket)), m_strand(boost::asio::make_strand(m_socket.get_executor())),
-          m_owner(owner), m_id(m_socket.native_handle())
+          m_owner(owner), m_id(id)
     {
     }
 
-    SOCKET Id() const { return m_id; }
+    ConnectionId Id() const { return m_id; }
 
     void Start()
     {
@@ -141,8 +141,7 @@ private:
 
     void HandleDisconnect()
     {
-        // Deregister before closing: a closed SOCKET value can be reused by
-        // a later accept(), so the registry entry must be gone first.
+        // Deregister before closing, so nothing new is queued to a closing socket.
         m_owner.UnregisterConnection(Id());
         m_owner.OnClientDisconnected(Id());
 
@@ -153,7 +152,7 @@ private:
     tcp::socket m_socket;
     Strand m_strand;
     Server& m_owner;
-    SOCKET m_id;
+    ConnectionId m_id;
 
     std::array<uint8_t, 1024> m_readChunk{};
     std::vector<uint8_t> m_recvBuffer;
@@ -179,11 +178,11 @@ Server::~Server()
     }
 }
 
-void Server::OnClientConnected(SOCKET)
+void Server::OnClientConnected(ConnectionId)
 {
 }
 
-void Server::OnClientDisconnected(SOCKET)
+void Server::OnClientDisconnected(ConnectionId)
 {
 }
 
@@ -235,7 +234,7 @@ void Server::DoAccept()
         if (!ec)
         {
             std::cout << "Client connected!\n";
-            auto connection = std::make_shared<Connection>(std::move(socket), *this);
+            auto connection = std::make_shared<Connection>(std::move(socket), *this, m_nextConnectionId++);
             RegisterConnection(connection);
             connection->Start();
         }
@@ -254,31 +253,25 @@ void Server::RegisterConnection(const std::shared_ptr<Connection>& connection)
     m_connections[connection->Id()] = connection;
 }
 
-void Server::UnregisterConnection(SOCKET clientId)
+void Server::UnregisterConnection(ConnectionId connection)
 {
     std::lock_guard lock(m_connectionsMutex);
-    m_connections.erase(clientId);
+    m_connections.erase(connection);
 }
 
-bool Server::SendTo(SOCKET clientId, std::span<const uint8_t> frame)
+bool Server::SendTo(ConnectionId connection, std::span<const uint8_t> frame)
 {
-    std::shared_ptr<Connection> connection;
+    std::shared_ptr<Connection> target;
     {
         std::lock_guard lock(m_connectionsMutex);
-        auto it = m_connections.find(clientId);
+        auto it = m_connections.find(connection);
         if (it == m_connections.end())
             return false;
-        connection = it->second;
+        target = it->second;
     }
 
-    connection->Send(std::vector<uint8_t>(frame.begin(), frame.end()));
+    target->Send(std::vector<uint8_t>(frame.begin(), frame.end()));
     return true;
-}
-
-bool Server::IsConnected(SOCKET clientId) const
-{
-    std::lock_guard lock(m_connectionsMutex);
-    return m_connections.contains(clientId);
 }
 
 void Server::Broadcast(std::span<const uint8_t> frame)

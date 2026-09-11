@@ -9,7 +9,7 @@ bool ItemTradeBuy::Deserialize(PayloadReader& reader)
            reader.Read(slot_id) && reader.Read(creature_instance_id);
 }
 
-void ItemTradeBuy::Handle(const GameContext& ctx, Player&) const
+void ItemTradeBuy::Handle(const GameContext& ctx, Player& player) const
 {
-    HandleItemTradeBuy(ctx, *this);
+    HandleItemTradeBuy(ctx, *this, player);
 }

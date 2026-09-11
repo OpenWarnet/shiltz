@@ -3,6 +3,7 @@
 #include "GamePacket.h"
 #include "common/PayloadWriter.h"
 #include "protocol/ClientProtocol.h"
+#include "protocol/client/GameConnect.h"
 #include "protocol/client/GameExit.h"
 #include "protocol/server/CrtMove.h"
 #include "world/common/Request.h"
@@ -27,9 +28,9 @@ namespace
 } // namespace
 
 GameServer::GameServer(uint16_t port, std::span<const uint8_t> key, IDatabase& db)
-    : Server(port, "Game"), m_key(key), m_db(db),
+    : Server(port, "Game"), m_key(key),
       m_outbox([this](ConnectionId to, std::span<const std::uint8_t> frame)
-               { SendTo(static_cast<SOCKET>(to), frame); }),
+               { SendTo(to, frame); }),
       m_worldStrand(boost::asio::any_io_executor(IoContext().get_executor())), m_tickTimer(IoContext()),
       m_persistence(db, [this](std::function<void()> work)
                     { boost::asio::post(m_worldStrand, std::move(work)); })
@@ -64,7 +65,13 @@ void GameServer::ScheduleTick()
     }));
 }
 
-void GameServer::OnFrame(SOCKET clientSocket, std::span<const uint8_t> frame)
+void GameServer::OnClientConnected(ConnectionId connection)
+{
+    // Queued before the connection's first frame, so the world knows it before anything it sends.
+    m_world.Receive(Request{.context = MakeContext(connection), .message = std::make_unique<GameConnect>()});
+}
+
+void GameServer::OnFrame(ConnectionId connection, std::span<const uint8_t> frame)
 {
     GamePacket packet;
     if (!packet.Deserialize(frame, m_key))
@@ -78,20 +85,19 @@ void GameServer::OnFrame(SOCKET clientSocket, std::span<const uint8_t> frame)
     if (!message)
         return;
 
-    m_world.Receive(Request{.context = MakeContext(clientSocket), .message = std::move(message)});
+    m_world.Receive(Request{.context = MakeContext(connection), .message = std::move(message)});
 }
 
-void GameServer::OnClientDisconnected(SOCKET clientSocket)
+void GameServer::OnClientDisconnected(ConnectionId connection)
 {
     // Leave as a CG_EXIT through the same queue, so it runs after everything this client already sent.
     auto exit = std::make_unique<GameExit>();
     exit->disconnected = true;
-    m_world.Receive(Request{.context = MakeContext(clientSocket), .message = std::move(exit)});
+    m_world.Receive(Request{.context = MakeContext(connection), .message = std::move(exit)});
 }
 
-GameContext GameServer::MakeContext(SOCKET clientSocket)
+GameContext GameServer::MakeContext(ConnectionId connection)
 {
-    return GameContext{*this,   clientSocket, m_key,  m_db, m_sessions, m_world, m_data, m_persistence.Thread(),
-                       m_outbox, m_persistence};
+    return GameContext{connection, m_world, m_data, m_outbox, m_persistence};
 }
 

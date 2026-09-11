@@ -50,6 +50,7 @@ add_executable (
 	"${CMAKE_SOURCE_DIR}/src/common/Dispatcher.h"
 	"${CMAKE_SOURCE_DIR}/src/common/PayloadWriter.h"
 	"${CMAKE_SOURCE_DIR}/src/common/PayloadReader.h"
+	"${CMAKE_SOURCE_DIR}/src/common/ConnectionId.h"
 	"${CMAKE_SOURCE_DIR}/src/common/Server.h"
 	"${CMAKE_SOURCE_DIR}/src/common/Server.cpp"
 	"${CMAKE_SOURCE_DIR}/src/common/HexDump.h"

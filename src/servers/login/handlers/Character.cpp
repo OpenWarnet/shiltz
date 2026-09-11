@@ -35,7 +35,7 @@ namespace
 
 void HandleGetCharacterList(const LoginContext& ctx, const ServerSelect& select)
 {
-    auto accountId = ctx.sessions.GetAccountId(ctx.clientSocket);
+    auto accountId = ctx.sessions.GetAccountId(ctx.connection);
     if (!accountId)
     {
         std::cout << "Rejecting CL_GET_CHARINFO: socket has no authenticated account\n";
@@ -189,7 +189,7 @@ void HandleGetCharacterList(const LoginContext& ctx, const ServerSelect& select)
     LoginPacket responsePacket(LoginOpcode::LC_CHARINFO_SUCCESS, charData);
     auto response = responsePacket.Serialize(ctx.key);
 
-    ctx.server.SendTo(ctx.clientSocket, response);
+    ctx.server.SendTo(ctx.connection, response);
     });
 }
 
@@ -206,10 +206,10 @@ void HandleDeleteCharacter(const LoginContext& ctx, const GenericCharacterPayloa
         LoginPacket failPacket(LoginOpcode::LC_DELETECHAR_FAIL, failData);
         auto failPayload = failPacket.Serialize(ctx.key);
 
-        ctx.server.SendTo(ctx.clientSocket, failPayload);
+        ctx.server.SendTo(ctx.connection, failPayload);
     };
 
-    auto accountId = ctx.sessions.GetAccountId(ctx.clientSocket);
+    auto accountId = ctx.sessions.GetAccountId(ctx.connection);
     if (!accountId)
     {
         std::cout << "Rejecting CL_DELETE_CHARACTER: socket has no authenticated account\n";
@@ -251,7 +251,7 @@ void HandleDeleteCharacter(const LoginContext& ctx, const GenericCharacterPayloa
     LoginPacket responsePacket(LoginOpcode::LC_DELETECHAR_SUCCESS, data);
     auto responsePayload = responsePacket.Serialize(ctx.key);
 
-    ctx.server.SendTo(ctx.clientSocket, responsePayload);
+    ctx.server.SendTo(ctx.connection, responsePayload);
     });
 }
 
@@ -268,10 +268,10 @@ void HandleCancelDeleteCharacter(const LoginContext& ctx, const GenericCharacter
         LoginPacket failPacket(LoginOpcode::LC_CHAR_DELETE_CANCLE_FAIL, failData);
         auto failPayload = failPacket.Serialize(ctx.key);
 
-        ctx.server.SendTo(ctx.clientSocket, failPayload);
+        ctx.server.SendTo(ctx.connection, failPayload);
     };
 
-    auto accountId = ctx.sessions.GetAccountId(ctx.clientSocket);
+    auto accountId = ctx.sessions.GetAccountId(ctx.connection);
     if (!accountId)
     {
         std::cout << "Rejecting CL_CHAR_DELETE_CANCLE: socket has no authenticated account\n";
@@ -309,7 +309,7 @@ void HandleCancelDeleteCharacter(const LoginContext& ctx, const GenericCharacter
     LoginPacket responsePacket(LoginOpcode::LC_CHAR_DELETE_CANCLE_SUCCESS, data);
     auto responsePayload = responsePacket.Serialize(ctx.key);
 
-    ctx.server.SendTo(ctx.clientSocket, responsePayload);
+    ctx.server.SendTo(ctx.connection, responsePayload);
     });
 }
 
@@ -324,7 +324,7 @@ void HandleCreateCharacter(const LoginContext& ctx, const CreateCharacter& reque
         LoginPacket failPacket(LoginOpcode::LC_CREATECHAR_FAIL, failData);
         auto failPayload = failPacket.Serialize(ctx.key);
 
-        ctx.server.SendTo(ctx.clientSocket, failPayload);
+        ctx.server.SendTo(ctx.connection, failPayload);
     };
 
     if (request.char_name.size() < 4 || request.char_name.size() > 16)
@@ -335,7 +335,7 @@ void HandleCreateCharacter(const LoginContext& ctx, const CreateCharacter& reque
         return;
     }
 
-    auto accountId = ctx.sessions.GetAccountId(ctx.clientSocket);
+    auto accountId = ctx.sessions.GetAccountId(ctx.connection);
     if (!accountId)
     {
         std::cout << "Rejecting CL_CREATE_CHARACTER: socket has no authenticated account\n";
@@ -433,7 +433,7 @@ void HandleCreateCharacter(const LoginContext& ctx, const CreateCharacter& reque
     LoginPacket responsePacket(LoginOpcode::LC_CREATECHAR_SUCCESS, data);
     auto responsePayload = responsePacket.Serialize(ctx.key);
 
-    ctx.server.SendTo(ctx.clientSocket, responsePayload);
+    ctx.server.SendTo(ctx.connection, responsePayload);
     });
 }
 
@@ -450,10 +450,10 @@ void HandleUpdateCharacterLocation(const LoginContext& ctx, const SetCharacterMa
         LoginPacket failPacket(LoginOpcode::LC_CREATE_MAP_NUM_FAIL, failData);
         auto failPayload = failPacket.Serialize(ctx.key);
 
-        ctx.server.SendTo(ctx.clientSocket, failPayload);
+        ctx.server.SendTo(ctx.connection, failPayload);
     };
 
-    auto accountId = ctx.sessions.GetAccountId(ctx.clientSocket);
+    auto accountId = ctx.sessions.GetAccountId(ctx.connection);
     if (!accountId)
     {
         std::cout << "Rejecting CL_CREATE_MAP_NUM: socket has no authenticated account\n";
@@ -498,6 +498,6 @@ void HandleUpdateCharacterLocation(const LoginContext& ctx, const SetCharacterMa
     LoginPacket responsePacket(LoginOpcode::LC_CREATE_MAP_NUM_SUCCESS, data);
     auto responsePayload = responsePacket.Serialize(ctx.key);
 
-    ctx.server.SendTo(ctx.clientSocket, responsePayload);
+    ctx.server.SendTo(ctx.connection, responsePayload);
     });
 }

@@ -67,11 +67,11 @@ void HandleLogin(const LoginContext& ctx, const Login& login)
             LoginPacket responsePacket(LoginOpcode::LC_LOGIN_FAIL, failData);
             auto response = responsePacket.Serialize(ctx.key);
 
-            ctx.server.SendTo(ctx.clientSocket, response);
+            ctx.server.SendTo(ctx.connection, response);
             return;
         }
 
-        ctx.sessions.SetAccountId(ctx.clientSocket, *accountId);
+        ctx.sessions.SetAccountId(ctx.connection, *accountId);
 
         // Complements the in-memory LoginSessionStore with a durable row
         // the game server can later resolve back to an account_id -- see
@@ -80,7 +80,7 @@ void HandleLogin(const LoginContext& ctx, const Login& login)
         insertSession->Bind(0, *accountId);
         insertSession->Step();
 
-        ctx.sessions.SetSessionId(ctx.clientSocket, ctx.db.LastInsertRowId());
+        ctx.sessions.SetSessionId(ctx.connection, ctx.db.LastInsertRowId());
 
         ServerList list{.servers{{.name = "1server", .channel_players{1, 2, 3}}}};
         list.Serialize(writer);
@@ -90,7 +90,7 @@ void HandleLogin(const LoginContext& ctx, const Login& login)
         LoginPacket responsePacket(LoginOpcode::LC_LOGIN_SUCCESS, serverData);
         auto response = responsePacket.Serialize(ctx.key);
 
-        ctx.server.SendTo(ctx.clientSocket, response);
+        ctx.server.SendTo(ctx.connection, response);
     });
 }
 

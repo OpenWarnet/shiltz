@@ -1,23 +1,22 @@
 #include "LevelUp.h"
 
-#include "GamePacket.h"
-#include "GameSessionStore.h"
-#include "common/Server.h"
+#include "Outbox.h"
+#include "Persistence.h"
 #include "parser/LevelScr.h"
 #include "protocol/client/LevelUpCheck.h"
 #include "protocol/server/LevelUpFail.h"
 #include "protocol/server/LevelUpSucc.h"
 #include "tables/GameData.h"
 #include "tables/LevelTable.h"
+#include "world/Player.h"
 
-void HandleLevelUpCheck(const GameContext& ctx, const LevelUpCheck& request)
+#include <string>
+
+void HandleLevelUpCheck(const GameContext& ctx, const LevelUpCheck&, Player& player)
 {
-    auto session = ctx.sessions.Get(ctx.clientSocket);
-    if (!session)
-        return;
-
-    std::int32_t level = session->character.level;
-    std::int64_t exp = session->character.exp;
+    Character& character = player.character;
+    std::int32_t level = character.level;
+    std::int64_t exp = character.exp;
     std::int64_t statPointsGained = 0;
     std::int64_t spGained = 0;
     bool leveledUp = false;
@@ -45,36 +44,30 @@ void HandleLevelUpCheck(const GameContext& ctx, const LevelUpCheck& request)
         LevelUpFail response;
         response.level = level;
         response.exp = static_cast<std::int32_t>(exp);
-        ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
+        ctx.outbox.Send(ctx.connection, response);
         return;
     }
 
-    session->character.level = level;
-    session->character.exp = exp;
-    session->character.stats.raw.unallocated_stat_points += static_cast<std::uint32_t>(statPointsGained);
-    session->character.skills.unallocated_sp += static_cast<std::uint32_t>(spGained);
-    ctx.sessions.Set(ctx.clientSocket, *session);
+    character.level = level;
+    character.exp = exp;
+    character.stats.raw.unallocated_stat_points += static_cast<std::uint32_t>(statPointsGained);
+    character.skills.unallocated_sp += static_cast<std::uint32_t>(spGained);
 
-    // SaveLevel/SaveRawStats/SaveSkillPoints are blocking SQLite calls --
-    // run them on the DB pool instead of the connection's reactor thread.
-    // ctx and a copy of the (already-updated) character are captured by value
-    // so both stay valid once this handler returns; server.SendTo() is
-    // safe to call from any thread -- it queues onto the connection's own
-    // strand internally -- so the reply is sent straight from the pool
-    // thread once the writes land.
-    Character character = session->character;
-    boost::asio::post(ctx.dbPool, [ctx, character, level, exp]() {
-        character.SaveLevel(ctx.db);
-        character.SaveRawStats(ctx.db);
-        character.SaveSkillPoints(ctx.db);
+    LevelUpSucc response;
+    response.level = level;
+    response.unallocated_stat_points = static_cast<std::int32_t>(character.stats.raw.unallocated_stat_points);
+    response.unallocated_sp = static_cast<std::int32_t>(character.skills.unallocated_sp);
+    response.unallocated_ep = static_cast<std::int32_t>(character.skills.unallocated_ep);
+    response.current_exp = exp;
+    auto reply = [ctx, response] { ctx.outbox.Send(ctx.connection, response); };
 
-        LevelUpSucc response;
-        response.level = level;
-        response.unallocated_stat_points =
-            static_cast<std::int32_t>(character.stats.raw.unallocated_stat_points);
-        response.unallocated_sp = static_cast<std::int32_t>(character.skills.unallocated_sp);
-        response.unallocated_ep = static_cast<std::int32_t>(character.skills.unallocated_ep);
-        response.current_exp = exp;
-        ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
-    });
+    // Replies either way: a failed save is rewritten by the next save of these fields, or rolls back on relog.
+    ctx.persistence.Run(
+        [saved = character](IDatabase& db)
+        {
+            saved.SaveLevel(db);
+            saved.SaveRawStats(db);
+            saved.SaveSkillPoints(db);
+        },
+        reply, [reply](const std::string&) { reply(); });
 }

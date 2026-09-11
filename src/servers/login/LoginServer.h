@@ -15,8 +15,8 @@ public:
                 IDatabase& db);
 
 protected:
-    void OnClientConnected(SOCKET clientSocket) override;
-    void OnFrame(SOCKET clientSocket, std::span<const uint8_t> frame) override;
+    void OnClientConnected(ConnectionId connection) override;
+    void OnFrame(ConnectionId connection, std::span<const uint8_t> frame) override;
 
 private:
     LoginDispatcher m_dispatcher;

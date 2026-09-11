@@ -10,17 +10,17 @@ LoginServer::LoginServer(uint16_t port, std::span<const uint8_t> key,
 {
 }
 
-void LoginServer::OnClientConnected(SOCKET clientSocket)
+void LoginServer::OnClientConnected(ConnectionId connection)
 {
     // A peer that closes before we send (e.g. a bare TCP port-probe rather than
     // a real client) surfaces as WSAECONNRESET/WSAECONNABORTED in SendTo's log
     // here -- unrelated to the DES/nonce handshake despite the "Client
     // disconnected" that follows.
-    if (SendTo(clientSocket, m_noncePayload))
+    if (SendTo(connection, m_noncePayload))
         std::cout << "Sent step-0 nonce frame (" << m_noncePayload.size() << " bytes)\n";
 }
 
-void LoginServer::OnFrame(SOCKET clientSocket, std::span<const uint8_t> frame)
+void LoginServer::OnFrame(ConnectionId connection, std::span<const uint8_t> frame)
 {
     LoginPacket packet;
     if (!packet.Deserialize(frame, m_key))
@@ -29,5 +29,5 @@ void LoginServer::OnFrame(SOCKET clientSocket, std::span<const uint8_t> frame)
     std::cout << "Received (" << frame.size() << " bytes, payload " << packet.GetPayload().size()
               << " bytes)\n";
 
-    m_dispatcher.Dispatch(LoginContext{*this, clientSocket, m_key, m_db, m_sessions, m_dbPool}, packet);
+    m_dispatcher.Dispatch(LoginContext{*this, connection, m_key, m_db, m_sessions, m_dbPool}, packet);
 }

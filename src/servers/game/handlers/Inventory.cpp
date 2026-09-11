@@ -1,8 +1,7 @@
 #include "Inventory.h"
 
-#include "GamePacket.h"
-#include "GameSessionStore.h"
-#include "common/Server.h"
+#include "Outbox.h"
+#include "Persistence.h"
 #include "protocol/client/ItemDelete.h"
 #include "protocol/client/ItemDrop.h"
 #include "protocol/client/ItemMove.h"
@@ -10,7 +9,6 @@
 #include "protocol/server/InventoryItemList.h"
 #include "protocol/server/ItemDeleteSuccess.h"
 #include "protocol/server/ItemDropSuccess.h"
-#include "protocol/server/ItemMapNew.h"
 #include "protocol/server/ItemMapRemove.h"
 #include "protocol/server/ItemMoveFail.h"
 #include "protocol/server/ItemMoveSuccess.h"
@@ -18,361 +16,275 @@
 #include "repositories/ItemRepository.h"
 #include "storage/Transaction.h"
 #include "world/GroundItem.h"
+#include "world/Player.h"
 #include "world/World.h"
 #include "world/common/EntityIdGenerator.h"
 
 #include <algorithm>
 #include <optional>
+#include <string>
 
-void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
+namespace
 {
-    auto session = ctx.sessions.Get(ctx.clientSocket);
-    if (!session)
-        return;
+// Wire slot ids count bag slots from InventoryItemList::kBagStartSlot; inventory_slot is 0-based.
+std::uint32_t BagIndex(std::uint32_t wireSlotId)
+{
+    return static_cast<std::uint32_t>(static_cast<std::int64_t>(wireSlotId) -
+                                      static_cast<std::int64_t>(InventoryItemList::kBagStartSlot));
+}
 
-    // Everything below touches World/Map state and/or blocking SQLite
-    // calls -- run it on the DB pool instead of the connection's reactor
-    // thread. Map access is safe from any thread (its own mutexes), and
-    // GameSessionStore already has its own mutex too; request/session are
-    // copied by value so they stay valid once this handler returns.
-    boost::asio::post(ctx.dbPool, [ctx, request, session]() mutable {
-    const int64_t characterId = session->characterId;
-    // Client-side slot_id is wire-relative (bag slots start at
-    // InventoryItemList::kBagStartSlot, per GC_INVENTORY_ITEM_LIST's
-    // layout), but inventory_slot.slot_index is bag-relative starting at 0
-    // -- convert before touching the DB. slot_id < kBagStartSlot (an
-    // equipment slot, which this table doesn't cover) lands on a wrapped
-    // uint32_t that will simply never match a real row.
-    const auto slotIndex = static_cast<std::uint32_t>(static_cast<int64_t>(request.slot_id) -
-                                                        static_cast<int64_t>(InventoryItemList::kBagStartSlot));
+// Runs the guarded writes in one transaction; false if any slot changed underneath (see ItemRepository.h).
+template <typename Writes> auto Transactionally(Writes writes)
+{
+    return [writes](IDatabase& db)
+    {
+        DatabaseTransaction txn(db);
+        if (!writes(db))
+            return false;
+        txn.Commit();
+        return true;
+    };
+}
+} // namespace
 
-    Map* map = ctx.world.GetMap(session->character.map_id);
+void HandleItemPickup(const GameContext& ctx, const ItemPickup& request, Player& player)
+{
+    Map* map = ctx.world.GetMap(player.character.map_id);
     if (!map)
         return;
 
-    // Atomically claim the ground item so two players racing the same
-    // pickup can't both grant it to themselves. Claimed before the DB
-    // write, so a failed write loses the item rather than duplicating it.
+    // Claimed before the DB write, so two players racing the same item can't both get it.
     auto groundItem = map->TryTakeItem(request.id);
     if (!groundItem)
         return;
 
+    const std::int64_t characterId = player.character.id;
+    const std::uint32_t slotIndex = BagIndex(request.slot_id);
     const std::uint32_t itemId = groundItem->item.item_id;
+    const std::optional<Item> existing = player.character.GetInventorySlot(slotIndex);
 
-    DatabaseTransaction txn(ctx.db);
-
-    // Trust the client-given slot rather than computing one server-side --
-    // but verify it's actually consistent with the item being picked up:
-    // empty is fine (new stack), holding the same item_id is fine (stack
-    // onto it), holding a *different* item_id means the client's view of
-    // its own inventory is stale/wrong, so ignore the request rather than
-    // clobbering whatever's actually there.
-    auto existing = session->character.GetInventorySlot(slotIndex);
-
+    // A slot holding a different item means the client's view is stale: put the item back.
     Item updated;
     if (existing)
     {
         if (existing->item_id != itemId)
-        {
-            // Put the claimed item back rather than dropping it -- this is
-            // a normal rejection (stale client state), not a failure.
-            map->AddItem(*groundItem);
-            return;
-        }
+            return map->AddItem(*groundItem);
 
-        // Stack onto the existing slot -- item_level/option_bits stay the
-        // existing stack's (a stackable item's option_bits/item_level
-        // aren't meaningful per-unit), only quantity moves.
         updated = *existing;
         updated.quantity += 1;
     }
     else
     {
-        // New slot -- adopt the ground item's full Item payload (so a
-        // dropped item's item_level/option_bits survive the round-trip),
-        // but pickup always claims one unit regardless of how many the
-        // ground stack held.
+        // Pickup always claims one unit, keeping the ground item's level/options.
         updated = groundItem->item;
         updated.quantity = 1;
     }
 
-    if (!ItemRepository::SaveInventorySlot(ctx.db, characterId, slotIndex, existing, updated))
-    {
-        // Put the claimed item back rather than dropping it -- same
-        // reasoning as the item_id-mismatch rejection above.
-        map->AddItem(*groundItem);
-        return;
-    }
+    auto putBack = [map, item = *groundItem] { map->AddItem(item); };
 
-    txn.Commit();
+    ctx.persistence.Run(
+        Transactionally([=](IDatabase& db)
+                        { return ItemRepository::SaveInventorySlot(db, characterId, slotIndex, existing, updated); }),
+        [ctx, request, slotIndex, itemId, updated, putBack](bool saved)
+        {
+            if (!saved)
+                return putBack();
 
-    session->character.SetInventorySlot(slotIndex, updated);
-    ctx.sessions.Set(ctx.clientSocket, *session);
+            if (Player* player = ctx.world.FindPlayer(ctx.connection))
+            {
+                player->character.SetInventorySlot(slotIndex, updated);
+            }
 
-    ItemPickupSuccess succResponse;
-    succResponse.id = request.id;
-    succResponse.slot_id = request.slot_id;
-    succResponse.item_id = itemId;
-    succResponse.qty_or_refine = updated.WireQuantityOrRefine();
-    ctx.server.SendTo(ctx.clientSocket, succResponse.Packet().Serialize(ctx.key));
+            ItemPickupSuccess succResponse;
+            succResponse.id = request.id;
+            succResponse.slot_id = request.slot_id;
+            succResponse.item_id = itemId;
+            succResponse.qty_or_refine = updated.WireQuantityOrRefine();
+            ctx.outbox.Send(ctx.connection, succResponse);
 
-    ItemMapRemove removeResponse;
-    removeResponse.id = request.id;
-    ctx.server.SendTo(ctx.clientSocket, removeResponse.Packet().Serialize(ctx.key));
-    });
+            ItemMapRemove removeResponse;
+            removeResponse.id = request.id;
+            ctx.outbox.Send(ctx.connection, removeResponse);
+        },
+        [putBack](const std::string&) { putBack(); });
 }
 
-void HandleItemMove(const GameContext& ctx, const ItemMove& request)
+void HandleItemMove(const GameContext& ctx, const ItemMove& request, Player& player)
 {
     auto sendFail = [ctx, request]
     {
         ItemMoveFail response;
         response.source_slot_id = request.source_slot_id;
-        ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
+        ctx.outbox.Send(ctx.connection, response);
     };
 
-    auto session = ctx.sessions.Get(ctx.clientSocket);
-    if (!session)
-    {
-        sendFail();
-        return;
-    }
-
-    // Everything below is blocking SQLite work -- run it on the DB pool
-    // instead of the connection's reactor thread. request/session/sendFail
-    // are copied by value so they stay valid once this handler returns;
-    // server.SendTo() is safe to call from any thread.
-    boost::asio::post(ctx.dbPool, [ctx, request, session, sendFail]() mutable {
-    const int64_t characterId = session->characterId;
-
-    // The two writes below must be all-or-nothing, or a crash between them
-    // leaves the item's old and new slots both occupied (duplication).
-    DatabaseTransaction txn(ctx.db);
-
-    auto sourceContent = session->character.GetItemSlot(request.source_slot_id);
-    auto destContent = session->character.GetItemSlot(request.dest_slot_id);
-
+    const std::int64_t characterId = player.character.id;
+    const std::optional<Item> sourceContent = player.character.GetItemSlot(request.source_slot_id);
+    const std::optional<Item> destContent = player.character.GetItemSlot(request.dest_slot_id);
     if (!sourceContent && !destContent)
-    {
-        sendFail();
-        return;
-    }
+        return sendFail();
 
-    // Guarded against each slot's own last-known content -- see
-    // ItemRepository.h. Both writes must succeed or neither is kept
-    // (short-circuits before the second on failure; either way txn rolls
-    // back below on early return).
-    bool writeOk;
-    if (sourceContent && destContent)
-    {
-        // Both occupied -- swap contents. Can't swap by relocating a
-        // primary key across tables the way same-table moves used to, so
-        // this always writes full content both ways instead.
-        writeOk = ItemRepository::SaveItemSlot(ctx.db, characterId, request.source_slot_id, sourceContent,
-                                                *destContent) &&
-                  ItemRepository::SaveItemSlot(ctx.db, characterId, request.dest_slot_id, destContent,
-                                                *sourceContent);
-    }
-    else if (sourceContent)
-    {
-        // dest is empty -- move source's content there and clear source.
-        writeOk = ItemRepository::SaveItemSlot(ctx.db, characterId, request.dest_slot_id, destContent,
-                                                *sourceContent) &&
-                  ItemRepository::ClearItemSlot(ctx.db, characterId, request.source_slot_id, sourceContent);
-    }
-    else
-    {
-        // source is empty, dest occupied -- move the other way.
-        writeOk = ItemRepository::SaveItemSlot(ctx.db, characterId, request.source_slot_id, sourceContent,
-                                                *destContent) &&
-                  ItemRepository::ClearItemSlot(ctx.db, characterId, request.dest_slot_id, destContent);
-    }
+    const std::uint32_t source = request.source_slot_id;
+    const std::uint32_t dest = request.dest_slot_id;
 
-    if (!writeOk)
+    // Both slots change together, or a crash would leave the item in both.
+    auto writes = [=](IDatabase& db)
     {
-        sendFail();
-        return;
-    }
+        if (sourceContent && destContent)
+            return ItemRepository::SaveItemSlot(db, characterId, source, sourceContent, *destContent) &&
+                   ItemRepository::SaveItemSlot(db, characterId, dest, destContent, *sourceContent);
+        if (sourceContent)
+            return ItemRepository::SaveItemSlot(db, characterId, dest, destContent, *sourceContent) &&
+                   ItemRepository::ClearItemSlot(db, characterId, source, sourceContent);
+        return ItemRepository::SaveItemSlot(db, characterId, source, sourceContent, *destContent) &&
+               ItemRepository::ClearItemSlot(db, characterId, dest, destContent);
+    };
 
-    txn.Commit();
+    ctx.persistence.Run(
+        Transactionally(writes),
+        [ctx, request, source, dest, sourceContent, destContent, sendFail](bool saved)
+        {
+            if (!saved)
+                return sendFail();
 
-    // Only mirror into the cache / session store once the transaction is
-    // actually durable -- see the equivalent comment in ItemConfirmNpc.cpp.
-    if (sourceContent && destContent)
-    {
-        session->character.SetItemSlot(request.source_slot_id, *destContent);
-        session->character.SetItemSlot(request.dest_slot_id, *sourceContent);
-    }
-    else if (sourceContent)
-    {
-        session->character.SetItemSlot(request.dest_slot_id, *sourceContent);
-        session->character.ClearItemSlot(request.source_slot_id);
-    }
-    else
-    {
-        session->character.SetItemSlot(request.source_slot_id, *destContent);
-        session->character.ClearItemSlot(request.dest_slot_id);
-    }
+            if (Player* player = ctx.world.FindPlayer(ctx.connection))
+            {
+                Character& character = player->character;
+                if (sourceContent && destContent)
+                {
+                    character.SetItemSlot(source, *destContent);
+                    character.SetItemSlot(dest, *sourceContent);
+                }
+                else if (sourceContent)
+                {
+                    character.SetItemSlot(dest, *sourceContent);
+                    character.ClearItemSlot(source);
+                }
+                else
+                {
+                    character.SetItemSlot(source, *destContent);
+                    character.ClearItemSlot(dest);
+                }
+            }
 
-    ctx.sessions.Set(ctx.clientSocket, *session);
-
-    ItemMoveSuccess response;
-    response.source_slot_id = request.source_slot_id;
-    response.dest_slot_id = request.dest_slot_id;
-    ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
-    });
+            ItemMoveSuccess response;
+            response.source_slot_id = request.source_slot_id;
+            response.dest_slot_id = request.dest_slot_id;
+            ctx.outbox.Send(ctx.connection, response);
+        },
+        [sendFail](const std::string&) { sendFail(); });
 }
 
-void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
+void HandleItemDrop(const GameContext& ctx, const ItemDrop& request, Player& player)
 {
     if (request.quantity == 0)
         return;
 
-    auto session = ctx.sessions.Get(ctx.clientSocket);
-    if (!session)
-        return;
-
-    // Everything below touches World/Map state and/or blocking SQLite
-    // calls -- run it on the DB pool instead of the connection's reactor
-    // thread. request/session are copied by value so they stay valid once
-    // this handler returns; server.SendTo() is safe to call from any
-    // thread.
-    boost::asio::post(ctx.dbPool, [ctx, request, session]() mutable {
-    Map* map = ctx.world.GetMap(session->character.map_id);
+    Map* map = ctx.world.GetMap(player.character.map_id);
     if (!map)
         return;
 
-    const int64_t characterId = session->characterId;
-    // Same wire-relative -> bag-relative conversion as HandleItemPickup --
-    // see the comment there.
-    const auto slotIndex = static_cast<std::uint32_t>(static_cast<int64_t>(request.slot_id) -
-                                                        static_cast<int64_t>(InventoryItemList::kBagStartSlot));
-
-    // The slot removal must commit before the ground item is created --
-    // otherwise a crash between the two loses or duplicates the item.
-    DatabaseTransaction txn(ctx.db);
-
-    auto slotContent = session->character.GetInventorySlot(slotIndex);
+    const std::int64_t characterId = player.character.id;
+    const std::uint32_t slotIndex = BagIndex(request.slot_id);
+    const std::optional<Item> slotContent = player.character.GetInventorySlot(slotIndex);
     if (!slotContent)
         return;
 
     const std::uint32_t itemId = slotContent->item_id;
 
-    // Carries item_level/option_bits onto the ground item so they survive
-    // to a subsequent pickup -- see world/GroundItem.h.
+    // The ground item keeps item_level/option_bits so a later pickup gets them back.
     Item droppedItem = *slotContent;
-    // What's left in slotIndex after the drop -- 0 means the slot ended up
-    // empty (fully dropped, or an equippable item, which always drops
-    // whole).
-    std::uint32_t remainingQuantity = 0;
-    bool slotCleared;
     Item remainingItem;
-    bool writeOk;
+    std::uint32_t remainingQuantity = 0;
+    bool slotCleared = true;
 
     if (!slotContent->has_refine_level)
     {
         const std::uint32_t currentQuantity = slotContent->quantity;
-        // Explicit template argument (not just std::min(...)) dodges the
-        // Windows.h min/max macro collision -- see HexDump.h for the same
-        // idiom; this project doesn't define NOMINMAX anywhere.
         const std::uint32_t toDrop = std::min<std::uint32_t>(request.quantity, currentQuantity);
         droppedItem.quantity = toDrop;
-
         slotCleared = toDrop >= currentQuantity;
-        if (slotCleared)
-        {
-            writeOk = ItemRepository::ClearInventorySlot(ctx.db, characterId, slotIndex, slotContent);
-        }
-        else
+        if (!slotCleared)
         {
             remainingQuantity = currentQuantity - toDrop;
-
             remainingItem = *slotContent;
             remainingItem.quantity = remainingQuantity;
-            writeOk =
-                ItemRepository::SaveInventorySlot(ctx.db, characterId, slotIndex, slotContent, remainingItem);
         }
     }
     else
     {
-        // Equippable-style item (refine_level, not stackable) -- dropping
-        // always removes the whole thing, regardless of requested quantity.
+        // Equippable items always drop whole.
         droppedItem.quantity = 1;
-        slotCleared = true;
-        writeOk = ItemRepository::ClearInventorySlot(ctx.db, characterId, slotIndex, slotContent);
     }
 
-    if (!writeOk)
-        return;
+    // Dropped at the character's live position, not the stale DB row.
+    const auto dropX = static_cast<std::uint32_t>(player.character.x);
+    const auto dropY = static_cast<std::uint32_t>(player.character.y);
 
-    txn.Commit();
+    auto writes = [=](IDatabase& db)
+    {
+        return slotCleared
+                   ? ItemRepository::ClearInventorySlot(db, characterId, slotIndex, slotContent)
+                   : ItemRepository::SaveInventorySlot(db, characterId, slotIndex, slotContent, remainingItem);
+    };
 
-    // Only mirror into the cache / session store once the transaction is
-    // actually durable -- see the equivalent comment in ItemConfirmNpc.cpp.
-    if (slotCleared)
-        session->character.ClearInventorySlot(slotIndex);
-    else
-        session->character.SetInventorySlot(slotIndex, remainingItem);
-    ctx.sessions.Set(ctx.clientSocket, *session);
+    ctx.persistence.Run(
+        Transactionally(writes),
+        [=](bool saved)
+        {
+            if (!saved)
+                return;
 
-    // Character::x/y is kept live by HandleMovement on every CG_MOVE, unlike
-    // character_position (only written at creation) -- drop at the
-    // session's actual current position instead of a stale DB row.
-    const auto dropX = static_cast<std::uint32_t>(session->character.x);
-    const auto dropY = static_cast<std::uint32_t>(session->character.y);
+            if (Player* player = ctx.world.FindPlayer(ctx.connection))
+            {
+                if (slotCleared)
+                    player->character.ClearInventorySlot(slotIndex);
+                else
+                    player->character.SetInventorySlot(slotIndex, remainingItem);
+            }
 
-    const std::uint32_t groundId = EntityIdGenerator::Next();
+            // Created only once the slot removal is durable, so a crash can't duplicate the item.
+            const std::uint32_t groundId = EntityIdGenerator::Next();
+            map->AddItem(GroundItem{.id = groundId, .x = dropX, .y = dropY, .item = droppedItem});
 
-    map->AddItem(GroundItem{
-        .id = groundId,
-        .x = dropX,
-        .y = dropY,
-        .item = droppedItem,
-    });
-
-    ItemDropSuccess succResponse;
-    succResponse.id = groundId;
-    succResponse.x = dropX;
-    succResponse.y = dropY;
-    succResponse.item_id = itemId;
-    succResponse.source_slot_id = request.slot_id;
-    succResponse.new_item_id = remainingQuantity > 0 ? itemId : 0;
-    succResponse.new_item_count = remainingQuantity > 0 ? remainingQuantity - 1 : 0;
-    ctx.server.SendTo(ctx.clientSocket, succResponse.Packet().Serialize(ctx.key));
-    });
+            ItemDropSuccess succResponse;
+            succResponse.id = groundId;
+            succResponse.x = dropX;
+            succResponse.y = dropY;
+            succResponse.item_id = itemId;
+            succResponse.source_slot_id = request.slot_id;
+            succResponse.new_item_id = remainingQuantity > 0 ? itemId : 0;
+            succResponse.new_item_count = remainingQuantity > 0 ? remainingQuantity - 1 : 0;
+            ctx.outbox.Send(ctx.connection, succResponse);
+        },
+        [](const std::string&) {});
 }
 
-void HandleItemDelete(const GameContext& ctx, const ItemDelete& request)
+void HandleItemDelete(const GameContext& ctx, const ItemDelete& request, Player& player)
 {
-    auto session = ctx.sessions.Get(ctx.clientSocket);
-    if (!session)
-        return;
-
-    // Everything below is blocking SQLite work -- run it on the DB pool
-    // instead of the connection's reactor thread. request/session are
-    // copied by value so they stay valid once this handler returns;
-    // server.SendTo() is safe to call from any thread.
-    boost::asio::post(ctx.dbPool, [ctx, request, session]() mutable {
-    const int64_t characterId = session->characterId;
-
-    // slot_id is the same wire-relative slot convention as ItemMove's
-    // source_slot_id/dest_slot_id -- ItemRepository::ClearItemSlot resolves
-    // the equipment/inventory split itself, no manual bag-offset conversion
-    // needed here.
-    auto slotContent = session->character.GetItemSlot(request.slot_id);
+    // slot_id is a wire slot; ItemRepository resolves the equipment/inventory split itself.
+    const std::int64_t characterId = player.character.id;
+    const std::uint32_t slotId = request.slot_id;
+    const std::optional<Item> slotContent = player.character.GetItemSlot(slotId);
     if (!slotContent)
         return;
 
-    DatabaseTransaction txn(ctx.db);
-    if (!ItemRepository::ClearItemSlot(ctx.db, characterId, request.slot_id, slotContent))
-        return;
-    txn.Commit();
+    ctx.persistence.Run(
+        Transactionally([=](IDatabase& db)
+                        { return ItemRepository::ClearItemSlot(db, characterId, slotId, slotContent); }),
+        [ctx, slotId](bool saved)
+        {
+            if (!saved)
+                return;
 
-    session->character.ClearItemSlot(request.slot_id);
-    ctx.sessions.Set(ctx.clientSocket, *session);
+            if (Player* player = ctx.world.FindPlayer(ctx.connection))
+            {
+                player->character.ClearItemSlot(slotId);
+            }
 
-    ItemDeleteSuccess succResponse;
-    succResponse.slot_id = request.slot_id;
-    ctx.server.SendTo(ctx.clientSocket, succResponse.Packet().Serialize(ctx.key));
-    });
+            ItemDeleteSuccess succResponse;
+            succResponse.slot_id = slotId;
+            ctx.outbox.Send(ctx.connection, succResponse);
+        },
+        [](const std::string&) {});
 }

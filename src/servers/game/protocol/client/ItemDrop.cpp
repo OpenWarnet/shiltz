@@ -8,7 +8,7 @@ bool ItemDrop::Deserialize(PayloadReader& reader)
     return reader.Read(slot_id) && reader.Read(quantity);
 }
 
-void ItemDrop::Handle(const GameContext& ctx, Player&) const
+void ItemDrop::Handle(const GameContext& ctx, Player& player) const
 {
-    HandleItemDrop(ctx, *this);
+    HandleItemDrop(ctx, *this, player);
 }

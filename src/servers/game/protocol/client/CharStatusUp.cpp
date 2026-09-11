@@ -8,7 +8,7 @@ bool CharStatusUp::Deserialize(PayloadReader& reader)
     return reader.Read(stat_id) && reader.Read(amount);
 }
 
-void CharStatusUp::Handle(const GameContext& ctx, Player&) const
+void CharStatusUp::Handle(const GameContext& ctx, Player& player) const
 {
-    HandleCharStatusUp(ctx, *this);
+    HandleCharStatusUp(ctx, *this, player);
 }

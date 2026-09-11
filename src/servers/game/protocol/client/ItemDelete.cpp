@@ -10,7 +10,7 @@ bool ItemDelete::Deserialize(PayloadReader& reader)
     return reader.Read(slot_id) && reader.Read(confirmFlag) && reader.Read(padding);
 }
 
-void ItemDelete::Handle(const GameContext& ctx, Player&) const
+void ItemDelete::Handle(const GameContext& ctx, Player& player) const
 {
-    HandleItemDelete(ctx, *this);
+    HandleItemDelete(ctx, *this, player);
 }

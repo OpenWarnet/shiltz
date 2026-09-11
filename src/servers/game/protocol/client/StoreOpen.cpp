@@ -8,7 +8,7 @@ bool StoreOpen::Deserialize(PayloadReader& reader)
     return reader.ReadString(password, 16);
 }
 
-void StoreOpen::Handle(const GameContext& ctx, Player&) const
+void StoreOpen::Handle(const GameContext& ctx, Player& player) const
 {
-    HandleStoreOpen(ctx, *this);
+    HandleStoreOpen(ctx, *this, player);
 }

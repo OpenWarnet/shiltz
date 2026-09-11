@@ -23,7 +23,7 @@ void EnterSystem::SendCharacterDataLoad(const CharacterJoinEvent& event) const
     if (!player)
         return;
 
-    m_outbox.Send(player->socket,
+    m_outbox.Send(player->connection,
                   player->character.ToCharacterDataLoad(
                       /*epsUserFlag=*/1, // TODO: no DB column -- kept as the prior hardcoded placeholder
                       static_cast<std::uint32_t>(std::time(nullptr))));
@@ -35,5 +35,5 @@ void EnterSystem::SendInventoryItemList(const CharacterJoinEvent& event) const
     if (!player)
         return;
 
-    m_outbox.Send(player->socket, player->character.ToInventoryItemList());
+    m_outbox.Send(player->connection, player->character.ToInventoryItemList());
 }

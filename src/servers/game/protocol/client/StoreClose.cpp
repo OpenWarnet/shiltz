@@ -8,7 +8,7 @@ bool StoreClose::Deserialize(PayloadReader& reader)
     return reader.Read(constant);
 }
 
-void StoreClose::Handle(const GameContext& ctx, Player&) const
+void StoreClose::Handle(const GameContext& ctx, Player& player) const
 {
-    HandleStoreClose(ctx, *this);
+    HandleStoreClose(ctx, *this, player);
 }

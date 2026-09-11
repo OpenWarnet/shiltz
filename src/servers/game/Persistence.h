@@ -27,7 +27,8 @@ public:
     // Fire-and-forget; onFailed (world thread) says the write didn't land.
     void Save(std::function<void(IDatabase&)> job, OnFailed onFailed = {});
 
-    // Runs job, then onDone(result) or onFailed(error) on the world thread.
+    // Runs job, then onDone(result) or onFailed(error) on the world thread; memory only changes in onDone, so
+    // writes must be guarded or relative to jobs still queued ahead.
     template <typename Job, typename OnDone> void Run(Job job, OnDone onDone, OnFailed onFailed)
     {
         boost::asio::post(m_thread, [this, job = std::move(job), onDone = std::move(onDone),
@@ -49,9 +50,6 @@ public:
             }
         });
     }
-
-    // Legacy handlers still post raw work here, so every DB job shares one ordered thread.
-    boost::asio::thread_pool& Thread() { return m_thread; }
 
 private:
     // Runs work, reporting any exception to onFailed; true if it succeeded.

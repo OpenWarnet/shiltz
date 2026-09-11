@@ -26,8 +26,8 @@ namespace QuestFlagRepository
     // Claims flagId only if it wasn't already set -- returns false if it
     // was. Used as the one-time-quest gate in handlers/Quest.cpp: two
     // pipelined CG_QUEST_RESULT turn-ins for the same character (see
-    // GameSessionStore.h) both check has_flag against the same stale
-    // pre-post snapshot, so without this the flag alone can't stop a
+    // Persistence.h) both check has_flag against the same not-yet-updated
+    // character, so without this the flag alone can't stop a
     // one-time quest's rewards from being granted twice. Claim this first,
     // before granting anything, and treat false as "already completed by
     // an earlier pipelined request" rather than a plain SetFlag no-op.

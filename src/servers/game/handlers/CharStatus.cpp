@@ -1,15 +1,16 @@
 #include "CharStatus.h"
 
-#include "GamePacket.h"
-#include "GameSessionStore.h"
-#include "common/Server.h"
+#include "Outbox.h"
+#include "Persistence.h"
 #include "enums/StatId.h"
 #include "protocol/client/CharStatusUp.h"
 #include "protocol/server/CharStatusUpFail.h"
 #include "protocol/server/CharStatusUpSucc.h"
 #include "tables/GameData.h"
-#include "world/Character.h"
+#include "world/Player.h"
 #include "stats/Stats.h"
+
+#include <string>
 
 namespace
 {
@@ -36,13 +37,10 @@ namespace
     }
 }
 
-void HandleCharStatusUp(const GameContext& ctx, const CharStatusUp& request)
+void HandleCharStatusUp(const GameContext& ctx, const CharStatusUp& request, Player& player)
 {
-    auto session = ctx.sessions.Get(ctx.clientSocket);
-    if (!session)
-        return;
-
-    CharacterRawStats& raw = session->character.stats.raw;
+    Character& character = player.character;
+    CharacterRawStats& raw = character.stats.raw;
     std::uint32_t* rawStat = ResolveRawStat(raw, request.stat_id);
     const bool canAfford =
         rawStat && request.amount > 0 &&
@@ -53,30 +51,21 @@ void HandleCharStatusUp(const GameContext& ctx, const CharStatusUp& request)
         CharStatusUpFail response;
         response.unallocated_point_remaining =
             static_cast<std::int32_t>(raw.unallocated_stat_points);
-        ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
+        ctx.outbox.Send(ctx.connection, response);
         return;
     }
 
     *rawStat += static_cast<std::uint32_t>(request.amount);
     raw.unallocated_stat_points -= static_cast<std::uint32_t>(request.amount);
-    RecalculateDerivedStats(session->character, ctx.data.items, ctx.data.setOptions, ctx.data.statusRates);
-    ctx.sessions.Set(ctx.clientSocket, *session);
+    RecalculateDerivedStats(character, ctx.data.items, ctx.data.setOptions, ctx.data.statusRates);
 
-    // SaveRawStats is a blocking SQLite call -- run it on the DB pool
-    // instead of the connection's reactor thread. character is copied by
-    // value so it stays valid once this handler returns; server.SendTo()
-    // is safe to call from any thread.
-    Character character = session->character;
-    const std::int32_t statId = request.stat_id;
-    const std::int32_t currentStatPoint = static_cast<std::int32_t>(*rawStat);
-    const std::int32_t remaining = static_cast<std::int32_t>(raw.unallocated_stat_points);
-    boost::asio::post(ctx.dbPool, [ctx, character, statId, currentStatPoint, remaining]() {
-        character.SaveRawStats(ctx.db);
+    CharStatusUpSucc response;
+    response.stat_id = request.stat_id;
+    response.current_stat_point = static_cast<std::int32_t>(*rawStat);
+    response.unallocated_point_remaining = static_cast<std::int32_t>(raw.unallocated_stat_points);
+    auto reply = [ctx, response] { ctx.outbox.Send(ctx.connection, response); };
 
-        CharStatusUpSucc response;
-        response.stat_id = statId;
-        response.current_stat_point = currentStatPoint;
-        response.unallocated_point_remaining = remaining;
-        ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
-    });
+    // Replies either way: a failed save is rewritten by the next SaveRawStats, or rolls back on relog.
+    ctx.persistence.Run([saved = character](IDatabase& db) { saved.SaveRawStats(db); }, reply,
+                        [reply](const std::string&) { reply(); });
 }

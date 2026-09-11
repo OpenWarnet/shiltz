@@ -1,8 +1,7 @@
 #include "Quest.h"
 
-#include "GamePacket.h"
-#include "GameSessionStore.h"
-#include "common/Server.h"
+#include "Outbox.h"
+#include "Persistence.h"
 #include "enums/ItemType.h"
 #include "enums/QuestFailReason.h"
 #include "parser/QuestScr.h"
@@ -19,9 +18,12 @@
 #include "tables/ItemTable.h"
 #include "tables/WarpTable.h"
 #include "world/Character.h"
+#include "world/Player.h"
 #include "world/World.h"
 
 #include <optional>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace
@@ -131,40 +133,55 @@ std::uint32_t WireBagSlot(std::uint32_t bagIndex)
     return static_cast<std::uint32_t>(InventoryItemList::kBagStartSlot) + bagIndex;
 }
 
-// Grants `count` (at least 1) units of itemId into session's inventory,
-// writing through to the DB and the session cache as it goes -- mirrors
-// GrantQuestReward's pre-existing write-then-cache ordering. Returns the
+struct GrantedSlot
+{
+    std::uint32_t bag_index = 0;
+    Item item;
+};
+
+// A committed turn-in: the reply plus what onDone applies to the live character.
+struct QuestOutcome
+{
+    QuestSucc response;
+    std::vector<GrantedSlot> slots;
+    std::optional<std::int64_t> money;
+    std::optional<std::int64_t> exp;
+    std::optional<std::uint32_t> fame;
+};
+
+// Grants `count` (at least 1) units of itemId into the character's bag,
+// writing through to the DB and the character as it goes. Returns the
 // wire entries for GC_QUEST_SUCC; empty if itemId isn't a known item.scr
 // row or the bag has no room left.
-std::vector<QuestSuccItem> GrantRewardItem(const GameContext& ctx, GameSession& session,
-                                            std::int64_t itemId, std::int64_t count)
+std::vector<QuestSuccItem> GrantRewardItem(IDatabase& db, const ItemTable& items, Character& character,
+                                            std::vector<GrantedSlot>& slots, std::int64_t itemId,
+                                            std::int64_t count)
 {
     std::vector<QuestSuccItem> granted;
 
     if (itemId == 0)
         return granted;
 
-    const ItemRecord* record = ctx.data.items.Find(itemId);
+    const ItemRecord* record = items.Find(itemId);
     if (!record)
         return granted;
 
     const auto wireItemId = static_cast<std::uint32_t>(itemId);
     const std::int64_t units = count > 0 ? count : 1;
-    const std::int64_t characterId = session.characterId;
 
     if (IsStackableItemType(record->item_type))
     {
-        auto bagIndex = FindStackableBagSlot(session.character, wireItemId);
+        auto bagIndex = FindStackableBagSlot(character, wireItemId);
         std::optional<Item> existing;
         std::uint32_t existingQuantity = 0;
         if (bagIndex)
         {
-            existing = session.character.GetInventorySlot(*bagIndex);
+            existing = character.GetInventorySlot(*bagIndex);
             existingQuantity = existing->quantity;
         }
         else
         {
-            bagIndex = FindFreeBagSlot(session.character);
+            bagIndex = FindFreeBagSlot(character);
         }
 
         if (!bagIndex)
@@ -179,9 +196,10 @@ std::vector<QuestSuccItem> GrantRewardItem(const GameContext& ctx, GameSession& 
         // Guarded against this slot's own last-known content -- see
         // ItemRepository.h. A concurrently-changed slot just skips this
         // reward, same as "no free bag slot" above.
-        if (!ItemRepository::SaveInventorySlot(ctx.db, characterId, *bagIndex, existing, stacked))
+        if (!ItemRepository::SaveInventorySlot(db, character.id, *bagIndex, existing, stacked))
             return granted;
-        session.character.SetInventorySlot(*bagIndex, stacked);
+        character.SetInventorySlot(*bagIndex, stacked);
+        slots.push_back(GrantedSlot{.bag_index = *bagIndex, .item = stacked});
 
         granted.push_back(QuestSuccItem{
             .inventory_id = 1,
@@ -198,7 +216,7 @@ std::vector<QuestSuccItem> GrantRewardItem(const GameContext& ctx, GameSession& 
     // slots rather than one slot with quantity > 1.
     for (std::int64_t i = 0; i < units; ++i)
     {
-        auto bagIndex = FindFreeBagSlot(session.character);
+        auto bagIndex = FindFreeBagSlot(character);
         if (!bagIndex)
             break;
 
@@ -211,9 +229,10 @@ std::vector<QuestSuccItem> GrantRewardItem(const GameContext& ctx, GameSession& 
 
         // bagIndex just came from FindFreeBagSlot, so the expected previous
         // content is "empty" -- see ItemRepository.h.
-        if (!ItemRepository::SaveInventorySlot(ctx.db, characterId, *bagIndex, std::nullopt, equipped))
+        if (!ItemRepository::SaveInventorySlot(db, character.id, *bagIndex, std::nullopt, equipped))
             break;
-        session.character.SetInventorySlot(*bagIndex, equipped);
+        character.SetInventorySlot(*bagIndex, equipped);
+        slots.push_back(GrantedSlot{.bag_index = *bagIndex, .item = equipped});
 
         granted.push_back(QuestSuccItem{
             .inventory_id = 1,
@@ -232,11 +251,11 @@ std::vector<QuestSuccItem> GrantRewardItem(const GameContext& ctx, GameSession& 
 // Sent even though this warp doesn't actually move the character to a
 // different physical server -- it's the packet the client expects
 // following a location change, so it always names *this* game server.
-// sessionId must be this connection's own GameSession::sessionId -- the
+// sessionId must be this connection's own login session id -- the
 // client's reconnect CG_ENTER carries it back as-is, and Session.cpp's
 // HandleEnter rejects anything that isn't a real `session` table row (see
 // ServerChange.h).
-void SendServerChange(const GameContext& ctx, std::int64_t sessionId)
+void SendServerChange(const GameContext& ctx, std::uint32_t sessionId)
 {
     // Same dev game-server IP/port GameHandover.cpp (login server) hands
     // the client via GameConnectSuccess -- there's no shared config between
@@ -246,97 +265,68 @@ void SendServerChange(const GameContext& ctx, std::int64_t sessionId)
     // ServerChange.h).
     ServerChange response;
     response.server_ip = "45.58.9.172";
-    response.session_id = static_cast<std::uint32_t>(sessionId);
+    response.session_id = sessionId;
     response.server_port = 1818;
 
-    ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
+    ctx.outbox.Send(ctx.connection, response);
 }
 
-// Moves the character to warp.scr's server_map_id/x/y for warpId, writing
-// through to `character_position` immediately (Character::SavePosition) rather
-// than waiting for some other save path to pick up the position change --
-// same immediacy as the money/exp/fame writes alongside it in
-// ApplyConsequences. No-op if warpId is 0 (nothing to warp to) or unknown.
-void ApplyWarp(const GameContext& ctx, GameSession& session, std::int64_t warpId)
+// Runs the turn-in against a snapshot of the character in one transaction;
+// nullopt if q.set_flag names a one-time quest already claimed -- see
+// QuestFlagRepository::TryClaimFlag.
+std::optional<QuestOutcome> ApplyConsequences(IDatabase& db, const ItemTable& items, Character character,
+                                               const QuestConsequences& q, const WarpRecord* warp)
 {
-    if (warpId == 0)
-        return;
+    const std::int64_t characterId = character.id;
+    QuestOutcome outcome;
 
-    const WarpRecord* record = ctx.data.warps.Find(warpId);
-    if (!record)
-        return;
-
-    Character& character = session.character;
-
-    // Leave the old map's roster before switching character.map_id -- once
-    // it's overwritten below, this is the last point that still knows
-    // which Map to remove `ctx.clientSocket` from (see Map::RemovePlayer).
-    // Not calling this and relying on OnClientDisconnected instead doesn't
-    // work here: ctx.sessions.Set() below (well, in HandleQuestResult,
-    // right after ApplyConsequences returns) commits the *new* map_id
-    // before the client actually disconnects, so by the time
-    // OnClientDisconnected runs it would look up the new map -- where this
-    // socket was never added -- and leave a stale entry behind in the old
-    // one. The new map doesn't need the same treatment: the client
-    // reconnects after GC_SERVER_CHANGE and sends a fresh CG_ENTER, which
-    // Session.cpp's HandleEnter already turns into a SetPlayer call.
-    if (Map* oldMap = ctx.world.GetMap(character.map_id))
-        oldMap->RemovePlayer(ctx.clientSocket);
-
-    character.map_id = static_cast<std::uint32_t>(record->server_map_id);
-    character.x = static_cast<std::int32_t>(record->x);
-    character.y = static_cast<std::int32_t>(record->y);
-    character.SavePosition(ctx.db);
-
-    SendServerChange(ctx, session.sessionId);
-}
-
-// nullopt if q.set_flag names a one-time quest already claimed by an
-// earlier pipelined turn-in -- see QuestFlagRepository::TryClaimFlag.
-// Nothing is granted in that case (the transaction is left uncommitted and
-// rolls back on return).
-std::optional<QuestSucc> ApplyConsequences(const GameContext& ctx, GameSession& session,
-                                            const QuestConsequences& q)
-{
-    Character& character = session.character;
-    const std::int64_t characterId = session.characterId;
-
-    DatabaseTransaction txn(ctx.db);
+    DatabaseTransaction txn(db);
 
     // Claim the one-time-quest gate first, before granting anything -- see
     // QuestFlagRepository::TryClaimFlag. Quests with no set_flag (0) have no
     // such gate and always re-apply their consequences.
-    if (q.set_flag != 0)
-    {
-        if (!QuestFlagRepository::TryClaimFlag(ctx.db, characterId, q.set_flag))
-            return std::nullopt;
-        character.quest_flags.Set(static_cast<std::uint32_t>(q.set_flag), true);
-    }
+    if (q.set_flag != 0 && !QuestFlagRepository::TryClaimFlag(db, characterId, q.set_flag))
+        return std::nullopt;
 
-    std::vector<QuestSuccItem> items;
-    for (auto& item : GrantRewardItem(ctx, session, q.reward_item_0, q.reward_item_0_count))
-        items.push_back(item);
-    for (auto& item : GrantRewardItem(ctx, session, q.reward_item_1, q.reward_item_1_count))
-        items.push_back(item);
-    for (auto& item : GrantRewardItem(ctx, session, q.reward_item_2, q.reward_item_2_count))
-        items.push_back(item);
+    std::vector<QuestSuccItem> granted;
+    for (auto& item : GrantRewardItem(db, items, character, outcome.slots, q.reward_item_0, q.reward_item_0_count))
+        granted.push_back(item);
+    for (auto& item : GrantRewardItem(db, items, character, outcome.slots, q.reward_item_1, q.reward_item_1_count))
+        granted.push_back(item);
+    for (auto& item : GrantRewardItem(db, items, character, outcome.slots, q.reward_item_2, q.reward_item_2_count))
+        granted.push_back(item);
 
     if (q.reward_cegel != 0)
-        character.money = CharacterRepository::AddMoney(ctx.db, characterId, q.reward_cegel);
+    {
+        outcome.money = CharacterRepository::AddMoney(db, characterId, q.reward_cegel);
+        character.money = *outcome.money;
+    }
 
     if (q.reward_exp != 0)
-        character.exp = CharacterRepository::AddExp(ctx.db, characterId, q.reward_exp);
+    {
+        outcome.exp = CharacterRepository::AddExp(db, characterId, q.reward_exp);
+        character.exp = *outcome.exp;
+    }
 
     if (q.reward_fame != 0)
-        character.fame =
-            CharacterRepository::AddFame(ctx.db, characterId, static_cast<std::uint32_t>(q.reward_fame));
+    {
+        outcome.fame = CharacterRepository::AddFame(db, characterId, static_cast<std::uint32_t>(q.reward_fame));
+        character.fame = *outcome.fame;
+    }
 
-    ApplyWarp(ctx, session, q.warp_id);
+    // Written with the rewards, so the reconnect after GC_SERVER_CHANGE loads the destination.
+    if (warp)
+    {
+        character.map_id = static_cast<std::uint32_t>(warp->server_map_id);
+        character.x = static_cast<std::int32_t>(warp->x);
+        character.y = static_cast<std::int32_t>(warp->y);
+        character.SavePosition(db);
+    }
 
     txn.Commit();
 
-    QuestSucc response;
-    response.items = std::move(items);
+    QuestSucc& response = outcome.response;
+    response.items = std::move(granted);
     // set_flag is the only stable per-quest identifier this consequence
     // set carries -- 0 (no quest_id) if this node doesn't set one.
     response.quest_id = static_cast<std::uint32_t>(q.set_flag);
@@ -345,7 +335,7 @@ std::optional<QuestSucc> ApplyConsequences(const GameContext& ctx, GameSession& 
     response.exp = static_cast<std::uint64_t>(character.exp);
     response.ap = character.ap;
     response.hp = character.hp;
-    return response;
+    return outcome;
 }
 
 void SendQuestFail(const GameContext& ctx)
@@ -353,48 +343,49 @@ void SendQuestFail(const GameContext& ctx)
     QuestFail response;
     response.result_code = static_cast<std::int32_t>(QuestFailReason::ConditionsNotMet);
 
-    ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
+    ctx.outbox.Send(ctx.connection, response);
 }
 } // namespace
 
-void HandleQuestResult(const GameContext& ctx, const QuestResult& request)
+void HandleQuestResult(const GameContext& ctx, const QuestResult& request, Player& player)
 {
-    auto session = ctx.sessions.Get(ctx.clientSocket);
-    if (!session)
-        return;
+    const QuestActionRecord* record = ctx.data.quests.Find(static_cast<std::int64_t>(request.action_id));
+    if (!record || !ConditionsMet(record->conditions, player.character))
+        return SendQuestFail(ctx);
 
-    const QuestActionRecord* record =
-        ctx.data.quests.Find(static_cast<std::int64_t>(request.action_id));
-    if (!record)
-    {
-        SendQuestFail(ctx);
-        return;
-    }
+    const QuestConsequences& q = record->consequences;
+    const WarpRecord* warp = q.warp_id != 0 ? ctx.data.warps.Find(q.warp_id) : nullptr;
 
-    if (!ConditionsMet(record->conditions, session->character))
-    {
-        SendQuestFail(ctx);
-        return;
-    }
-
-    // ApplyConsequences does blocking SQLite work -- run it on the DB pool
-    // instead of the connection's reactor thread. session is copied by
-    // value (ApplyConsequences mutates it in place) and record is a stable
-    // pointer into ctx.data (read-only, safe from any thread) so both stay
-    // valid once this handler returns; server.SendTo() (used directly here
-    // and by SendServerChange inside ApplyConsequences/ApplyWarp) is safe
-    // to call from any thread.
-    GameSession sessionCopy = *session;
-    boost::asio::post(ctx.dbPool, [ctx, sessionCopy, record]() mutable {
-        std::optional<QuestSucc> response = ApplyConsequences(ctx, sessionCopy, record->consequences);
-        if (!response)
+    ctx.persistence.Run(
+        [&items = ctx.data.items, character = player.character, &q, warp](IDatabase& db)
+        { return ApplyConsequences(db, items, character, q, warp); },
+        [ctx, &q, warp, sessionId = player.session_id](std::optional<QuestOutcome> outcome)
         {
-            SendQuestFail(ctx);
-            return;
-        }
+            if (!outcome)
+                return SendQuestFail(ctx);
 
-        ctx.sessions.Set(ctx.clientSocket, sessionCopy);
+            if (warp)
+            {
+                // Everything, destination included, is saved; the client reconnects with a fresh CG_ENTER.
+                ctx.world.Leave(ctx.connection);
+                SendServerChange(ctx, sessionId);
+            }
+            else if (Player* player = ctx.world.FindPlayer(ctx.connection))
+            {
+                Character& character = player->character;
+                if (q.set_flag != 0)
+                    character.quest_flags.Set(static_cast<std::uint32_t>(q.set_flag), true);
+                for (const GrantedSlot& slot : outcome->slots)
+                    character.SetInventorySlot(slot.bag_index, slot.item);
+                if (outcome->money)
+                    character.money = *outcome->money;
+                if (outcome->exp)
+                    character.exp = *outcome->exp;
+                if (outcome->fame)
+                    character.fame = *outcome->fame;
+            }
 
-        ctx.server.SendTo(ctx.clientSocket, response->Packet().Serialize(ctx.key));
-    });
+            ctx.outbox.Send(ctx.connection, outcome->response);
+        },
+        [ctx](const std::string&) { SendQuestFail(ctx); });
 }

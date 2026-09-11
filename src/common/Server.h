@@ -1,8 +1,12 @@
 #pragma once
 
+#include "ConnectionId.h"
+
 #include <winsock2.h>
 
 #include <boost/asio.hpp>
+
+#include <atomic>
 
 #include <cstdint>
 #include <memory>
@@ -46,10 +50,7 @@ public:
     // no longer connected. Safe to call from any thread -- queues onto that
     // connection's strand and returns immediately, never blocking the
     // caller.
-    bool SendTo(SOCKET clientId, std::span<const uint8_t> frame);
-
-    // True while clientId's connection is registered. Safe to call from any thread.
-    bool IsConnected(SOCKET clientId) const;
+    bool SendTo(ConnectionId connection, std::span<const uint8_t> frame);
 
     // Sends a frame to every currently connected client. Safe to call from
     // any thread.
@@ -58,16 +59,16 @@ public:
 protected:
     // Called once, right after a client is accepted and registered.
     // Default does nothing.
-    virtual void OnClientConnected(SOCKET clientId);
+    virtual void OnClientConnected(ConnectionId connection);
 
     // Called once, right after a client's connection is torn down and
     // deregistered. Default does nothing -- override to release
     // per-connection state.
-    virtual void OnClientDisconnected(SOCKET clientId);
+    virtual void OnClientDisconnected(ConnectionId connection);
 
     // Called once per complete [len][code][payload] frame drained from a
     // client's stream.
-    virtual void OnFrame(SOCKET clientId, std::span<const uint8_t> frame) = 0;
+    virtual void OnFrame(ConnectionId connection, std::span<const uint8_t> frame) = 0;
 
     // GameServer's tick timer schedules itself on this io_context.
     boost::asio::io_context& IoContext() { return m_ioContext; }
@@ -77,7 +78,7 @@ private:
 
     void DoAccept();
     void RegisterConnection(const std::shared_ptr<Connection>& connection);
-    void UnregisterConnection(SOCKET clientId);
+    void UnregisterConnection(ConnectionId connection);
 
     uint16_t m_port;
     std::string m_name;
@@ -87,6 +88,8 @@ private:
     boost::asio::ip::tcp::acceptor m_acceptor;
     std::vector<std::thread> m_ioThreadPool;
 
-    mutable std::mutex m_connectionsMutex;
-    std::unordered_map<SOCKET, std::shared_ptr<Connection>> m_connections;
+    std::atomic<ConnectionId> m_nextConnectionId{1};
+
+    std::mutex m_connectionsMutex;
+    std::unordered_map<ConnectionId, std::shared_ptr<Connection>> m_connections;
 };

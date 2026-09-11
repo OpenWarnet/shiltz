@@ -1,16 +1,17 @@
 #include "CharSkillUp.h"
 
-#include "GamePacket.h"
-#include "GameSessionStore.h"
-#include "common/Server.h"
+#include "Outbox.h"
+#include "Persistence.h"
 #include "enums/SkillUpFailReason.h"
 #include "parser/SkillScr.h"
 #include "protocol/client/CharSkillUpEx.h"
 #include "protocol/server/CharSkillUpExFail.h"
 #include "protocol/server/CharSkillUpExSucc.h"
 #include "tables/GameData.h"
-#include "world/Character.h"
+#include "world/Player.h"
 #include "tables/SkillTable.h"
+
+#include <string>
 
 namespace
 {
@@ -112,45 +113,37 @@ namespace
     }
 }
 
-void HandleCharSkillUpEx(const GameContext& ctx, const CharSkillUpEx& request)
+void HandleCharSkillUpEx(const GameContext& ctx, const CharSkillUpEx& request, Player& player)
 {
-    auto session = ctx.sessions.Get(ctx.clientSocket);
-    if (!session)
-        return;
-
-    const Validation validation =
-        ValidateSkillUpRequest(ctx.data.skills, session->character, request.skills);
+    Character& character = player.character;
+    const Validation validation = ValidateSkillUpRequest(ctx.data.skills, character, request.skills);
 
     if (!validation.ok)
     {
         CharSkillUpExFail response;
         response.reason = static_cast<std::int32_t>(validation.failReason);
-        ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
+        ctx.outbox.Send(ctx.connection, response);
         return;
     }
 
-    CharacterSkills& skills = session->character.skills;
+    CharacterSkills& skills = character.skills;
 
     for (const auto& entry : request.skills)
         ApplySkillLevelUp(skills, entry);
 
     skills.unallocated_sp -= static_cast<std::uint32_t>(validation.totalCost);
-    ctx.sessions.Set(ctx.clientSocket, *session);
 
-    // SaveSkillPoints/SaveSkillLevels are blocking SQLite calls -- run them
-    // on the DB pool instead of the connection's reactor thread. character is
-    // copied by value so it stays valid once this handler returns;
-    // server.SendTo() is safe to call from any thread.
-    Character character = session->character;
-    const std::int32_t remainingSp = static_cast<std::int32_t>(skills.unallocated_sp);
-    const std::int32_t remainingEp = static_cast<std::int32_t>(skills.unallocated_ep);
-    boost::asio::post(ctx.dbPool, [ctx, character, remainingSp, remainingEp]() {
-        character.SaveSkillPoints(ctx.db);
-        character.SaveSkillLevels(ctx.db);
+    CharSkillUpExSucc response;
+    response.remaining_sp = static_cast<std::int32_t>(skills.unallocated_sp);
+    response.remaining_ep = static_cast<std::int32_t>(skills.unallocated_ep);
+    auto reply = [ctx, response] { ctx.outbox.Send(ctx.connection, response); };
 
-        CharSkillUpExSucc response;
-        response.remaining_sp = remainingSp;
-        response.remaining_ep = remainingEp;
-        ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
-    });
+    // Replies either way: a failed save is rewritten by the next save of these fields, or rolls back on relog.
+    ctx.persistence.Run(
+        [saved = character](IDatabase& db)
+        {
+            saved.SaveSkillPoints(db);
+            saved.SaveSkillLevels(db);
+        },
+        reply, [reply](const std::string&) { reply(); });
 }

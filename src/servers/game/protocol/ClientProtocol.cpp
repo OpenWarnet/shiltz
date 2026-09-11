@@ -61,8 +61,11 @@ namespace
 
 void PlayerMessage::Handle(const GameContext& ctx) const
 {
-    if (Player* player = ctx.world.FindPlayer(ctx.clientSocket))
-        Handle(ctx, *player);
+    Player* player = ctx.world.FindPlayer(ctx.connection);
+    if (!player)
+        return;
+
+    Handle(ctx, *player);
 }
 
 std::unique_ptr<ClientProtocol> ClientProtocol::Create(const GamePacket& packet)

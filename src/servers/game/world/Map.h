@@ -12,10 +12,8 @@
 #include <mutex>
 #include <optional>
 #include <shared_mutex>
-#include <unordered_map>
 #include <utility>
 #include <vector>
-#include <winsock2.h>
 
 class Map
 {
@@ -29,13 +27,6 @@ public:
     std::int64_t id = 0;
 
     using CreatureMove = Zone::CreatureMove;
-
-    struct MapPlayer
-    {
-        SOCKET socket = 0;
-        std::int32_t x = 0;
-        std::int32_t y = 0;
-    };
 
     explicit Map(MapRecord record);
 
@@ -65,12 +56,7 @@ public:
     Player* GetPlayer(std::uint32_t instanceId);
     const Player* GetPlayer(std::uint32_t instanceId) const;
 
-    void SetPlayer(SOCKET socket, std::int32_t x, std::int32_t y);
-
-    void RemovePlayer(SOCKET socket);
-
-    std::vector<MapPlayer> Players() const;
-
+    // World strand only.
     bool HasPlayers() const;
 
     static std::pair<std::int32_t, std::int32_t> ZoneOf(std::int32_t x, std::int32_t y);
@@ -92,9 +78,6 @@ private:
 
     mutable std::shared_mutex m_zonesMutex;
     std::vector<Zone> m_zones;
-
-    mutable std::mutex m_mapPlayersMutex;
-    std::unordered_map<SOCKET, MapPlayer> m_mapPlayers;
 
     // Keyed by character.instance_id. Not locked -- world strand only.
     Pool<std::uint32_t, Player> m_players;

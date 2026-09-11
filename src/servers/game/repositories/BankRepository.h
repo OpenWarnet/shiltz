@@ -41,8 +41,8 @@ namespace BankRepository
     Account CreateAccount(IDatabase& db, std::int64_t accountId, const std::string& password);
 
     // Relative, same reasoning as CharacterRepository::TrySpendMoney/
-    // AddMoney -- two pipelined writes for the same bank account (see
-    // GameSessionStore.h) compose correctly instead of one clobbering the
+    // AddMoney -- two queued writes for the same bank account (see
+    // Persistence.h) compose correctly instead of one clobbering the
     // other. TrySpendMoney only applies if current money >= amount; nullopt
     // (no write applied) means insufficient, and the caller must treat that
     // as a real-time rejection.

@@ -148,34 +148,9 @@ const Player* Map::GetPlayer(std::uint32_t instanceId) const
     return m_players.Get(instanceId);
 }
 
-void Map::SetPlayer(SOCKET socket, std::int32_t x, std::int32_t y)
-{
-    std::lock_guard lock(m_mapPlayersMutex);
-    m_mapPlayers[socket] = MapPlayer{.socket = socket, .x = x, .y = y};
-}
-
-void Map::RemovePlayer(SOCKET socket)
-{
-    std::lock_guard lock(m_mapPlayersMutex);
-    m_mapPlayers.erase(socket);
-}
-
-std::vector<Map::MapPlayer> Map::Players() const
-{
-    std::vector<MapPlayer> players;
-
-    std::lock_guard lock(m_mapPlayersMutex);
-    players.reserve(m_mapPlayers.size());
-    for (const auto& [socket, player] : m_mapPlayers)
-        players.push_back(player);
-
-    return players;
-}
-
 bool Map::HasPlayers() const
 {
-    std::lock_guard lock(m_mapPlayersMutex);
-    return !m_mapPlayers.empty();
+    return !m_players.Empty();
 }
 
 std::pair<std::int32_t, std::int32_t> Map::ZoneOf(std::int32_t x, std::int32_t y)

@@ -8,7 +8,7 @@ bool QuestResult::Deserialize(PayloadReader& reader)
     return reader.Read(action_id) && reader.Read(creature_instance_id) && reader.Read(unknown);
 }
 
-void QuestResult::Handle(const GameContext& ctx, Player&) const
+void QuestResult::Handle(const GameContext& ctx, Player& player) const
 {
-    HandleQuestResult(ctx, *this);
+    HandleQuestResult(ctx, *this, player);
 }

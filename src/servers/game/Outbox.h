@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/ConnectionId.h"
+
 #include <concepts>
 #include <cstdint>
 #include <functional>
@@ -9,9 +11,6 @@
 #include <vector>
 
 struct ServerProtocol;
-
-// Which connection a packet goes to. Currently the socket value.
-using ConnectionId = std::uint64_t;
 
 // The one way game code sends packets. Knows only connections.
 // Safe from any thread.

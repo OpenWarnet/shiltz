@@ -52,13 +52,28 @@ const Map* World::GetMap(std::int64_t id) const
     return m_atlas.Get(id);
 }
 
+void World::Connect(ConnectionId connection)
+{
+    m_connections.insert(connection);
+}
+
+void World::Disconnect(ConnectionId connection)
+{
+    m_connections.erase(connection);
+}
+
+bool World::IsConnected(ConnectionId connection) const
+{
+    return m_connections.contains(connection);
+}
+
 bool World::Join(Player player)
 {
     Map* map = m_atlas.Get(player.character.map_id);
-    if (!map || IsOnline(player.character.id) || m_playersByConnection.contains(player.socket))
+    if (!map || IsOnline(player.character.id) || m_playersByConnection.contains(player.connection))
         return false;
 
-    const SOCKET connection = player.socket;
+    const ConnectionId connection = player.connection;
     const PlayerRef ref{
         .mapId = map->id,
         .instanceId = player.character.instance_id,
@@ -72,7 +87,7 @@ bool World::Join(Player player)
     return true;
 }
 
-std::optional<Player> World::Leave(SOCKET connection)
+std::optional<Player> World::Leave(ConnectionId connection)
 {
     auto it = m_playersByConnection.find(connection);
     if (it == m_playersByConnection.end())
@@ -86,7 +101,7 @@ std::optional<Player> World::Leave(SOCKET connection)
     return map ? map->Despawn(ref.instanceId) : std::nullopt;
 }
 
-Player* World::FindPlayer(SOCKET connection)
+Player* World::FindPlayer(ConnectionId connection)
 {
     auto it = m_playersByConnection.find(connection);
     if (it == m_playersByConnection.end())

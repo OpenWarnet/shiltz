@@ -58,7 +58,7 @@ namespace CharacterRepository
 
     // Money/fame/exp are relative (money = money +/- ?) rather than an
     // absolute SET computed from a possibly-stale in-memory read, so two
-    // pipelined writes for the same character (see GameSessionStore.h)
+    // queued writes for the same character (see Persistence.h)
     // compose correctly instead of one silently clobbering the other.
     //
     // TrySpendMoney only applies if the row's *current* money >= amount,

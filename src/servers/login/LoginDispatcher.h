@@ -1,13 +1,13 @@
 #pragma once
 
 #include "LoginOpcodes.h"
+#include "common/ConnectionId.h"
 #include "common/Dispatcher.h"
 
 #include <boost/asio/thread_pool.hpp>
 
 #include <cstdint>
 #include <span>
-#include <winsock2.h>
 
 class Server;
 class LoginPacket;
@@ -17,7 +17,7 @@ class LoginSessionStore;
 struct LoginContext
 {
     Server& server;
-    SOCKET clientSocket;
+    ConnectionId connection;
     std::span<const uint8_t> key;
     IDatabase& db;
     LoginSessionStore& sessions;

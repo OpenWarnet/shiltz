@@ -30,7 +30,7 @@ bool CharSkillUpEx::Deserialize(PayloadReader& reader)
     return reader.Read(terminator);
 }
 
-void CharSkillUpEx::Handle(const GameContext& ctx, Player&) const
+void CharSkillUpEx::Handle(const GameContext& ctx, Player& player) const
 {
-    HandleCharSkillUpEx(ctx, *this);
+    HandleCharSkillUpEx(ctx, *this, player);
 }

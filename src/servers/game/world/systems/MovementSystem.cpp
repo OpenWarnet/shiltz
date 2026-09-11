@@ -65,7 +65,7 @@ void MovementSystem::SendCrtLoad(const CharacterMoveEvent& event)
 
     // Always answer the first view (as the old enter flow did); moves only when something appeared.
     if (firstView || !response.records.empty())
-        m_outbox.Send(player->socket, response);
+        m_outbox.Send(player->connection, response);
 }
 
 void MovementSystem::SendViewRemoveAll(const CharacterMoveEvent& event) const
@@ -87,7 +87,7 @@ void MovementSystem::SendViewRemoveAll(const CharacterMoveEvent& event) const
     }
 
     if (!response.creature_ids.empty())
-        m_outbox.Send(player->socket, response);
+        m_outbox.Send(player->connection, response);
 }
 
 void MovementSystem::SendCharMove(const CharacterMoveEvent& event) const
@@ -106,5 +106,5 @@ void MovementSystem::SendCharMove(const CharacterMoveEvent& event) const
     response.y = static_cast<std::uint32_t>(event.to_y);
     response.speed = event.walk->speed;
     response.stop_direction = event.walk->stop_direction;
-    m_outbox.Send(player->socket, response);
+    m_outbox.Send(player->connection, response);
 }

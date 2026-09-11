@@ -1,32 +1,32 @@
 #include "LoginSessionStore.h"
 
-void LoginSessionStore::SetAccountId(SOCKET clientSocket, std::int64_t accountId)
+void LoginSessionStore::SetAccountId(ConnectionId connection, std::int64_t accountId)
 {
     std::lock_guard lock(m_mutex);
-    m_accountsBySocket[clientSocket] = accountId;
+    m_accountsByConnection[connection] = accountId;
 }
 
-std::optional<std::int64_t> LoginSessionStore::GetAccountId(SOCKET clientSocket) const
+std::optional<std::int64_t> LoginSessionStore::GetAccountId(ConnectionId connection) const
 {
     std::lock_guard lock(m_mutex);
-    auto it = m_accountsBySocket.find(clientSocket);
-    if (it == m_accountsBySocket.end())
+    auto it = m_accountsByConnection.find(connection);
+    if (it == m_accountsByConnection.end())
         return std::nullopt;
 
     return it->second;
 }
 
-void LoginSessionStore::SetSessionId(SOCKET clientSocket, std::int64_t sessionId)
+void LoginSessionStore::SetSessionId(ConnectionId connection, std::int64_t sessionId)
 {
     std::lock_guard lock(m_mutex);
-    m_sessionIdsBySocket[clientSocket] = sessionId;
+    m_sessionIdsByConnection[connection] = sessionId;
 }
 
-std::optional<std::int64_t> LoginSessionStore::GetSessionId(SOCKET clientSocket) const
+std::optional<std::int64_t> LoginSessionStore::GetSessionId(ConnectionId connection) const
 {
     std::lock_guard lock(m_mutex);
-    auto it = m_sessionIdsBySocket.find(clientSocket);
-    if (it == m_sessionIdsBySocket.end())
+    auto it = m_sessionIdsByConnection.find(connection);
+    if (it == m_sessionIdsByConnection.end())
         return std::nullopt;
 
     return it->second;

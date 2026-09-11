@@ -1,8 +1,7 @@
 #include "ItemConfirmNpc.h"
 
-#include "GamePacket.h"
-#include "GameSessionStore.h"
-#include "common/Server.h"
+#include "Outbox.h"
+#include "Persistence.h"
 #include "enums/ItemConfirmFailReason.h"
 #include "enums/ItemType.h"
 #include "parser/ItemScr.h"
@@ -15,12 +14,15 @@
 #include "tables/GameData.h"
 #include "tables/ItemTable.h"
 #include "world/Item.h"
-#include "world/Character.h"
+#include "world/Player.h"
+#include "world/World.h"
 
 #include <algorithm>
 #include <array>
 #include <iterator>
+#include <optional>
 #include <random>
+#include <string>
 #include <vector>
 
 namespace
@@ -180,128 +182,112 @@ std::uint64_t RollOptionBits(const ItemRecord& item, std::mt19937& rng)
 }
 } // namespace
 
-void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcRequest& request)
+void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcRequest& request, Player& player)
 {
     if (request.slot_ids.empty() || request.slot_ids.size() > kMaxSlotsPerRequest)
         return;
 
-    auto session = ctx.sessions.Get(ctx.clientSocket);
-    if (!session)
-        return;
+    auto sendFail = [ctx]
+    {
+        ItemConfirmNpcFail response;
+        response.result_code = static_cast<std::int32_t>(ItemConfirmFailReason::NoSlotsAppraised);
+        ctx.outbox.Send(ctx.connection, response);
+    };
 
-    // Everything below is blocking SQLite work -- run it on the DB pool
-    // instead of the connection's reactor thread. request/session are
-    // copied by value so they stay valid once this handler returns;
-    // server.SendTo() is safe to call from any thread.
-    boost::asio::post(ctx.dbPool, [ctx, request, session]() mutable {
-    const int64_t characterId = session->characterId;
+    struct Candidate
+    {
+        std::uint32_t slot_id;
+        Item original;
+        Item appraised;
+        std::int64_t fee;
+    };
 
     std::random_device rd;
     std::mt19937 rng(rd());
 
-    struct AppraisedSlot
-    {
-        std::uint32_t slot_id;
-        Item item;
-    };
-
-    // One atomic pass: a per-slot gate failure just skips that slot and
-    // the loop continues -- only the very end decides SUCC vs FAIL, based
-    // on whether anything actually succeeded. Writes go to the DB inside
-    // txn below; session->character and the session store only see them once
-    // txn.Commit() has actually succeeded (see appraisedItems below), so a
-    // write failure partway through can't leave the cache ahead of what's
-    // really on disk.
-    std::vector<ItemConfirmNpcResult> results;
-    std::vector<AppraisedSlot> appraisedItems;
-    std::int64_t runningFee = 0;
-
-    DatabaseTransaction txn(ctx.db);
-
+    // Rolled up front; the DB job decides which of them land.
+    std::vector<Candidate> candidates;
     for (std::uint32_t slotId : request.slot_ids)
     {
         if (!IsSlotInRange(slotId))
             continue;
 
-        auto content = session->character.GetItemSlot(slotId);
+        auto content = player.character.GetItemSlot(slotId);
         if (!content)
-            continue; // empty slot -- nothing to appraise
-
-        const ItemRecord* itemRecord = ctx.data.items.Find(content->item_id);
-        if (!itemRecord)
-            continue; // unknown item_id -- no type/scale data to check against
-
-        if (!IsItemTypeEligible(itemRecord->item_type))
             continue;
 
-        // A never-appraised item always qualifies; an already-appraised
-        // one can only be rerolled if its use-level requirement is under
-        // the threshold.
+        const ItemRecord* itemRecord = ctx.data.items.Find(content->item_id);
+        if (!itemRecord || !IsItemTypeEligible(itemRecord->item_type))
+            continue;
+
         const bool neverAppraised = content->option_bits == Item::kNeverAppraised;
         if (itemRecord->min_level >= kLevelRequirementThreshold || !neverAppraised)
             continue;
 
-        const std::int64_t fee = itemRecord->sell_price;
-        if (runningFee + fee > session->character.money)
-            continue;
-
-        const Item original = *content;
-        Item appraised = original;
+        Item appraised = *content;
         appraised.option_bits = RollOptionBits(*itemRecord, rng);
-
-        // Guarded against this slot's own last-known content -- see
-        // ItemRepository.h. Only count the fee for slots that actually
-        // wrote -- a concurrently-changed slot is skipped like any other
-        // per-slot gate failure above, not charged for.
-        if (!ItemRepository::SaveItemSlot(ctx.db, characterId, slotId, original, appraised))
-            continue;
-
-        runningFee += fee;
-        appraisedItems.push_back(AppraisedSlot{.slot_id = slotId, .item = appraised});
-
-        results.push_back(ItemConfirmNpcResult{
-            .slot_id = slotId,
-            .option_bits = appraised.option_bits,
-        });
+        candidates.push_back(Candidate{
+            .slot_id = slotId, .original = *content, .appraised = appraised, .fee = itemRecord->sell_price});
     }
 
-    if (results.empty())
+    struct Appraisal
     {
-        ItemConfirmNpcFail response;
-        response.result_code =
-            static_cast<std::int32_t>(ItemConfirmFailReason::NoSlotsAppraised);
-        ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
-        return;
-    }
+        std::vector<Candidate> landed;
+        std::int64_t fee = 0;
+        std::int64_t money = 0;
+    };
 
-    // Fee is deducted once for the whole request, not per slot. Written
-    // inside the same transaction as the appraised slots above, so a
-    // partway failure rolls back the fee along with them rather than
-    // charging for appraisals that never landed. Checked against the DB's
-    // *current* money -- the session->character.money prechecks above could be
-    // stale under the pipelined-request race (see CharacterRepository.h).
-    auto newMoney = CharacterRepository::TrySpendMoney(ctx.db, characterId, runningFee);
-    if (!newMoney)
+    const std::int64_t characterId = player.character.id;
+    const std::int64_t money = player.character.money;
+
+    // A slot that changed underneath or no longer fits the money is skipped, not charged; one debit for the rest.
+    auto writes = [=](IDatabase& db) -> std::optional<Appraisal>
     {
-        ItemConfirmNpcFail response;
-        response.result_code =
-            static_cast<std::int32_t>(ItemConfirmFailReason::NoSlotsAppraised);
-        ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
-        return;
-    }
+        DatabaseTransaction txn(db);
+        Appraisal done;
+        for (const Candidate& candidate : candidates)
+        {
+            if (done.fee + candidate.fee > money)
+                continue;
+            if (!ItemRepository::SaveItemSlot(db, characterId, candidate.slot_id, candidate.original,
+                                              candidate.appraised))
+                continue;
+            done.fee += candidate.fee;
+            done.landed.push_back(candidate);
+        }
+        if (done.landed.empty())
+            return std::nullopt;
 
-    txn.Commit();
+        auto newMoney = CharacterRepository::TrySpendMoney(db, characterId, done.fee);
+        if (!newMoney)
+            return std::nullopt;
+        txn.Commit();
+        done.money = *newMoney;
+        return done;
+    };
 
-    // Only mirror into the cache / session store once the transaction is
-    // actually durable -- see the comment on appraisedItems above.
-    session->character.money = *newMoney;
-    for (const AppraisedSlot& appraised : appraisedItems)
-        session->character.SetItemSlot(appraised.slot_id, appraised.item);
-    ctx.sessions.Set(ctx.clientSocket, *session);
+    ctx.persistence.Run(
+        writes,
+        [ctx, sendFail](std::optional<Appraisal> done)
+        {
+            if (!done)
+                return sendFail();
 
-    ItemConfirmNpcSucc response;
-    response.results = results;
-    response.total_fee = static_cast<std::uint32_t>(runningFee);
-    ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
-    });
+            if (Player* player = ctx.world.FindPlayer(ctx.connection))
+            {
+                player->character.money = done->money;
+                for (const Candidate& candidate : done->landed)
+                    player->character.SetItemSlot(candidate.slot_id, candidate.appraised);
+            }
+
+            ItemConfirmNpcSucc response;
+            for (const Candidate& candidate : done->landed)
+                response.results.push_back(ItemConfirmNpcResult{
+                    .slot_id = candidate.slot_id,
+                    .option_bits = candidate.appraised.option_bits,
+                });
+            response.total_fee = static_cast<std::uint32_t>(done->fee);
+            ctx.outbox.Send(ctx.connection, response);
+        },
+        [sendFail](const std::string&) { sendFail(); });
 }

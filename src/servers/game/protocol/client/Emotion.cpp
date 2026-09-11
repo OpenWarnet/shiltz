@@ -8,7 +8,7 @@ bool Emotion::Deserialize(PayloadReader& reader)
     return reader.Read(emotion_id) && reader.Read(unknown);
 }
 
-void Emotion::Handle(const GameContext& ctx, Player&) const
+void Emotion::Handle(const GameContext& ctx, Player& player) const
 {
-    HandleEmotion(ctx, *this);
+    HandleEmotion(ctx, *this, player);
 }
