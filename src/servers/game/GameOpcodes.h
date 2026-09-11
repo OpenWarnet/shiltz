@@ -39,6 +39,9 @@ namespace GameOpcode
         // Server -> Client
         GC_CHAR_MOVE = 511000,
         GC_CHAR_DATA_LOAD = 511001,
+        GC_CHAR_NEW = 511002,        // 0x7CC1A
+        GC_CHAR_OTHER_LOAD = 511003, // 0x7CC1B
+        GC_CHAR_REMOVE = 511009,     // 0x7CC21
         GC_ENTER_FAIL = 532050,
         GC_CRT_LOAD = 511029,
         GC_CRT_MOVE = 511032,

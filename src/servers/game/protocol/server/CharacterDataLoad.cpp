@@ -79,10 +79,10 @@ void CharacterDataLoad::Serialize(PayloadWriter& writer) const
         skill.Serialize(writer);
     }
 
-    writer.WriteString(char_name, 20);
+    writer.WriteString(guild_name, 20);
+    writer.Write(guild_state);
+    writer.Write(guild_emblem);
 
-    writer.Write(state_flags);
-    writer.Write(guild_index);
     writer.Write(channel_id);
 
     writer.Write(record_array_a);

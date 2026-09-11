@@ -38,13 +38,13 @@ std::uint64_t MixDecisionSeed(std::uint32_t instanceId, std::uint32_t decisionSe
 
 // Signed so a -1 step at coordinate 0 clamps instead of wrapping.
 std::uint32_t StepCoordinate(std::uint32_t coordinate, std::int32_t delta,
-                             std::int32_t maxCoordinate)
+                             std::uint32_t maxCoordinate)
 {
     return static_cast<std::uint32_t>(
         std::clamp<std::int64_t>(std::int64_t{coordinate} + delta, 0, maxCoordinate));
 }
 
-void RollNextAiState(Creature& creature, std::int32_t maxCoordinate)
+void RollNextAiState(Creature& creature, std::uint32_t maxCoordinate)
 {
     const std::uint64_t roll = MixDecisionSeed(creature.instance_id, creature.ai_decision_seq++);
 
@@ -83,20 +83,18 @@ std::int32_t Zone::Y() const noexcept
 
 std::size_t Zone::Coordinates::Index() const noexcept
 {
-    return static_cast<std::size_t>(y) * static_cast<std::size_t>(Map::kZoneGridSize) +
-           static_cast<std::size_t>(x);
+    return static_cast<std::size_t>(y) * Map::kZoneGridSize + static_cast<std::size_t>(x);
 }
 
 Zone::Coordinates Zone::Of(std::uint32_t x, std::uint32_t y) noexcept
 {
-    constexpr auto kTiles = static_cast<std::uint32_t>(kSize);
-    return {static_cast<std::int32_t>(x / kTiles), static_cast<std::int32_t>(y / kTiles)};
+    return {static_cast<std::int32_t>(x / kSize), static_cast<std::int32_t>(y / kSize)};
 }
 
 bool Zone::IsInGrid(Coordinates zone) noexcept
 {
-    return zone.x >= 0 && zone.x < Map::kZoneGridSize && zone.y >= 0 &&
-           zone.y < Map::kZoneGridSize;
+    constexpr auto kLimit = static_cast<std::int32_t>(Map::kZoneGridSize);
+    return zone.x >= 0 && zone.x < kLimit && zone.y >= 0 && zone.y < kLimit;
 }
 
 bool Zone::Crossed(std::uint32_t fromX, std::uint32_t fromY, std::uint32_t toX,
@@ -137,7 +135,7 @@ std::span<const Creature> Zone::Creatures() const noexcept
     return m_creatures;
 }
 
-Zone::TickResult Zone::Tick(std::chrono::milliseconds delta, std::int32_t maxCoordinate)
+Zone::TickResult Zone::Tick(std::chrono::milliseconds delta, std::uint32_t maxCoordinate)
 {
     TickResult result;
 

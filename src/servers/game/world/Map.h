@@ -20,8 +20,8 @@ class MonsterTable;
 class Map
 {
 public:
-    static constexpr std::int32_t kGridSize = 512;
-    static constexpr std::int32_t kZoneGridSize = kGridSize / Zone::kSize;
+    static constexpr std::uint32_t kGridSize = 512;
+    static constexpr std::uint32_t kZoneGridSize = kGridSize / Zone::kSize;
     static constexpr std::size_t kZoneCount =
         static_cast<std::size_t>(kZoneGridSize) * kZoneGridSize;
 
@@ -50,8 +50,8 @@ public:
     // Adds player to the pool and publishes CharacterJoinEvent; false if already here. World strand only.
     [[nodiscard]] bool Spawn(Player player);
 
-    // Removes and returns the player (to save it, or Spawn it on another
-    // map); nullopt if it isn't on this map. World strand only.
+    // Removes and returns the player (to save it, or Spawn it on another map) and publishes
+    // CharacterLeaveEvent; nullopt if it isn't on this map. World strand only.
     std::optional<Player> Despawn(std::uint32_t instanceId);
 
     // nullptr if that player isn't on this map. World strand only.
@@ -60,6 +60,13 @@ public:
 
     // World strand only.
     bool HasPlayers() const;
+
+    // Calls fn(Player&) for every player on this map; don't Spawn or Despawn from fn. World strand only.
+    template <typename Fn> void ForEachPlayer(Fn&& fn)
+    {
+        for (Player& player : m_players)
+            fn(player);
+    }
 
     // Register listeners and publish this map's events; dispatched in Tick.
     EventBus& Events();

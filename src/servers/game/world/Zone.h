@@ -26,7 +26,7 @@ public:
         bool operator==(const Coordinates&) const = default;
     };
 
-    static constexpr std::int32_t kSize = 16;
+    static constexpr std::uint32_t kSize = 16;
 
     struct CreatureMove
     {
@@ -68,7 +68,7 @@ private:
 
     void AddCreature(Creature creature);
     std::span<const Creature> Creatures() const noexcept;
-    TickResult Tick(std::chrono::milliseconds delta, std::int32_t maxCoordinate);
+    TickResult Tick(std::chrono::milliseconds delta, std::uint32_t maxCoordinate);
     bool Contains(std::uint32_t x, std::uint32_t y) const noexcept;
 
     std::int32_t m_x;

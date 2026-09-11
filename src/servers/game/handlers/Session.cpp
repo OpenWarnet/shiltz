@@ -99,7 +99,7 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
 
             Map* map = ctx.world.GetMap(character.map_id);
 
-            // Arriving is a placement with no previous view, so MovementSystem sends every creature in view.
+            // Arriving is a placement with no previous view, so MovementSystem loads every character and creature in view.
             map->Events().Publish(CharacterZoneChangeEvent{
                 .instance_id = character.instance_id,
                 .to = Zone::Of(character.x, character.y),

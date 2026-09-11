@@ -67,11 +67,9 @@ struct CharacterDataLoad : ServerMessage<GameOpcode::GC_CHAR_DATA_LOAD>
     CharacterQuestFlags quest_flags{};
     std::array<CharacterSkillEntry, 64> skill_list{};
 
-    std::string char_name;
-
-    std::uint32_t state_flags =
-        0; // packed: low byte = guild_war_entry_state, 0x8000/0x4000 = unidentified flag bits
-    std::uint32_t guild_index = 0;
+    std::string guild_name;
+    std::uint32_t guild_state = 0;
+    std::uint32_t guild_emblem = 0;
     std::uint32_t channel_id = 0;
 
     std::array<std::uint8_t, 128>

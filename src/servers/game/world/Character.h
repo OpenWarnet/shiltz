@@ -10,6 +10,7 @@
 #include <vector>
 
 class IDatabase;
+struct CharOtherRecord;
 struct InventoryItemList;
 
 struct CharacterRawStats
@@ -191,4 +192,7 @@ struct Character
     CharacterDataLoad ToCharacterDataLoad(std::uint32_t epsUserFlag,
                                            std::uint32_t serverTimestamp) const;
     InventoryItemList ToInventoryItemList() const;
+
+    // How other clients see this character (GC_CHAR_NEW / GC_CHAR_OTHER_LOAD).
+    CharOtherRecord ToCharOtherRecord() const;
 };

@@ -1,5 +1,6 @@
 #include "world/Character.h"
 
+#include "protocol/server/CharOtherRecord.h"
 #include "protocol/server/CharacterDataLoad.h"
 #include "protocol/server/InventoryItemList.h"
 #include "repositories/CharacterRepository.h"
@@ -222,7 +223,6 @@ CharacterDataLoad Character::ToCharacterDataLoad(std::uint32_t epsUserFlag,
     result.enforced_points = skills.unallocated_ep;
     result.hair_type = hairstyle_id;
     result.quest_flags = quest_flags;
-    result.char_name = name;
     result.server_timestamp = serverTimestamp;
     result.face_type = face_id;
 
@@ -234,6 +234,37 @@ CharacterDataLoad Character::ToCharacterDataLoad(std::uint32_t epsUserFlag,
         result.skill_list[i] = CharacterSkillEntry{
             .skill_id = static_cast<std::uint16_t>(skills.skills[i].id),
             .skill_level = static_cast<std::uint16_t>(skills.skills[i].level),
+        };
+    }
+
+    return result;
+}
+
+CharOtherRecord Character::ToCharOtherRecord() const
+{
+    CharOtherRecord result;
+    result.id = instance_id;
+    result.name = name;
+    result.x = x;
+    result.y = y;
+    result.level = static_cast<std::uint32_t>(level);
+    result.job_id = job_id;
+    result.gender = gender;
+    result.hairstyle_id = hairstyle_id;
+    result.face_id = face_id;
+    result.max_hp = static_cast<std::uint32_t>(stats.derived.max_hp);
+    result.hp = hp;
+    result.direction = direction;
+
+    for (const auto& equipped : equipment)
+    {
+        if (equipped.slot >= CharOtherRecord::kEquipmentSlots)
+            continue;
+
+        result.equipment[equipped.slot] = {
+            .item_id = equipped.item.item_id,
+            .qty_or_refine = equipped.item.WireQuantityOrRefine(),
+            .option_bits = equipped.item.option_bits,
         };
     }
 

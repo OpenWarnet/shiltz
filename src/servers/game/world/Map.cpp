@@ -100,8 +100,7 @@ std::vector<GroundItem> Map::Items() const
 
 bool Map::IsInBounds(std::uint32_t x, std::uint32_t y) noexcept
 {
-    constexpr auto kLimit = static_cast<std::uint32_t>(kGridSize);
-    return x < kLimit && y < kLimit;
+    return x < kGridSize && y < kGridSize;
 }
 
 void Map::AddCreature(Creature creature)
@@ -127,6 +126,10 @@ std::span<const Creature> Map::CreaturesInZone(Zone::Coordinates zone) const
 bool Map::Spawn(Player player)
 {
     const std::uint32_t instanceId = player.character.instance_id;
+
+    // Whatever it had loaded belonged to its previous map.
+    player.visible_players.clear();
+
     if (!m_players.Add(instanceId, std::move(player)))
         return false;
 
@@ -136,7 +139,11 @@ bool Map::Spawn(Player player)
 
 std::optional<Player> Map::Despawn(std::uint32_t instanceId)
 {
-    return m_players.Remove(instanceId);
+    std::optional<Player> player = m_players.Remove(instanceId);
+    if (player)
+        m_events.Publish(CharacterLeaveEvent{.instance_id = instanceId});
+
+    return player;
 }
 
 Player* Map::GetPlayer(std::uint32_t instanceId)
@@ -194,9 +201,10 @@ std::vector<Zone> Map::CreateZones()
     std::vector<Zone> zones;
     zones.reserve(kZoneCount);
 
-    for (std::int32_t zoneY = 0; zoneY < kZoneGridSize; ++zoneY)
+    constexpr auto kLimit = static_cast<std::int32_t>(kZoneGridSize);
+    for (std::int32_t zoneY = 0; zoneY < kLimit; ++zoneY)
     {
-        for (std::int32_t zoneX = 0; zoneX < kZoneGridSize; ++zoneX)
+        for (std::int32_t zoneX = 0; zoneX < kLimit; ++zoneX)
             zones.emplace_back(zoneX, zoneY);
     }
 

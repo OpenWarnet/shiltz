@@ -2,6 +2,9 @@
 
 #include "Outbox.h"
 #include "protocol/server/CharMoveUpdate.h"
+#include "protocol/server/CharNew.h"
+#include "protocol/server/CharOtherLoad.h"
+#include "protocol/server/CharRemove.h"
 #include "protocol/server/CrtLoad.h"
 #include "protocol/server/ViewRemoveAll.h"
 #include "world/Map.h"
@@ -9,20 +12,73 @@
 #include "world/Player.h"
 #include "world/Zone.h"
 
+#include <algorithm>
 #include <cstdint>
+#include <utility>
+#include <vector>
+
+namespace
+{
+// Player::visible_players is kept sorted, so membership is a binary search.
+bool Contains(const std::vector<std::uint32_t>& loaded, std::uint32_t id)
+{
+    return std::binary_search(loaded.begin(), loaded.end(), id);
+}
+
+// False if it was already there.
+bool Insert(std::vector<std::uint32_t>& loaded, std::uint32_t id)
+{
+    const auto at = std::lower_bound(loaded.begin(), loaded.end(), id);
+    if (at != loaded.end() && *at == id)
+        return false;
+
+    loaded.insert(at, id);
+    return true;
+}
+
+// False if it wasn't there.
+bool Erase(std::vector<std::uint32_t>& loaded, std::uint32_t id)
+{
+    const auto at = std::lower_bound(loaded.begin(), loaded.end(), id);
+    if (at == loaded.end() || *at != id)
+        return false;
+
+    loaded.erase(at);
+    return true;
+}
+} // namespace
 
 MovementSystem::MovementSystem(Map& map, const Outbox& outbox, const GameData& data)
     : m_map(map), m_outbox(outbox), m_data(data)
 {
     map.Events().On<CharacterZoneChangeEvent>().Register<&MovementSystem::SendViewChange>(*this);
     map.Events().On<CharacterMoveEvent>().Register<&MovementSystem::SendCharMove>(*this);
+    map.Events().On<CharacterLeaveEvent>().Register<&MovementSystem::SendCharRemove>(*this);
 }
 
 void MovementSystem::SendViewChange(const CharacterZoneChangeEvent& event) const
 {
-    const Player* player = m_map.GetPlayer(event.instance_id);
+    Player* player = m_map.GetPlayer(event.instance_id);
     if (!player)
         return;
+
+    ViewRemoveAll remove;
+    std::vector<CharOtherRecord> arrived;
+    SyncVisiblePlayers(*player, arrived, remove.player_ids);
+
+    CharOtherLoad otherLoad;
+    for (CharOtherRecord& record : arrived)
+    {
+        otherLoad.records.push_back(std::move(record));
+        if (otherLoad.records.size() == CharOtherLoad::kMaxRecords)
+        {
+            m_outbox.Send(player->connection, otherLoad);
+            otherLoad.records.clear();
+        }
+    }
+
+    if (!otherLoad.records.empty())
+        m_outbox.Send(player->connection, otherLoad);
 
     CrtLoad load;
     for (const auto& zone : Zone::Around(event.to))
@@ -48,22 +104,21 @@ void MovementSystem::SendViewChange(const CharacterZoneChangeEvent& event) const
     if (!event.from || !load.records.empty())
         m_outbox.Send(player->connection, load);
 
-    // A placement has no previous view to clear.
-    if (!event.from)
-        return;
-
-    ViewRemoveAll remove;
-    for (const auto& zone : Zone::Around(*event.from))
+    // A placement has no previous view to clear creatures from.
+    if (event.from)
     {
-        // Still in view after the change.
-        if (Zone::IsNeighboring(event.to, zone))
-            continue;
+        for (const auto& zone : Zone::Around(*event.from))
+        {
+            // Still in view after the change.
+            if (Zone::IsNeighboring(event.to, zone))
+                continue;
 
-        for (const auto& creature : m_map.CreaturesInZone(zone))
-            remove.creature_ids.push_back(creature.instance_id);
+            for (const auto& creature : m_map.CreaturesInZone(zone))
+                remove.creature_ids.push_back(creature.instance_id);
+        }
     }
 
-    if (!remove.creature_ids.empty())
+    if (!remove.player_ids.empty() || !remove.creature_ids.empty())
         m_outbox.Send(player->connection, remove);
 }
 
@@ -80,5 +135,79 @@ void MovementSystem::SendCharMove(const CharacterMoveEvent& event) const
     response.y = event.to_y;
     response.speed = event.speed;
     response.stop_direction = event.stop_direction;
-    m_outbox.Send(player->connection, response);
+
+    // The mover plus every client that has it loaded.
+    std::vector<ConnectionId> viewers{player->connection};
+    for (const std::uint32_t id : player->visible_players)
+    {
+        if (const Player* viewer = m_map.GetPlayer(id))
+            viewers.push_back(viewer->connection);
+    }
+
+    m_outbox.Send(viewers, response);
+}
+
+void MovementSystem::SendCharRemove(const CharacterLeaveEvent& event) const
+{
+    std::vector<ConnectionId> viewers;
+    m_map.ForEachPlayer(
+        [&](Player& viewer)
+        {
+            if (Erase(viewer.visible_players, event.instance_id))
+                viewers.push_back(viewer.connection);
+        });
+
+    CharRemove remove;
+    remove.id = event.instance_id;
+    m_outbox.Send(viewers, remove);
+}
+
+void MovementSystem::SyncVisiblePlayers(Player& viewer, std::vector<CharOtherRecord>& arrived,
+                                        std::vector<std::uint32_t>& departed) const
+{
+    const std::uint32_t viewerId = viewer.character.instance_id;
+    const Zone::Coordinates viewerZone = Zone::Of(viewer.character.x, viewer.character.y);
+    const auto inView = [&](const Player& other)
+    { return Zone::IsNeighboring(Zone::Of(other.character.x, other.character.y), viewerZone); };
+
+    // Loaded characters that are out of view or no longer on this map.
+    std::vector<ConnectionId> lostSight;
+    std::erase_if(viewer.visible_players,
+                  [&](std::uint32_t id)
+                  {
+                      Player* other = m_map.GetPlayer(id);
+                      if (other && inView(*other))
+                          return false;
+
+                      departed.push_back(id);
+                      if (other && Erase(other->visible_players, viewerId))
+                          lostSight.push_back(other->connection);
+                      return true;
+                  });
+
+    // Characters in view that this client hasn't loaded yet.
+    std::vector<ConnectionId> gainedSight;
+    m_map.ForEachPlayer(
+        [&](Player& other)
+        {
+            const std::uint32_t otherId = other.character.instance_id;
+            if (otherId == viewerId || Contains(viewer.visible_players, otherId) || !inView(other))
+                return;
+
+            Insert(viewer.visible_players, otherId);
+            arrived.push_back(other.character.ToCharOtherRecord());
+            if (Insert(other.visible_players, viewerId))
+                gainedSight.push_back(other.connection);
+        });
+
+    CharRemove removed;
+    removed.id = viewerId;
+    m_outbox.Send(lostSight, removed);
+
+    if (!gainedSight.empty())
+    {
+        CharNew appeared;
+        appeared.record = viewer.character.ToCharOtherRecord();
+        m_outbox.Send(gainedSight, appeared);
+    }
 }
