@@ -8,7 +8,7 @@ bool ItemPickup::Deserialize(PayloadReader& reader)
     return reader.Read(id) && reader.Read(slot_id);
 }
 
-void ItemPickup::Handle(const GameContext& ctx) const
+void ItemPickup::Handle(const GameContext& ctx, Player&) const
 {
     HandleItemPickup(ctx, *this);
 }

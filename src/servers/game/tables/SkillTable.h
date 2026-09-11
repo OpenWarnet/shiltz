@@ -19,7 +19,7 @@ public:
 
     // Looks up a skillNN.scr row by (SkillRecord::id, level) -- level comes
     // from which skillNN.scr file the row was loaded from (see Load),
-    // the same id-space as PlayerSkill::level. Returns nullptr if this
+    // the same id-space as CharacterSkill::level. Returns nullptr if this
     // table hasn't loaded that skill/level combination.
     const SkillRecord* Find(std::int64_t skillId, std::int64_t level) const;
 

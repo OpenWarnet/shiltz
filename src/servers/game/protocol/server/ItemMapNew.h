@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <cstdint>
 #include <string>
@@ -8,7 +8,7 @@
 
 class PayloadWriter;
 
-struct ItemMapNew : ServerProtocol
+struct ItemMapNew : ServerMessage<GameOpcode::GC_ITEM_MAP_NEW>
 {
     std::uint32_t id;
     std::uint32_t x;

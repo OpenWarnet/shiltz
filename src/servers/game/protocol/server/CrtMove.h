@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <cstdint>
 
@@ -13,7 +13,7 @@ class PayloadWriter;
 // between the two itself; the server doesn't send a second update once it
 // arrives. speed_raw is always 0 for now -- no monster movement-speed stat
 // exists yet (see tables/MonsterTable.h).
-struct CrtMove : ServerProtocol
+struct CrtMove : ServerMessage<GameOpcode::GC_CRT_MOVE>
 {
     std::uint32_t creature_id = 0;
     std::uint32_t x = 0;

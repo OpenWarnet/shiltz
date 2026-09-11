@@ -8,7 +8,7 @@ bool LevelUpCheck::Deserialize(PayloadReader& reader)
     return reader.Read(session_id);
 }
 
-void LevelUpCheck::Handle(const GameContext& ctx) const
+void LevelUpCheck::Handle(const GameContext& ctx, Player&) const
 {
     HandleLevelUpCheck(ctx, *this);
 }

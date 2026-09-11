@@ -1,8 +1,11 @@
 #include "Map.h"
 
 #include "Creature.h"
+#include "MapEvents.h"
+#include "Player.h"
 #include "parser/MonsterSpawnScr.h"
 #include "parser/NpcScr.h"
+#include "world/common/EntityIdGenerator.h"
 #include "world/common/Paths.h"
 
 #include <algorithm>
@@ -24,7 +27,7 @@ std::size_t ZoneIndex(std::int32_t zoneX, std::int32_t zoneY)
 
 } // namespace
 
-Map::Map(MapRecord record, NextInstanceId nextInstanceId)
+Map::Map(MapRecord record)
     : id(record.server_map_id), monster_file(std::move(record.monster_file)),
       npc_file(std::move(record.npc_file)), m_zones(CreateZones())
 {
@@ -33,7 +36,7 @@ Map::Map(MapRecord record, NextInstanceId nextInstanceId)
         for (const auto& instance : spawn.instances)
         {
             AddCreature(Creature{
-                .instance_id = nextInstanceId(),
+                .instance_id = EntityIdGenerator::Next(),
                 .kind = CreatureKind::Npc,
                 .monster_id = spawn.id,
                 .x = instance.x,
@@ -49,7 +52,7 @@ Map::Map(MapRecord record, NextInstanceId nextInstanceId)
         for (const auto& instance : group.instances)
         {
             AddCreature(Creature{
-                .instance_id = nextInstanceId(),
+                .instance_id = EntityIdGenerator::Next(),
                 .kind = CreatureKind::Monster,
                 .monster_id = group.monster_id,
                 .x = instance.x,
@@ -120,25 +123,50 @@ std::vector<Creature> Map::CreaturesInZone(std::int32_t zoneX, std::int32_t zone
     return m_zones[ZoneIndex(zoneX, zoneY)].CreatureSnapshot();
 }
 
+bool Map::Spawn(Player player)
+{
+    const std::uint32_t instanceId = player.character.instance_id;
+    if (!m_players.Add(instanceId, std::move(player)))
+        return false;
+
+    m_events.Publish(CharacterJoinEvent{.instance_id = instanceId});
+    return true;
+}
+
+std::optional<Player> Map::Despawn(std::uint32_t instanceId)
+{
+    return m_players.Remove(instanceId);
+}
+
+Player* Map::GetPlayer(std::uint32_t instanceId)
+{
+    return m_players.Get(instanceId);
+}
+
+const Player* Map::GetPlayer(std::uint32_t instanceId) const
+{
+    return m_players.Get(instanceId);
+}
+
 void Map::SetPlayer(SOCKET socket, std::int32_t x, std::int32_t y)
 {
-    std::lock_guard lock(m_playersMutex);
-    m_players[socket] = MapPlayer{.socket = socket, .x = x, .y = y};
+    std::lock_guard lock(m_mapPlayersMutex);
+    m_mapPlayers[socket] = MapPlayer{.socket = socket, .x = x, .y = y};
 }
 
 void Map::RemovePlayer(SOCKET socket)
 {
-    std::lock_guard lock(m_playersMutex);
-    m_players.erase(socket);
+    std::lock_guard lock(m_mapPlayersMutex);
+    m_mapPlayers.erase(socket);
 }
 
 std::vector<Map::MapPlayer> Map::Players() const
 {
     std::vector<MapPlayer> players;
 
-    std::lock_guard lock(m_playersMutex);
-    players.reserve(m_players.size());
-    for (const auto& [socket, player] : m_players)
+    std::lock_guard lock(m_mapPlayersMutex);
+    players.reserve(m_mapPlayers.size());
+    for (const auto& [socket, player] : m_mapPlayers)
         players.push_back(player);
 
     return players;
@@ -146,8 +174,8 @@ std::vector<Map::MapPlayer> Map::Players() const
 
 bool Map::HasPlayers() const
 {
-    std::lock_guard lock(m_playersMutex);
-    return !m_players.empty();
+    std::lock_guard lock(m_mapPlayersMutex);
+    return !m_mapPlayers.empty();
 }
 
 std::pair<std::int32_t, std::int32_t> Map::ZoneOf(std::int32_t x, std::int32_t y)
@@ -155,9 +183,19 @@ std::pair<std::int32_t, std::int32_t> Map::ZoneOf(std::int32_t x, std::int32_t y
     return Zone::Of(x, y);
 }
 
+EventBus& Map::Events()
+{
+    return m_events;
+}
+
 void Map::Tick(std::chrono::milliseconds delta)
 {
-    TickCreature(delta);
+    // Events first, so they see the state they were published against; then simulate.
+    m_events.Dispatch();
+
+    // Nobody to see creatures on an empty map, but its events still went out above.
+    if (HasPlayers())
+        TickCreature(delta);
 }
 
 std::vector<Map::CreatureMove> Map::TickCreature(std::chrono::milliseconds delta)

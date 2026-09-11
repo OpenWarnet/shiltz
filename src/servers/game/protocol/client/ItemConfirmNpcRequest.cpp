@@ -25,7 +25,7 @@ bool ItemConfirmNpcRequest::Deserialize(PayloadReader& reader)
     return reader.Read(padding);
 }
 
-void ItemConfirmNpcRequest::Handle(const GameContext& ctx) const
+void ItemConfirmNpcRequest::Handle(const GameContext& ctx, Player&) const
 {
     HandleItemConfirmNpcRequest(ctx, *this);
 }

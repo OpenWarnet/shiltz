@@ -8,7 +8,7 @@
 #include <vector>
 
 // One row of a skillNN.scr file -- Seal Online's per-level skill attribute
-// table. `id` is the skill id (joins against PlayerSkill::id/
+// table. `id` is the skill id (joins against CharacterSkill::id/
 // SkillLevelUpEntry::skill_id); the level itself isn't a column in the row
 // -- it's implied by which skillNN.scr file the row came from (skill01.scr
 // = level 1's attributes for every skill, skill02.scr = level 2, ...), so

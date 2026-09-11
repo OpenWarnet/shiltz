@@ -8,7 +8,7 @@ bool ItemTradeSell::Deserialize(PayloadReader& reader)
     return reader.Read(slot_id) && reader.Read(count) && reader.Read(instance_id);
 }
 
-void ItemTradeSell::Handle(const GameContext& ctx) const
+void ItemTradeSell::Handle(const GameContext& ctx, Player&) const
 {
     HandleItemTradeSell(ctx, *this);
 }

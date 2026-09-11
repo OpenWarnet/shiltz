@@ -1,7 +1,9 @@
 #include "ClientProtocol.h"
 
+#include "GameContext.h"
 #include "GameOpcodes.h"
 #include "GamePacket.h"
+#include "world/World.h"
 #include "common/PacketCapture.h"
 #include "common/PayloadReader.h"
 #include "protocol/client/CharMove.h"
@@ -56,6 +58,12 @@ namespace
         return message;
     }
 } // namespace
+
+void PlayerMessage::Handle(const GameContext& ctx) const
+{
+    if (Player* player = ctx.world.FindPlayer(ctx.clientSocket))
+        Handle(ctx, *player);
+}
 
 std::unique_ptr<ClientProtocol> ClientProtocol::Create(const GamePacket& packet)
 {

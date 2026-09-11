@@ -9,7 +9,7 @@ bool StoreItemOut::Deserialize(PayloadReader& reader)
            reader.Read(unknown);
 }
 
-void StoreItemOut::Handle(const GameContext& ctx) const
+void StoreItemOut::Handle(const GameContext& ctx, Player&) const
 {
     HandleStoreItemOut(ctx, *this);
 }

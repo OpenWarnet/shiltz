@@ -29,8 +29,8 @@ enum class CreatureAiState : std::uint8_t
 // (kind == Monster). `monster_id` joins NpcSpawn::id or MonsterRecord::id
 // depending on `kind` -- this struct only carries placement, not the
 // template's own stats/behavior data. `instance_id` has nothing to do with
-// the .scr data itself -- it's assigned by World (see
-// World::AllocateCreatureInstanceId) to identify this one spawned instance
+// the .scr data itself -- it's assigned at spawn from EntityIdGenerator::Next()
+// (world/common/EntityIdGenerator.h) to identify this one spawned instance
 // uniquely across the whole World, the way GC_CRT_LOAD's own entity id
 // does on the wire.
 struct Creature

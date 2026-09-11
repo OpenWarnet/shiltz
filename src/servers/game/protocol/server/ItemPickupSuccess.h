@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <cstdint>
 
@@ -12,7 +12,7 @@ class PayloadWriter;
 // as InventoryItemSlot::qty_or_refine -- an item with a refine_level shows
 // it as-is; a stackable item shows quantity - 1; see InventoryItemList.h),
 // then 4 reserved/unused zero dwords.
-struct ItemPickupSuccess : ServerProtocol
+struct ItemPickupSuccess : ServerMessage<GameOpcode::GC_ITEM_PICKUP_SUCC>
 {
     std::uint32_t id = 0;
     std::uint32_t slot_id = 0;

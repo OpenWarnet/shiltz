@@ -8,7 +8,7 @@ bool ItemMove::Deserialize(PayloadReader& reader)
     return reader.Read(source_slot_id) && reader.Read(dest_slot_id);
 }
 
-void ItemMove::Handle(const GameContext& ctx) const
+void ItemMove::Handle(const GameContext& ctx, Player&) const
 {
     HandleItemMove(ctx, *this);
 }

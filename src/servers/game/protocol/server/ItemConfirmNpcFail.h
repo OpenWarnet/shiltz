@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <cstdint>
 
@@ -13,7 +13,7 @@ class PayloadWriter;
 // so a bad slot index, an ineligible item type, an unmet level
 // requirement, and insufficient money are all indistinguishable to the
 // client (see handlers/ItemConfirmNpc.h).
-struct ItemConfirmNpcFail : ServerProtocol
+struct ItemConfirmNpcFail : ServerMessage<GameOpcode::GC_ITEM_CONFIRM_NPC_FAIL>
 {
     std::int32_t result_code = 3;
 

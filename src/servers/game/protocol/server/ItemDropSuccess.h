@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <cstdint>
 
@@ -15,7 +15,7 @@ class PayloadWriter;
 // empty both are 0, which is how the client knows to clear it -- then 2
 // still-reserved/unused zero dwords (2 of the original 4 turned out to be
 // new_item_id/new_item_count).
-struct ItemDropSuccess : ServerProtocol
+struct ItemDropSuccess : ServerMessage<GameOpcode::GC_ITEM_DROP_SUCC>
 {
     std::uint32_t id = 0;
     std::uint32_t x = 0;

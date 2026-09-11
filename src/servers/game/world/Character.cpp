@@ -1,4 +1,4 @@
-#include "world/Player.h"
+#include "world/Character.h"
 
 #include "protocol/server/CharacterDataLoad.h"
 #include "protocol/server/InventoryItemList.h"
@@ -10,9 +10,9 @@
 
 #include <utility>
 
-PlayerDerivedStats operator+(const PlayerDerivedStats& a, const PlayerDerivedStats& b)
+CharacterDerivedStats operator+(const CharacterDerivedStats& a, const CharacterDerivedStats& b)
 {
-    PlayerDerivedStats sum;
+    CharacterDerivedStats sum;
     sum.max_hp = a.max_hp + b.max_hp;
     sum.max_ap = a.max_ap + b.max_ap;
     sum.damage = a.damage + b.damage;
@@ -30,13 +30,13 @@ PlayerDerivedStats operator+(const PlayerDerivedStats& a, const PlayerDerivedSta
     return sum;
 }
 
-bool Player::LoadFromDB(IDatabase& db, std::int64_t characterId)
+bool Character::LoadFromDB(IDatabase& db, std::int64_t characterId)
 {
     std::optional<CharacterRepository::CoreData> core = CharacterRepository::Load(db, characterId);
     if (!core)
         return false;
 
-    instance_id = static_cast<std::uint32_t>(characterId);
+    id = characterId;
 
     name = std::move(core->name);
     level = core->level;
@@ -74,40 +74,40 @@ bool Player::LoadFromDB(IDatabase& db, std::int64_t characterId)
     return true;
 }
 
-void Player::SavePosition(IDatabase& db) const
+void Character::SavePosition(IDatabase& db) const
 {
-    CharacterRepository::SavePosition(db, static_cast<std::int64_t>(instance_id), map_id, x, y);
+    CharacterRepository::SavePosition(db, id, map_id, x, y);
 }
 
-void Player::SaveVitals(IDatabase& db) const
+void Character::SaveVitals(IDatabase& db) const
 {
-    CharacterRepository::SaveVitals(db, static_cast<std::int64_t>(instance_id), hp, ap);
+    CharacterRepository::SaveVitals(db, id, hp, ap);
 }
 
-void Player::SaveRawStats(IDatabase& db) const
+void Character::SaveRawStats(IDatabase& db) const
 {
-    CharacterRepository::SaveRawStats(db, static_cast<std::int64_t>(instance_id), stats.raw);
+    CharacterRepository::SaveRawStats(db, id, stats.raw);
 }
 
-void Player::SaveSkillPoints(IDatabase& db) const
+void Character::SaveSkillPoints(IDatabase& db) const
 {
-    SkillRepository::SaveSkillPoints(db, static_cast<std::int64_t>(instance_id), skills.unallocated_sp,
+    SkillRepository::SaveSkillPoints(db, id, skills.unallocated_sp,
                                       skills.unallocated_ep);
 }
 
-void Player::SaveSkillLevels(IDatabase& db) const
+void Character::SaveSkillLevels(IDatabase& db) const
 {
-    SkillRepository::SaveSkillLevels(db, static_cast<std::int64_t>(instance_id), skills.skills);
+    SkillRepository::SaveSkillLevels(db, id, skills.skills);
 }
 
-void Player::SaveLevel(IDatabase& db) const
+void Character::SaveLevel(IDatabase& db) const
 {
-    CharacterRepository::SaveLevel(db, static_cast<std::int64_t>(instance_id), level, exp);
+    CharacterRepository::SaveLevel(db, id, level, exp);
 }
 
-void Player::SetEquipmentSlot(std::uint32_t slot, const Item& item)
+void Character::SetEquipmentSlot(std::uint32_t slot, const Item& item)
 {
-    for (PlayerEquipmentItem& entry : equipment)
+    for (CharacterEquipmentItem& entry : equipment)
     {
         if (entry.slot == slot)
         {
@@ -116,17 +116,17 @@ void Player::SetEquipmentSlot(std::uint32_t slot, const Item& item)
         }
     }
 
-    equipment.push_back(PlayerEquipmentItem{.slot = slot, .item = item});
+    equipment.push_back(CharacterEquipmentItem{.slot = slot, .item = item});
 }
 
-void Player::ClearEquipmentSlot(std::uint32_t slot)
+void Character::ClearEquipmentSlot(std::uint32_t slot)
 {
-    std::erase_if(equipment, [slot](const PlayerEquipmentItem& entry) { return entry.slot == slot; });
+    std::erase_if(equipment, [slot](const CharacterEquipmentItem& entry) { return entry.slot == slot; });
 }
 
-void Player::SetInventorySlot(std::uint32_t slotIndex, const Item& item)
+void Character::SetInventorySlot(std::uint32_t slotIndex, const Item& item)
 {
-    for (PlayerInventoryItem& entry : inventory)
+    for (CharacterInventoryItem& entry : inventory)
     {
         if (entry.slot_index == slotIndex)
         {
@@ -135,16 +135,16 @@ void Player::SetInventorySlot(std::uint32_t slotIndex, const Item& item)
         }
     }
 
-    inventory.push_back(PlayerInventoryItem{.slot_index = slotIndex, .item = item});
+    inventory.push_back(CharacterInventoryItem{.slot_index = slotIndex, .item = item});
 }
 
-void Player::ClearInventorySlot(std::uint32_t slotIndex)
+void Character::ClearInventorySlot(std::uint32_t slotIndex)
 {
     std::erase_if(inventory,
-                   [slotIndex](const PlayerInventoryItem& entry) { return entry.slot_index == slotIndex; });
+                   [slotIndex](const CharacterInventoryItem& entry) { return entry.slot_index == slotIndex; });
 }
 
-void Player::SetItemSlot(std::uint32_t wireSlotId, const Item& item)
+void Character::SetItemSlot(std::uint32_t wireSlotId, const Item& item)
 {
     const ItemRepository::SlotRef ref = ItemRepository::ResolveSlotRef(wireSlotId);
 
@@ -154,7 +154,7 @@ void Player::SetItemSlot(std::uint32_t wireSlotId, const Item& item)
         SetInventorySlot(ref.index, item);
 }
 
-void Player::ClearItemSlot(std::uint32_t wireSlotId)
+void Character::ClearItemSlot(std::uint32_t wireSlotId)
 {
     const ItemRepository::SlotRef ref = ItemRepository::ResolveSlotRef(wireSlotId);
 
@@ -164,9 +164,9 @@ void Player::ClearItemSlot(std::uint32_t wireSlotId)
         ClearInventorySlot(ref.index);
 }
 
-std::optional<Item> Player::GetEquipmentSlot(std::uint32_t slot) const
+std::optional<Item> Character::GetEquipmentSlot(std::uint32_t slot) const
 {
-    for (const PlayerEquipmentItem& entry : equipment)
+    for (const CharacterEquipmentItem& entry : equipment)
     {
         if (entry.slot == slot)
             return entry.item;
@@ -175,9 +175,9 @@ std::optional<Item> Player::GetEquipmentSlot(std::uint32_t slot) const
     return std::nullopt;
 }
 
-std::optional<Item> Player::GetInventorySlot(std::uint32_t slotIndex) const
+std::optional<Item> Character::GetInventorySlot(std::uint32_t slotIndex) const
 {
-    for (const PlayerInventoryItem& entry : inventory)
+    for (const CharacterInventoryItem& entry : inventory)
     {
         if (entry.slot_index == slotIndex)
             return entry.item;
@@ -186,7 +186,7 @@ std::optional<Item> Player::GetInventorySlot(std::uint32_t slotIndex) const
     return std::nullopt;
 }
 
-std::optional<Item> Player::GetItemSlot(std::uint32_t wireSlotId) const
+std::optional<Item> Character::GetItemSlot(std::uint32_t wireSlotId) const
 {
     const ItemRepository::SlotRef ref = ItemRepository::ResolveSlotRef(wireSlotId);
 
@@ -194,7 +194,7 @@ std::optional<Item> Player::GetItemSlot(std::uint32_t wireSlotId) const
                                                             : GetInventorySlot(ref.index);
 }
 
-CharacterDataLoad Player::ToCharacterDataLoad(std::uint32_t epsUserFlag,
+CharacterDataLoad Character::ToCharacterDataLoad(std::uint32_t epsUserFlag,
                                                std::uint32_t serverTimestamp) const
 {
     CharacterDataLoad result;
@@ -240,7 +240,7 @@ CharacterDataLoad Player::ToCharacterDataLoad(std::uint32_t epsUserFlag,
     return result;
 }
 
-InventoryItemList Player::ToInventoryItemList() const
+InventoryItemList Character::ToInventoryItemList() const
 {
     InventoryItemList result;
     result.total_count = 0;

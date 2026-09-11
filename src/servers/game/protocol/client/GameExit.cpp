@@ -10,5 +10,5 @@ bool GameExit::Deserialize(PayloadReader& reader)
 
 void GameExit::Handle(const GameContext& ctx) const
 {
-    HandleCgExit(ctx);
+    HandleCgExit(ctx, *this);
 }

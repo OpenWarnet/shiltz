@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <array>
 #include <cstdint>
@@ -16,7 +16,7 @@ struct InventoryItemSlot
     void Serialize(PayloadWriter& writer) const;
 };
 
-struct InventoryItemList : ServerProtocol
+struct InventoryItemList : ServerMessage<GameOpcode::GC_INVENTORY_ITEM_LIST>
 {
     static constexpr std::size_t kTotalSlots = 256;
     static constexpr std::size_t kBodySize = 4104;

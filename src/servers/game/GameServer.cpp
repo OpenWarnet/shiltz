@@ -3,6 +3,7 @@
 #include "GamePacket.h"
 #include "common/PayloadWriter.h"
 #include "protocol/ClientProtocol.h"
+#include "protocol/client/GameExit.h"
 #include "protocol/server/CrtMove.h"
 #include "world/common/Request.h"
 
@@ -27,11 +28,14 @@ namespace
 
 GameServer::GameServer(uint16_t port, std::span<const uint8_t> key, IDatabase& db)
     : Server(port, "Game"), m_key(key), m_db(db),
+      m_outbox([this](ConnectionId to, std::span<const std::uint8_t> frame)
+               { SendTo(static_cast<SOCKET>(to), frame); }),
       m_worldStrand(boost::asio::any_io_executor(IoContext().get_executor())), m_tickTimer(IoContext()),
-      m_dbPool(1)
+      m_persistence(db, [this](std::function<void()> work)
+                    { boost::asio::post(m_worldStrand, std::move(work)); })
 {
     m_data.Load();
-    m_world.Start();
+    m_world.Start(m_outbox, m_data);
 
     m_lastTick = std::chrono::steady_clock::now();
     ScheduleTick();
@@ -74,23 +78,20 @@ void GameServer::OnFrame(SOCKET clientSocket, std::span<const uint8_t> frame)
     if (!message)
         return;
 
-    m_world.Receive(Request{
-        .context = GameContext{*this, clientSocket, m_key, m_db, m_sessions, m_world, m_data,
-                               m_dbPool},
-        .message = std::move(message),
-    });
+    m_world.Receive(Request{.context = MakeContext(clientSocket), .message = std::move(message)});
 }
 
 void GameServer::OnClientDisconnected(SOCKET clientSocket)
 {
-    // Look up the session before removing it -- it's the only place that
-    // still knows which map (if any) this socket's MapPlayer entry is on.
-    if (auto session = m_sessions.Get(clientSocket))
-    {
-        if (Map* map = m_world.GetMap(session->player.map_id))
-            map->RemovePlayer(clientSocket);
-    }
+    // Leave as a CG_EXIT through the same queue, so it runs after everything this client already sent.
+    auto exit = std::make_unique<GameExit>();
+    exit->disconnected = true;
+    m_world.Receive(Request{.context = MakeContext(clientSocket), .message = std::move(exit)});
+}
 
-    m_sessions.Remove(clientSocket);
+GameContext GameServer::MakeContext(SOCKET clientSocket)
+{
+    return GameContext{*this,   clientSocket, m_key,  m_db, m_sessions, m_world, m_data, m_persistence.Thread(),
+                       m_outbox, m_persistence};
 }
 

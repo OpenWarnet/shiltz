@@ -185,9 +185,9 @@ bool ClearItemSlot(IDatabase& db, std::int64_t characterId, std::uint32_t wireSl
     return ClearInventorySlot(db, characterId, ref.index, expectedPrevious);
 }
 
-std::vector<PlayerEquipmentItem> LoadAllEquipment(IDatabase& db, std::int64_t characterId)
+std::vector<CharacterEquipmentItem> LoadAllEquipment(IDatabase& db, std::int64_t characterId)
 {
-    std::vector<PlayerEquipmentItem> result;
+    std::vector<CharacterEquipmentItem> result;
 
     auto stmt = db.Prepare(
         "SELECT slot, item_id, refine_level, item_level, option_bits FROM equipment_slot "
@@ -203,7 +203,7 @@ std::vector<PlayerEquipmentItem> LoadAllEquipment(IDatabase& db, std::int64_t ch
         const SqlValue refineLevelColumn = stmt->Column(2);
         const bool hasRefineLevel = std::holds_alternative<int64_t>(refineLevelColumn);
 
-        result.push_back(PlayerEquipmentItem{
+        result.push_back(CharacterEquipmentItem{
             .slot = static_cast<std::uint32_t>(std::get<int64_t>(stmt->Column(0))),
             .item =
                 Item{
@@ -222,9 +222,9 @@ std::vector<PlayerEquipmentItem> LoadAllEquipment(IDatabase& db, std::int64_t ch
     return result;
 }
 
-std::vector<PlayerInventoryItem> LoadAllInventory(IDatabase& db, std::int64_t characterId)
+std::vector<CharacterInventoryItem> LoadAllInventory(IDatabase& db, std::int64_t characterId)
 {
-    std::vector<PlayerInventoryItem> result;
+    std::vector<CharacterInventoryItem> result;
 
     auto stmt = db.Prepare(
         "SELECT slot_index, item_id, quantity, refine_level, item_level, option_bits FROM "
@@ -241,7 +241,7 @@ std::vector<PlayerInventoryItem> LoadAllInventory(IDatabase& db, std::int64_t ch
         const SqlValue refineLevelColumn = stmt->Column(3);
         const bool hasRefineLevel = std::holds_alternative<int64_t>(refineLevelColumn);
 
-        result.push_back(PlayerInventoryItem{
+        result.push_back(CharacterInventoryItem{
             .slot_index = static_cast<std::uint32_t>(std::get<int64_t>(stmt->Column(0))),
             .item =
                 Item{

@@ -26,14 +26,14 @@ struct QuestConditions
     std::int64_t min_item_1_count = 0;
     std::int64_t has_flag = 0; // quest_flags flag id -- 0 means no flag required
     std::int64_t has_job = 0;  // job id -- 0 means no job required
-    std::int64_t min_reputation = 0; // compared against Player::fame
+    std::int64_t min_reputation = 0; // compared against Character::fame
     // Two unidentified condition ints (no known effect) sit between
     // min_reputation and min_level, and between min_level and min_days --
     // read past to keep every later column at its correct offset, but not
     // stored (see parser/QuestScr.cpp).
     std::int64_t min_level = 0;
     std::int64_t min_days = 0;    // no "days played" tracking yet -- always treated as satisfied
-    std::int64_t min_cegel = 0;   // compared against Player::money ("Cegel" is Seal Online's currency)
+    std::int64_t min_cegel = 0;   // compared against Character::money ("Cegel" is Seal Online's currency)
     std::int64_t time_of_day = 0; // no server clock/day-night cycle yet -- always treated as satisfied
 };
 

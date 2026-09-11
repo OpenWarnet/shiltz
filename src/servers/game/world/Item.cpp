@@ -2,7 +2,7 @@
 
 #include "enums/RefineGroup.h"
 #include "parser/ItemScr.h"
-#include "world/Player.h"
+#include "world/Character.h"
 
 #include <array>
 #include <cstdint>
@@ -82,11 +82,11 @@ std::optional<std::int64_t> FindCurvePoints(const RefineCurvePoint* curve, std::
 }
 } // namespace
 
-PlayerDerivedStats Item::CalculateOptionContribution(const ItemRecord& record) const
+CharacterDerivedStats Item::CalculateOptionContribution(const ItemRecord& record) const
 {
     const std::array<std::int32_t, kOptionGateCount> deviations = DecodeOptionDeviations(option_bits);
 
-    PlayerDerivedStats derived;
+    CharacterDerivedStats derived;
     derived.damage = static_cast<std::int32_t>(deviations[0] * record.damage_scale);
     derived.magic = static_cast<std::int32_t>(deviations[1] * record.magic_power_scale);
     derived.defense = static_cast<std::int32_t>(deviations[2] * record.defense_scale);
@@ -101,9 +101,9 @@ PlayerDerivedStats Item::CalculateOptionContribution(const ItemRecord& record) c
     return derived;
 }
 
-PlayerDerivedStats Item::CalculateRefineContribution(const ItemRecord& record) const
+CharacterDerivedStats Item::CalculateRefineContribution(const ItemRecord& record) const
 {
-    PlayerDerivedStats derived;
+    CharacterDerivedStats derived;
     if (refine_level == 0)
         return derived;
 
@@ -144,9 +144,9 @@ PlayerDerivedStats Item::CalculateRefineContribution(const ItemRecord& record) c
     return derived;
 }
 
-PlayerDerivedStats Item::CalculateDerivedStats(const ItemRecord& record) const
+CharacterDerivedStats Item::CalculateDerivedStats(const ItemRecord& record) const
 {
-    PlayerDerivedStats flat;
+    CharacterDerivedStats flat;
     flat.damage = static_cast<std::int32_t>(record.damage_bonus);
     flat.damage_dealt_increase_percent =
         static_cast<std::int32_t>(record.damage_dealt_increase_percent_bonus);

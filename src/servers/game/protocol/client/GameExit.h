@@ -12,6 +12,9 @@ struct GameExit : ClientProtocol
 {
     std::uint32_t opcode_echo = 0;
 
+    // Not on the wire: set only on the exit GameServer fakes when the connection drops, so nothing is replied.
+    bool disconnected = false;
+
     bool Deserialize(PayloadReader& reader) override;
     void Handle(const GameContext& ctx) const override;
 };

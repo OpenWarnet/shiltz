@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <cstdint>
 #include <vector>
@@ -15,7 +15,7 @@ struct ItemConfirmNpcResult
     void Serialize(PayloadWriter& writer) const;
 };
 
-struct ItemConfirmNpcSucc : ServerProtocol
+struct ItemConfirmNpcSucc : ServerMessage<GameOpcode::GC_ITEM_CONFIRM_NPC_SUCC>
 {
     std::vector<ItemConfirmNpcResult> results;
     std::uint32_t total_fee = 0;

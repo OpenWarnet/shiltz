@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <cstdint>
 
@@ -16,7 +16,7 @@ class PayloadWriter;
 //   -6  character level too low for this skill
 //   -7  not enough skill points
 //   -8  skill's job doesn't match character's job
-struct CharSkillUpExFail : ServerProtocol
+struct CharSkillUpExFail : ServerMessage<GameOpcode::GC_CHAR_SKILL_UP_EX_FAIL>
 {
     std::int32_t reason = 0;
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "world/Player.h" // PlayerSkill
+#include "world/Character.h" // CharacterSkill
 
 #include <cstdint>
 #include <vector>
@@ -17,14 +17,14 @@ class IDatabase;
 // bank_items.
 namespace SkillRepository
 {
-    // For Player::LoadFromDB.
-    std::vector<PlayerSkill> LoadSkillLevels(IDatabase& db, std::int64_t characterId);
+    // For Character::LoadFromDB.
+    std::vector<CharacterSkill> LoadSkillLevels(IDatabase& db, std::int64_t characterId);
 
     // Upserts every entry in `skills` into `character_skill`. Persisting the
     // whole list rather than a single changed skill mirrors how a
     // CG_CHAR_SKILL_UP_EX request can raise several skills at once --
     // re-upserting an unchanged skill is harmless.
-    void SaveSkillLevels(IDatabase& db, std::int64_t characterId, const std::vector<PlayerSkill>& skills);
+    void SaveSkillLevels(IDatabase& db, std::int64_t characterId, const std::vector<CharacterSkill>& skills);
 
     void SaveSkillPoints(IDatabase& db, std::int64_t characterId, std::uint32_t unallocatedSp,
                           std::uint32_t unallocatedEp);

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <cstdint>
 
@@ -14,7 +14,7 @@ class PayloadWriter;
 // plausibly gold or some other per-character counter unrelated to the
 // deleted item, but not confirmed, so it's zeroed here rather than
 // guessed at.
-struct ItemDeleteSuccess : ServerProtocol
+struct ItemDeleteSuccess : ServerMessage<GameOpcode::GC_ITEM_DELETE_SUCC>
 {
     std::uint32_t slot_id = 0;
 

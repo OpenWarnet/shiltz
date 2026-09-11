@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <cstdint>
 
@@ -10,7 +10,7 @@ class PayloadWriter;
 // reason defaults to 1 -- the only value seen so far (no bank_accounts row
 // for this character, or the submitted password didn't match) -- but
 // handlers/Store.cpp's sendFail() can override it per call site.
-struct StoreOpenFail : ServerProtocol
+struct StoreOpenFail : ServerMessage<GameOpcode::GC_STORE_OPEN_FAIL>
 {
     std::int32_t reason = 1;
 

@@ -48,6 +48,9 @@ public:
     // caller.
     bool SendTo(SOCKET clientId, std::span<const uint8_t> frame);
 
+    // True while clientId's connection is registered. Safe to call from any thread.
+    bool IsConnected(SOCKET clientId) const;
+
     // Sends a frame to every currently connected client. Safe to call from
     // any thread.
     void Broadcast(std::span<const uint8_t> frame);
@@ -84,6 +87,6 @@ private:
     boost::asio::ip::tcp::acceptor m_acceptor;
     std::vector<std::thread> m_ioThreadPool;
 
-    std::mutex m_connectionsMutex;
+    mutable std::mutex m_connectionsMutex;
     std::unordered_map<SOCKET, std::shared_ptr<Connection>> m_connections;
 };

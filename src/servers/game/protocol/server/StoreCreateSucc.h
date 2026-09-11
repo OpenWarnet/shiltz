@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <cstdint>
 
@@ -8,7 +8,7 @@ class PayloadWriter;
 
 // GC_STORE_CREATE_SUCC (wire code 521111, s2c) -- acknowledges a successful
 // CG_STORE_CREATE. The single field is a constant 0.
-struct StoreCreateSucc : ServerProtocol
+struct StoreCreateSucc : ServerMessage<GameOpcode::GC_STORE_CREATE_SUCC>
 {
     std::int32_t constant = 0;
 

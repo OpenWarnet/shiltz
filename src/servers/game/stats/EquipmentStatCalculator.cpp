@@ -2,16 +2,16 @@
 
 #include "tables/ItemTable.h"
 #include "tables/SetOptionTable.h"
-#include "world/Player.h"
+#include "world/Character.h"
 
 #include <cstdint>
 #include <unordered_map>
 
 namespace
 {
-PlayerDerivedStats SetOptionRecordToDerivedStats(const SetOptionRecord& set)
+CharacterDerivedStats SetOptionRecordToDerivedStats(const SetOptionRecord& set)
 {
-    PlayerDerivedStats derived;
+    CharacterDerivedStats derived;
     derived.damage = static_cast<std::int32_t>(set.damage);
     derived.magic = static_cast<std::int32_t>(set.magic);
     derived.defense = static_cast<std::int32_t>(set.defense);
@@ -26,14 +26,14 @@ PlayerDerivedStats SetOptionRecordToDerivedStats(const SetOptionRecord& set)
 }
 } // namespace
 
-PlayerDerivedStats EquipmentStatCalculator::Calculate(const Player& player, const ItemTable& items,
+CharacterDerivedStats EquipmentStatCalculator::Calculate(const Character& character, const ItemTable& items,
                                                         const SetOptionTable& setOptions)
 {
-    PlayerDerivedStats total;
+    CharacterDerivedStats total;
 
     std::unordered_map<std::int64_t, std::int64_t> setPieceCounts;
 
-    for (const PlayerEquipmentItem& equipped : player.equipment)
+    for (const CharacterEquipmentItem& equipped : character.equipment)
     {
         const Item& item = equipped.item;
         const ItemRecord* itemRecord = items.Find(item.item_id);

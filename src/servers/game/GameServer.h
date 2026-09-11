@@ -1,6 +1,8 @@
 #pragma once
 
 #include "GameSessionStore.h"
+#include "Outbox.h"
+#include "Persistence.h"
 #include "common/Server.h"
 #include "storage/IDatabase.h"
 #include "tables/GameData.h"
@@ -21,6 +23,8 @@ protected:
     void OnClientDisconnected(SOCKET clientSocket) override;
 
 private:
+    GameContext MakeContext(SOCKET clientSocket);
+
     // Re-arms m_tickTimer and, on the world strand, advances m_world.Tick()
     // by the actual elapsed time -- replaces the old dedicated tick thread
     // with a steady_timer posted on the io_context, serialized against
@@ -38,6 +42,7 @@ private:
 
     std::span<const uint8_t> m_key;
     IDatabase& m_db;
+    Outbox m_outbox;
     GameSessionStore m_sessions;
     GameData m_data;
     World m_world;
@@ -46,9 +51,6 @@ private:
     boost::asio::steady_timer m_tickTimer;
     std::chrono::steady_clock::time_point m_lastTick;
 
-    // Dedicated worker for blocking IDatabase (SQLite) calls a handler
-    // wants off the reactor pool's threads -- see GameContext::dbPool. One
-    // thread is enough: both servers only ever hold a single sqlite3*
-    // connection each, so a bigger pool wouldn't add real concurrency.
-    boost::asio::thread_pool m_dbPool;
+    // Last member, so it's destroyed first and drains its jobs while everything they touch still exists.
+    Persistence m_persistence;
 };

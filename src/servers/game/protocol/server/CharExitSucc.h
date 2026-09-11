@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <cstdint>
 
@@ -10,7 +10,7 @@ class PayloadWriter;
 // response to CG_EXIT. The 4-byte body is never read by the client; real
 // traffic shows it varying with no discernible pattern, consistent with
 // unread noise rather than a real field, so it's sent as 0.
-struct CharExitSucc : ServerProtocol
+struct CharExitSucc : ServerMessage<GameOpcode::GC_CHAR_EXIT_SUCC>
 {
     std::uint32_t unused = 0;
 

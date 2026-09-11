@@ -1,9 +1,7 @@
 #include "Inventory.h"
 
-#include "GameOpcodes.h"
 #include "GamePacket.h"
 #include "GameSessionStore.h"
-#include "common/PayloadWriter.h"
 #include "common/Server.h"
 #include "protocol/client/ItemDelete.h"
 #include "protocol/client/ItemDrop.h"
@@ -21,10 +19,10 @@
 #include "storage/Transaction.h"
 #include "world/GroundItem.h"
 #include "world/World.h"
+#include "world/common/EntityIdGenerator.h"
 
 #include <algorithm>
 #include <optional>
-#include <random>
 
 void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
 {
@@ -48,7 +46,7 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
     const auto slotIndex = static_cast<std::uint32_t>(static_cast<int64_t>(request.slot_id) -
                                                         static_cast<int64_t>(InventoryItemList::kBagStartSlot));
 
-    Map* map = ctx.world.GetMap(session->player.map_id);
+    Map* map = ctx.world.GetMap(session->character.map_id);
     if (!map)
         return;
 
@@ -69,7 +67,7 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
     // onto it), holding a *different* item_id means the client's view of
     // its own inventory is stale/wrong, so ignore the request rather than
     // clobbering whatever's actually there.
-    auto existing = session->player.GetInventorySlot(slotIndex);
+    auto existing = session->character.GetInventorySlot(slotIndex);
 
     Item updated;
     if (existing)
@@ -108,33 +106,19 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request)
 
     txn.Commit();
 
-    session->player.SetInventorySlot(slotIndex, updated);
+    session->character.SetInventorySlot(slotIndex, updated);
     ctx.sessions.Set(ctx.clientSocket, *session);
 
-    PayloadWriter succWriter;
     ItemPickupSuccess succResponse;
     succResponse.id = request.id;
     succResponse.slot_id = request.slot_id;
     succResponse.item_id = itemId;
     succResponse.qty_or_refine = updated.WireQuantityOrRefine();
-    succResponse.Serialize(succWriter);
-    auto succData = succWriter.Data();
+    ctx.server.SendTo(ctx.clientSocket, succResponse.Packet().Serialize(ctx.key));
 
-    GamePacket succPacket(GameOpcode::GC_ITEM_PICKUP_SUCC, succData);
-    auto succPayload = succPacket.Serialize(ctx.key);
-
-    ctx.server.SendTo(ctx.clientSocket, succPayload);
-
-    PayloadWriter removeWriter;
     ItemMapRemove removeResponse;
     removeResponse.id = request.id;
-    removeResponse.Serialize(removeWriter);
-    auto removeData = removeWriter.Data();
-
-    GamePacket removePacket(GameOpcode::GC_ITEM_MAP_REMOVE, removeData);
-    auto removePayload = removePacket.Serialize(ctx.key);
-
-    ctx.server.SendTo(ctx.clientSocket, removePayload);
+    ctx.server.SendTo(ctx.clientSocket, removeResponse.Packet().Serialize(ctx.key));
     });
 }
 
@@ -142,16 +126,9 @@ void HandleItemMove(const GameContext& ctx, const ItemMove& request)
 {
     auto sendFail = [ctx, request]
     {
-        PayloadWriter failWriter;
         ItemMoveFail response;
         response.source_slot_id = request.source_slot_id;
-        response.Serialize(failWriter);
-        auto failData = failWriter.Data();
-
-        GamePacket failPacket(GameOpcode::GC_ITEM_MOVE_FAIL, failData);
-        auto failPayload = failPacket.Serialize(ctx.key);
-
-        ctx.server.SendTo(ctx.clientSocket, failPayload);
+        ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
     };
 
     auto session = ctx.sessions.Get(ctx.clientSocket);
@@ -172,8 +149,8 @@ void HandleItemMove(const GameContext& ctx, const ItemMove& request)
     // leaves the item's old and new slots both occupied (duplication).
     DatabaseTransaction txn(ctx.db);
 
-    auto sourceContent = session->player.GetItemSlot(request.source_slot_id);
-    auto destContent = session->player.GetItemSlot(request.dest_slot_id);
+    auto sourceContent = session->character.GetItemSlot(request.source_slot_id);
+    auto destContent = session->character.GetItemSlot(request.dest_slot_id);
 
     if (!sourceContent && !destContent)
     {
@@ -223,33 +200,26 @@ void HandleItemMove(const GameContext& ctx, const ItemMove& request)
     // actually durable -- see the equivalent comment in ItemConfirmNpc.cpp.
     if (sourceContent && destContent)
     {
-        session->player.SetItemSlot(request.source_slot_id, *destContent);
-        session->player.SetItemSlot(request.dest_slot_id, *sourceContent);
+        session->character.SetItemSlot(request.source_slot_id, *destContent);
+        session->character.SetItemSlot(request.dest_slot_id, *sourceContent);
     }
     else if (sourceContent)
     {
-        session->player.SetItemSlot(request.dest_slot_id, *sourceContent);
-        session->player.ClearItemSlot(request.source_slot_id);
+        session->character.SetItemSlot(request.dest_slot_id, *sourceContent);
+        session->character.ClearItemSlot(request.source_slot_id);
     }
     else
     {
-        session->player.SetItemSlot(request.source_slot_id, *destContent);
-        session->player.ClearItemSlot(request.dest_slot_id);
+        session->character.SetItemSlot(request.source_slot_id, *destContent);
+        session->character.ClearItemSlot(request.dest_slot_id);
     }
 
     ctx.sessions.Set(ctx.clientSocket, *session);
 
-    PayloadWriter writer;
     ItemMoveSuccess response;
     response.source_slot_id = request.source_slot_id;
     response.dest_slot_id = request.dest_slot_id;
-    response.Serialize(writer);
-    auto data = writer.Data();
-
-    GamePacket responsePacket(GameOpcode::CG_ITEM_MOVE_SUCC, data);
-    auto responsePayload = responsePacket.Serialize(ctx.key);
-
-    ctx.server.SendTo(ctx.clientSocket, responsePayload);
+    ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
     });
 }
 
@@ -268,7 +238,7 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
     // this handler returns; server.SendTo() is safe to call from any
     // thread.
     boost::asio::post(ctx.dbPool, [ctx, request, session]() mutable {
-    Map* map = ctx.world.GetMap(session->player.map_id);
+    Map* map = ctx.world.GetMap(session->character.map_id);
     if (!map)
         return;
 
@@ -282,7 +252,7 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
     // otherwise a crash between the two loses or duplicates the item.
     DatabaseTransaction txn(ctx.db);
 
-    auto slotContent = session->player.GetInventorySlot(slotIndex);
+    auto slotContent = session->character.GetInventorySlot(slotIndex);
     if (!slotContent)
         return;
 
@@ -340,21 +310,18 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
     // Only mirror into the cache / session store once the transaction is
     // actually durable -- see the equivalent comment in ItemConfirmNpc.cpp.
     if (slotCleared)
-        session->player.ClearInventorySlot(slotIndex);
+        session->character.ClearInventorySlot(slotIndex);
     else
-        session->player.SetInventorySlot(slotIndex, remainingItem);
+        session->character.SetInventorySlot(slotIndex, remainingItem);
     ctx.sessions.Set(ctx.clientSocket, *session);
 
-    // Player::x/y is kept live by HandleMovement on every CG_MOVE, unlike
+    // Character::x/y is kept live by HandleMovement on every CG_MOVE, unlike
     // character_position (only written at creation) -- drop at the
     // session's actual current position instead of a stale DB row.
-    const auto dropX = static_cast<std::uint32_t>(session->player.x);
-    const auto dropY = static_cast<std::uint32_t>(session->player.y);
+    const auto dropX = static_cast<std::uint32_t>(session->character.x);
+    const auto dropY = static_cast<std::uint32_t>(session->character.y);
 
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<std::uint32_t> distrib(1, 1000000);
-    const std::uint32_t groundId = distrib(gen);
+    const std::uint32_t groundId = EntityIdGenerator::Next();
 
     map->AddItem(GroundItem{
         .id = groundId,
@@ -363,7 +330,6 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
         .item = droppedItem,
     });
 
-    PayloadWriter succWriter;
     ItemDropSuccess succResponse;
     succResponse.id = groundId;
     succResponse.x = dropX;
@@ -372,13 +338,7 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request)
     succResponse.source_slot_id = request.slot_id;
     succResponse.new_item_id = remainingQuantity > 0 ? itemId : 0;
     succResponse.new_item_count = remainingQuantity > 0 ? remainingQuantity - 1 : 0;
-    succResponse.Serialize(succWriter);
-    auto succData = succWriter.Data();
-
-    GamePacket succPacket(GameOpcode::GC_ITEM_DROP_SUCC, succData);
-    auto succPayload = succPacket.Serialize(ctx.key);
-
-    ctx.server.SendTo(ctx.clientSocket, succPayload);
+    ctx.server.SendTo(ctx.clientSocket, succResponse.Packet().Serialize(ctx.key));
     });
 }
 
@@ -399,7 +359,7 @@ void HandleItemDelete(const GameContext& ctx, const ItemDelete& request)
     // source_slot_id/dest_slot_id -- ItemRepository::ClearItemSlot resolves
     // the equipment/inventory split itself, no manual bag-offset conversion
     // needed here.
-    auto slotContent = session->player.GetItemSlot(request.slot_id);
+    auto slotContent = session->character.GetItemSlot(request.slot_id);
     if (!slotContent)
         return;
 
@@ -408,18 +368,11 @@ void HandleItemDelete(const GameContext& ctx, const ItemDelete& request)
         return;
     txn.Commit();
 
-    session->player.ClearItemSlot(request.slot_id);
+    session->character.ClearItemSlot(request.slot_id);
     ctx.sessions.Set(ctx.clientSocket, *session);
 
-    PayloadWriter succWriter;
     ItemDeleteSuccess succResponse;
     succResponse.slot_id = request.slot_id;
-    succResponse.Serialize(succWriter);
-    auto succData = succWriter.Data();
-
-    GamePacket succPacket(GameOpcode::GC_ITEM_DELETE_SUCC, succData);
-    auto succPayload = succPacket.Serialize(ctx.key);
-
-    ctx.server.SendTo(ctx.clientSocket, succPayload);
+    ctx.server.SendTo(ctx.clientSocket, succResponse.Packet().Serialize(ctx.key));
     });
 }

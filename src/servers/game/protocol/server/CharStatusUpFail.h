@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <cstdint>
 
@@ -9,7 +9,7 @@ class PayloadWriter;
 // GC_CHAR_STATUS_UP_FAIL (wire code 531049, s2c) -- rejects
 // CG_CHAR_STATUS_UP, reporting the character's unchanged unallocated stat
 // points (the request wasn't affordable, or named an unknown stat_id).
-struct CharStatusUpFail : ServerProtocol
+struct CharStatusUpFail : ServerMessage<GameOpcode::GC_CHAR_STATUS_UP_FAIL>
 {
     std::int32_t unallocated_point_remaining = 0;
 

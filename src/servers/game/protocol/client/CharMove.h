@@ -9,7 +9,7 @@
 class PayloadReader;
 
 
-struct CharMove : ClientProtocol
+struct CharMove : PlayerMessage
 {
     std::uint32_t move_direction = 0;
     std::uint32_t x = 0;
@@ -18,5 +18,5 @@ struct CharMove : ClientProtocol
     std::uint32_t stop_direction = 0;
 
     bool Deserialize(PayloadReader& reader) override;
-    void Handle(const GameContext& ctx) const override;
+    void Handle(const GameContext& ctx, Player& player) const override;
 };

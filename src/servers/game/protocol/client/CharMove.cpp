@@ -9,7 +9,7 @@ bool CharMove::Deserialize(PayloadReader& reader)
            reader.Read(stop_direction);
 }
 
-void CharMove::Handle(const GameContext& ctx) const
+void CharMove::Handle(const GameContext& ctx, Player& player) const
 {
-    HandleMovement(ctx, *this);
+    HandleMovement(ctx, *this, player);
 }

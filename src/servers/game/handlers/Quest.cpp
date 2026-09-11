@@ -1,9 +1,7 @@
 #include "Quest.h"
 
-#include "GameOpcodes.h"
 #include "GamePacket.h"
 #include "GameSessionStore.h"
-#include "common/PayloadWriter.h"
 #include "common/Server.h"
 #include "enums/ItemType.h"
 #include "enums/QuestFailReason.h"
@@ -20,7 +18,7 @@
 #include "tables/GameData.h"
 #include "tables/ItemTable.h"
 #include "tables/WarpTable.h"
-#include "world/Player.h"
+#include "world/Character.h"
 #include "world/World.h"
 
 #include <optional>
@@ -33,10 +31,10 @@ namespace
 constexpr std::uint32_t kBagSlotCount =
     static_cast<std::uint32_t>(InventoryItemList::kTotalSlots - InventoryItemList::kBagStartSlot);
 
-std::int64_t CountItemInInventory(const Player& player, std::int64_t itemId)
+std::int64_t CountItemInInventory(const Character& character, std::int64_t itemId)
 {
     std::int64_t total = 0;
-    for (const auto& entry : player.inventory)
+    for (const auto& entry : character.inventory)
     {
         if (entry.item.item_id == static_cast<std::uint32_t>(itemId))
             total += entry.item.has_refine_level ? 1 : entry.item.quantity;
@@ -66,40 +64,40 @@ bool IsStackableItemType(std::int64_t rawItemType)
 }
 
 // Checks every condition rather than stopping at the first failure.
-bool ConditionsMet(const QuestConditions& c, const Player& player)
+bool ConditionsMet(const QuestConditions& c, const Character& character)
 {
     bool met = true;
 
     if (c.has_item_0 != 0)
     {
-        const std::int64_t have = CountItemInInventory(player, c.has_item_0);
+        const std::int64_t have = CountItemInInventory(character, c.has_item_0);
         if (have < c.min_item_0_count)
             met = false;
     }
 
     if (c.has_item_1 != 0)
     {
-        const std::int64_t have = CountItemInInventory(player, c.has_item_1);
+        const std::int64_t have = CountItemInInventory(character, c.has_item_1);
         if (have < c.min_item_1_count)
             met = false;
     }
 
-    if (c.has_flag != 0 && !player.quest_flags.IsSet(static_cast<std::uint32_t>(c.has_flag)))
+    if (c.has_flag != 0 && !character.quest_flags.IsSet(static_cast<std::uint32_t>(c.has_flag)))
         met = false;
 
-    if (c.has_job != 0 && static_cast<std::uint32_t>(c.has_job) != player.job_id)
+    if (c.has_job != 0 && static_cast<std::uint32_t>(c.has_job) != character.job_id)
         met = false;
 
     // "Reputation" and "Fame" are the same Individuality System stat under
     // two names -- see reward_fame below and CharacterDataLoad.h's ownFame
     // comment.
-    if (c.min_reputation != 0 && static_cast<std::int64_t>(player.fame) < c.min_reputation)
+    if (c.min_reputation != 0 && static_cast<std::int64_t>(character.fame) < c.min_reputation)
         met = false;
 
-    if (c.min_level != 0 && static_cast<std::int64_t>(player.level) < c.min_level)
+    if (c.min_level != 0 && static_cast<std::int64_t>(character.level) < c.min_level)
         met = false;
 
-    if (c.min_cegel != 0 && player.money < c.min_cegel)
+    if (c.min_cegel != 0 && character.money < c.min_cegel)
         met = false;
 
     // min_days/time_of_day: no "days played" counter or server clock exists
@@ -108,19 +106,19 @@ bool ConditionsMet(const QuestConditions& c, const Player& player)
     return met;
 }
 
-std::optional<std::uint32_t> FindFreeBagSlot(const Player& player)
+std::optional<std::uint32_t> FindFreeBagSlot(const Character& character)
 {
     for (std::uint32_t i = 0; i < kBagSlotCount; ++i)
     {
-        if (!player.GetInventorySlot(i))
+        if (!character.GetInventorySlot(i))
             return i;
     }
     return std::nullopt;
 }
 
-std::optional<std::uint32_t> FindStackableBagSlot(const Player& player, std::uint32_t itemId)
+std::optional<std::uint32_t> FindStackableBagSlot(const Character& character, std::uint32_t itemId)
 {
-    for (const auto& entry : player.inventory)
+    for (const auto& entry : character.inventory)
     {
         if (entry.item.item_id == itemId && !entry.item.has_refine_level)
             return entry.slot_index;
@@ -156,17 +154,17 @@ std::vector<QuestSuccItem> GrantRewardItem(const GameContext& ctx, GameSession& 
 
     if (IsStackableItemType(record->item_type))
     {
-        auto bagIndex = FindStackableBagSlot(session.player, wireItemId);
+        auto bagIndex = FindStackableBagSlot(session.character, wireItemId);
         std::optional<Item> existing;
         std::uint32_t existingQuantity = 0;
         if (bagIndex)
         {
-            existing = session.player.GetInventorySlot(*bagIndex);
+            existing = session.character.GetInventorySlot(*bagIndex);
             existingQuantity = existing->quantity;
         }
         else
         {
-            bagIndex = FindFreeBagSlot(session.player);
+            bagIndex = FindFreeBagSlot(session.character);
         }
 
         if (!bagIndex)
@@ -183,7 +181,7 @@ std::vector<QuestSuccItem> GrantRewardItem(const GameContext& ctx, GameSession& 
         // reward, same as "no free bag slot" above.
         if (!ItemRepository::SaveInventorySlot(ctx.db, characterId, *bagIndex, existing, stacked))
             return granted;
-        session.player.SetInventorySlot(*bagIndex, stacked);
+        session.character.SetInventorySlot(*bagIndex, stacked);
 
         granted.push_back(QuestSuccItem{
             .inventory_id = 1,
@@ -200,7 +198,7 @@ std::vector<QuestSuccItem> GrantRewardItem(const GameContext& ctx, GameSession& 
     // slots rather than one slot with quantity > 1.
     for (std::int64_t i = 0; i < units; ++i)
     {
-        auto bagIndex = FindFreeBagSlot(session.player);
+        auto bagIndex = FindFreeBagSlot(session.character);
         if (!bagIndex)
             break;
 
@@ -215,7 +213,7 @@ std::vector<QuestSuccItem> GrantRewardItem(const GameContext& ctx, GameSession& 
         // content is "empty" -- see ItemRepository.h.
         if (!ItemRepository::SaveInventorySlot(ctx.db, characterId, *bagIndex, std::nullopt, equipped))
             break;
-        session.player.SetInventorySlot(*bagIndex, equipped);
+        session.character.SetInventorySlot(*bagIndex, equipped);
 
         granted.push_back(QuestSuccItem{
             .inventory_id = 1,
@@ -231,7 +229,7 @@ std::vector<QuestSuccItem> GrantRewardItem(const GameContext& ctx, GameSession& 
 }
 
 // Tells the client which game server/port to (re)connect to after a warp.
-// Sent even though this warp doesn't actually move the player to a
+// Sent even though this warp doesn't actually move the character to a
 // different physical server -- it's the packet the client expects
 // following a location change, so it always names *this* game server.
 // sessionId must be this connection's own GameSession::sessionId -- the
@@ -251,15 +249,11 @@ void SendServerChange(const GameContext& ctx, std::int64_t sessionId)
     response.session_id = static_cast<std::uint32_t>(sessionId);
     response.server_port = 1818;
 
-    PayloadWriter writer;
-    response.Serialize(writer);
-
-    GamePacket packet(GameOpcode::GC_SERVER_CHANGE, writer.Data());
-    ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+    ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
 }
 
-// Moves the player to warp.scr's server_map_id/x/y for warpId, writing
-// through to `character_position` immediately (Player::SavePosition) rather
+// Moves the character to warp.scr's server_map_id/x/y for warpId, writing
+// through to `character_position` immediately (Character::SavePosition) rather
 // than waiting for some other save path to pick up the position change --
 // same immediacy as the money/exp/fame writes alongside it in
 // ApplyConsequences. No-op if warpId is 0 (nothing to warp to) or unknown.
@@ -272,9 +266,9 @@ void ApplyWarp(const GameContext& ctx, GameSession& session, std::int64_t warpId
     if (!record)
         return;
 
-    Player& player = session.player;
+    Character& character = session.character;
 
-    // Leave the old map's roster before switching player.map_id -- once
+    // Leave the old map's roster before switching character.map_id -- once
     // it's overwritten below, this is the last point that still knows
     // which Map to remove `ctx.clientSocket` from (see Map::RemovePlayer).
     // Not calling this and relying on OnClientDisconnected instead doesn't
@@ -286,13 +280,13 @@ void ApplyWarp(const GameContext& ctx, GameSession& session, std::int64_t warpId
     // one. The new map doesn't need the same treatment: the client
     // reconnects after GC_SERVER_CHANGE and sends a fresh CG_ENTER, which
     // Session.cpp's HandleEnter already turns into a SetPlayer call.
-    if (Map* oldMap = ctx.world.GetMap(player.map_id))
+    if (Map* oldMap = ctx.world.GetMap(character.map_id))
         oldMap->RemovePlayer(ctx.clientSocket);
 
-    player.map_id = static_cast<std::uint32_t>(record->server_map_id);
-    player.x = static_cast<std::int32_t>(record->x);
-    player.y = static_cast<std::int32_t>(record->y);
-    player.SavePosition(ctx.db);
+    character.map_id = static_cast<std::uint32_t>(record->server_map_id);
+    character.x = static_cast<std::int32_t>(record->x);
+    character.y = static_cast<std::int32_t>(record->y);
+    character.SavePosition(ctx.db);
 
     SendServerChange(ctx, session.sessionId);
 }
@@ -304,7 +298,7 @@ void ApplyWarp(const GameContext& ctx, GameSession& session, std::int64_t warpId
 std::optional<QuestSucc> ApplyConsequences(const GameContext& ctx, GameSession& session,
                                             const QuestConsequences& q)
 {
-    Player& player = session.player;
+    Character& character = session.character;
     const std::int64_t characterId = session.characterId;
 
     DatabaseTransaction txn(ctx.db);
@@ -316,7 +310,7 @@ std::optional<QuestSucc> ApplyConsequences(const GameContext& ctx, GameSession& 
     {
         if (!QuestFlagRepository::TryClaimFlag(ctx.db, characterId, q.set_flag))
             return std::nullopt;
-        player.quest_flags.Set(static_cast<std::uint32_t>(q.set_flag), true);
+        character.quest_flags.Set(static_cast<std::uint32_t>(q.set_flag), true);
     }
 
     std::vector<QuestSuccItem> items;
@@ -328,13 +322,13 @@ std::optional<QuestSucc> ApplyConsequences(const GameContext& ctx, GameSession& 
         items.push_back(item);
 
     if (q.reward_cegel != 0)
-        player.money = CharacterRepository::AddMoney(ctx.db, characterId, q.reward_cegel);
+        character.money = CharacterRepository::AddMoney(ctx.db, characterId, q.reward_cegel);
 
     if (q.reward_exp != 0)
-        player.exp = CharacterRepository::AddExp(ctx.db, characterId, q.reward_exp);
+        character.exp = CharacterRepository::AddExp(ctx.db, characterId, q.reward_exp);
 
     if (q.reward_fame != 0)
-        player.fame =
+        character.fame =
             CharacterRepository::AddFame(ctx.db, characterId, static_cast<std::uint32_t>(q.reward_fame));
 
     ApplyWarp(ctx, session, q.warp_id);
@@ -346,11 +340,11 @@ std::optional<QuestSucc> ApplyConsequences(const GameContext& ctx, GameSession& 
     // set_flag is the only stable per-quest identifier this consequence
     // set carries -- 0 (no quest_id) if this node doesn't set one.
     response.quest_id = static_cast<std::uint32_t>(q.set_flag);
-    response.money = static_cast<std::uint64_t>(player.money);
-    response.fame = player.fame;
-    response.exp = static_cast<std::uint64_t>(player.exp);
-    response.ap = player.ap;
-    response.hp = player.hp;
+    response.money = static_cast<std::uint64_t>(character.money);
+    response.fame = character.fame;
+    response.exp = static_cast<std::uint64_t>(character.exp);
+    response.ap = character.ap;
+    response.hp = character.hp;
     return response;
 }
 
@@ -359,11 +353,7 @@ void SendQuestFail(const GameContext& ctx)
     QuestFail response;
     response.result_code = static_cast<std::int32_t>(QuestFailReason::ConditionsNotMet);
 
-    PayloadWriter writer;
-    response.Serialize(writer);
-
-    GamePacket packet(GameOpcode::GC_QUEST_FAIL, writer.Data());
-    ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+    ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
 }
 } // namespace
 
@@ -381,7 +371,7 @@ void HandleQuestResult(const GameContext& ctx, const QuestResult& request)
         return;
     }
 
-    if (!ConditionsMet(record->conditions, session->player))
+    if (!ConditionsMet(record->conditions, session->character))
     {
         SendQuestFail(ctx);
         return;
@@ -405,10 +395,6 @@ void HandleQuestResult(const GameContext& ctx, const QuestResult& request)
 
         ctx.sessions.Set(ctx.clientSocket, sessionCopy);
 
-        PayloadWriter writer;
-        response->Serialize(writer);
-
-        GamePacket packet(GameOpcode::GC_QUEST_SUCC, writer.Data());
-        ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+        ctx.server.SendTo(ctx.clientSocket, response->Packet().Serialize(ctx.key));
     });
 }

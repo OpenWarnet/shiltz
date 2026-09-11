@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <cstdint>
 
@@ -11,7 +11,7 @@ class PayloadWriter;
 // confirmed against a real client) -- this handler only ever sends 1,
 // for either "no bank_accounts row" or "old password mismatch" (see
 // handlers/Store.cpp, which doesn't distinguish the two on the wire).
-struct StorePwModifyFail : ServerProtocol
+struct StorePwModifyFail : ServerMessage<GameOpcode::GC_STORE_PW_MODIFY_FAIL>
 {
     std::int32_t reason = 1;
 

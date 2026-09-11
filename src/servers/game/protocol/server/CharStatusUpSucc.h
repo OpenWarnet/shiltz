@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <cstdint>
 
@@ -9,7 +9,7 @@ class PayloadWriter;
 // GC_CHAR_STATUS_UP_SUCC (wire code 521048, s2c) -- confirms
 // CG_CHAR_STATUS_UP, reporting the stat's new value and how many
 // unallocated points are left.
-struct CharStatusUpSucc : ServerProtocol
+struct CharStatusUpSucc : ServerMessage<GameOpcode::GC_CHAR_STATUS_UP_SUCC>
 {
     std::int32_t stat_id = 0;
     std::int32_t current_stat_point = 0;

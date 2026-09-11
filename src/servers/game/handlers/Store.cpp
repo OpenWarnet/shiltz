@@ -1,9 +1,7 @@
 #include "Store.h"
 
-#include "GameOpcodes.h"
 #include "GamePacket.h"
 #include "GameSessionStore.h"
-#include "common/PayloadWriter.h"
 #include "common/Server.h"
 #include "protocol/client/StoreClose.h"
 #include "protocol/client/StoreCreate.h"
@@ -44,10 +42,12 @@ constexpr std::int64_t kWithdrawalFee = 100;
 // protocol/server/StoreMoneySucc.h.
 constexpr std::int64_t kNegelValue = 100'000'000;
 
-StoreMoneySucc BuildStoreMoneySucc(std::int64_t playerMoney, std::int64_t bankMoney)
+// Response is StoreMoneyInSucc or StoreMoneyOutSucc -- same fields.
+template <typename Response>
+Response BuildStoreMoneySucc(std::int64_t characterMoney, std::int64_t bankMoney)
 {
-    StoreMoneySucc response;
-    response.player_money = playerMoney;
+    Response response;
+    response.player_money = characterMoney;
     response.bank_negel = static_cast<std::int32_t>(bankMoney / kNegelValue);
     response.bank_remaining_cegel = static_cast<std::int32_t>(bankMoney % kNegelValue);
     return response;
@@ -104,11 +104,7 @@ void HandleStoreCreate(const GameContext& ctx, const StoreCreate& request)
 
     BankRepository::CreateAccount(ctx.db, session->accountId, request.password);
 
-    PayloadWriter writer;
-    StoreCreateSucc{}.Serialize(writer);
-
-    GamePacket packet(GameOpcode::GC_STORE_CREATE_SUCC, writer.Data());
-    ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+    ctx.server.SendTo(ctx.clientSocket, StoreCreateSucc{}.Packet().Serialize(ctx.key));
     });
 }
 
@@ -116,13 +112,9 @@ void HandleStoreOpen(const GameContext& ctx, const StoreOpen& request)
 {
     auto sendFail = [ctx](std::int32_t reason = 1)
     {
-        PayloadWriter failWriter;
         StoreOpenFail response;
         response.reason = reason;
-        response.Serialize(failWriter);
-
-        GamePacket failPacket(GameOpcode::GC_STORE_OPEN_FAIL, failWriter.Data());
-        ctx.server.SendTo(ctx.clientSocket, failPacket.Serialize(ctx.key));
+        ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
     };
 
     auto session = ctx.sessions.Get(ctx.clientSocket);
@@ -152,7 +144,6 @@ void HandleStoreOpen(const GameContext& ctx, const StoreOpen& request)
     session->bankMoney = account->money;
     ctx.sessions.Set(ctx.clientSocket, *session);
 
-    PayloadWriter writer;
     StoreOpenSucc response{};
     for (const auto& entry : session->bankItems)
     {
@@ -165,10 +156,7 @@ void HandleStoreOpen(const GameContext& ctx, const StoreOpen& request)
             .option_bits = static_cast<std::int64_t>(entry.item.option_bits),
         };
     }
-    response.Serialize(writer);
-
-    GamePacket packet(GameOpcode::GC_STORE_OPEN_SUCC, writer.Data());
-    ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+    ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
     });
 }
 
@@ -176,11 +164,7 @@ void HandleStorePwModify(const GameContext& ctx, const StorePwModify& request)
 {
     auto sendFail = [ctx]
     {
-        PayloadWriter failWriter;
-        StorePwModifyFail{}.Serialize(failWriter);
-
-        GamePacket failPacket(GameOpcode::GC_STORE_PW_MODIFY_FAIL, failWriter.Data());
-        ctx.server.SendTo(ctx.clientSocket, failPacket.Serialize(ctx.key));
+        ctx.server.SendTo(ctx.clientSocket, StorePwModifyFail{}.Packet().Serialize(ctx.key));
     };
 
     auto session = ctx.sessions.Get(ctx.clientSocket);
@@ -211,11 +195,7 @@ void HandleStorePwModify(const GameContext& ctx, const StorePwModify& request)
 
     BankRepository::SavePassword(ctx.db, account->id, request.new_password);
 
-    PayloadWriter writer;
-    StorePwModifySucc{}.Serialize(writer);
-
-    GamePacket packet(GameOpcode::GC_STORE_PW_MODIFY_SUCC, writer.Data());
-    ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+    ctx.server.SendTo(ctx.clientSocket, StorePwModifySucc{}.Packet().Serialize(ctx.key));
     });
 }
 
@@ -234,11 +214,7 @@ void HandleStoreClose(const GameContext& ctx, const StoreClose& request)
     session->bankMoney = 0;
     ctx.sessions.Set(ctx.clientSocket, *session);
 
-    PayloadWriter writer;
-    StoreCloseSucc{}.Serialize(writer);
-
-    GamePacket packet(GameOpcode::GC_STORE_CLOSE_SUCC, writer.Data());
-    ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+    ctx.server.SendTo(ctx.clientSocket, StoreCloseSucc{}.Packet().Serialize(ctx.key));
 }
 
 void HandleStoreItemOut(const GameContext& ctx, const StoreItemOut& request)
@@ -270,7 +246,7 @@ void HandleStoreItemOut(const GameContext& ctx, const StoreItemOut& request)
 
     // Character's wallet money, not bank_accounts.money -- see
     // handlers/Store.cpp's design note in the repository header.
-    if (session->player.money < kWithdrawalFee)
+    if (session->character.money < kWithdrawalFee)
         return;
 
     const std::int64_t bankAccountId = *session->bankAccountId;
@@ -285,7 +261,7 @@ void HandleStoreItemOut(const GameContext& ctx, const StoreItemOut& request)
     // withdrawal -- empty is fine (new stack), holding the same item_id is
     // fine (stack onto it), anything else (different item, or either side
     // non-stackable while the other is occupied) means stale client state.
-    auto existingInventory = session->player.GetInventorySlot(inventorySlotIndex);
+    auto existingInventory = session->character.GetInventorySlot(inventorySlotIndex);
     if (existingInventory &&
         (existingInventory->item_id != bankContent->item_id || existingInventory->has_refine_level ||
          bankContent->has_refine_level))
@@ -344,25 +320,24 @@ void HandleStoreItemOut(const GameContext& ctx, const StoreItemOut& request)
         return;
 
     // Authoritative fee check against the DB's *current* money -- the
-    // session->player.money precheck above could be stale under the
+    // session->character.money precheck above could be stale under the
     // pipelined-request race (see CharacterRepository.h).
-    auto newPlayerMoney = CharacterRepository::TrySpendMoney(ctx.db, characterId, kWithdrawalFee);
-    if (!newPlayerMoney)
+    auto newCharacterMoney = CharacterRepository::TrySpendMoney(ctx.db, characterId, kWithdrawalFee);
+    if (!newCharacterMoney)
         return;
 
     txn.Commit();
 
     // Only mirror into the cache / session store once the transaction is
     // actually durable -- see the equivalent comment in ItemConfirmNpc.cpp.
-    session->player.money = *newPlayerMoney;
-    session->player.SetInventorySlot(inventorySlotIndex, updatedInventory);
+    session->character.money = *newCharacterMoney;
+    session->character.SetInventorySlot(inventorySlotIndex, updatedInventory);
     if (bankSlotCleared)
         ClearBankSlot(*session, request.bank_slot_id);
     else
         SetBankSlot(*session, request.bank_slot_id, remainingBank);
     ctx.sessions.Set(ctx.clientSocket, *session);
 
-    PayloadWriter writer;
     StoreItemOutSuccess response;
     response.inventory_slot_id = request.inventory_slot_id;
     response.inventory_item_id = updatedInventory.item_id;
@@ -373,11 +348,8 @@ void HandleStoreItemOut(const GameContext& ctx, const StoreItemOut& request)
     response.bank_qty_or_refine = bankSlotCleared ? 0 : remainingBank.WireQuantityOrRefine();
     response.bank_option_bits =
         bankSlotCleared ? 0 : static_cast<std::int64_t>(remainingBank.option_bits);
-    response.money = session->player.money;
-    response.Serialize(writer);
-
-    GamePacket packet(GameOpcode::GC_STORE_ITEM_OUT, writer.Data());
-    ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+    response.money = session->character.money;
+    ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
     });
 }
 
@@ -411,7 +383,7 @@ void HandleStoreItemIn(const GameContext& ctx, const StoreItemIn& request)
         static_cast<std::uint32_t>(static_cast<int64_t>(request.inventory_slot_id) -
                                     static_cast<int64_t>(InventoryItemList::kBagStartSlot));
 
-    auto existingInventory = session->player.GetInventorySlot(inventorySlotIndex);
+    auto existingInventory = session->character.GetInventorySlot(inventorySlotIndex);
     if (!existingInventory)
         return;
 
@@ -473,12 +445,11 @@ void HandleStoreItemIn(const GameContext& ctx, const StoreItemIn& request)
 
     SetBankSlot(*session, request.bank_slot_id, updatedBank);
     if (inventorySlotCleared)
-        session->player.ClearInventorySlot(inventorySlotIndex);
+        session->character.ClearInventorySlot(inventorySlotIndex);
     else
-        session->player.SetInventorySlot(inventorySlotIndex, remainingInventory);
+        session->character.SetInventorySlot(inventorySlotIndex, remainingInventory);
     ctx.sessions.Set(ctx.clientSocket, *session);
 
-    PayloadWriter writer;
     StoreItemInSuccess response;
     response.inventory_slot_id = request.inventory_slot_id;
     response.inventory_item_id = inventorySlotCleared ? 0 : remainingInventory.item_id;
@@ -490,10 +461,7 @@ void HandleStoreItemIn(const GameContext& ctx, const StoreItemIn& request)
     response.bank_item_id = updatedBank.item_id;
     response.bank_qty_or_refine = updatedBank.WireQuantityOrRefine();
     response.bank_option_bits = static_cast<std::int64_t>(updatedBank.option_bits);
-    response.Serialize(writer);
-
-    GamePacket packet(GameOpcode::GC_STORE_ITEM_IN, writer.Data());
-    ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+    ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
     });
 }
 
@@ -501,11 +469,7 @@ void HandleStoreMoneyOut(const GameContext& ctx, const StoreMoneyOut& request)
 {
     auto sendFail = [ctx]
     {
-        PayloadWriter failWriter;
-        StoreMoneyFail{}.Serialize(failWriter);
-
-        GamePacket failPacket(GameOpcode::GC_STORE_MONEY_FAIL, failWriter.Data());
-        ctx.server.SendTo(ctx.clientSocket, failPacket.Serialize(ctx.key));
+        ctx.server.SendTo(ctx.clientSocket, StoreMoneyFail{}.Packet().Serialize(ctx.key));
     };
 
     if (request.amount <= 0)
@@ -554,21 +518,18 @@ void HandleStoreMoneyOut(const GameContext& ctx, const StoreMoneyOut& request)
         return;
     }
 
-    const std::int64_t newPlayerMoney =
+    const std::int64_t newCharacterMoney =
         CharacterRepository::AddMoney(ctx.db, session->characterId, request.amount);
 
     txn.Commit();
 
     session->bankMoney = *newBankMoney;
-    session->player.money = newPlayerMoney;
+    session->character.money = newCharacterMoney;
     ctx.sessions.Set(ctx.clientSocket, *session);
 
-    PayloadWriter writer;
-    StoreMoneySucc response = BuildStoreMoneySucc(newPlayerMoney, *newBankMoney);
-    response.Serialize(writer);
-
-    GamePacket packet(GameOpcode::GC_STORE_MONEY_OUT_SUCC, writer.Data());
-    ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+    const auto response =
+        BuildStoreMoneySucc<StoreMoneyOutSucc>(newCharacterMoney, *newBankMoney);
+    ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
     });
 }
 
@@ -576,11 +537,7 @@ void HandleStoreMoneyIn(const GameContext& ctx, const StoreMoneyIn& request)
 {
     auto sendFail = [ctx]
     {
-        PayloadWriter failWriter;
-        StoreMoneyFail{}.Serialize(failWriter);
-
-        GamePacket failPacket(GameOpcode::GC_STORE_MONEY_FAIL, failWriter.Data());
-        ctx.server.SendTo(ctx.clientSocket, failPacket.Serialize(ctx.key));
+        ctx.server.SendTo(ctx.clientSocket, StoreMoneyFail{}.Packet().Serialize(ctx.key));
     };
 
     if (request.amount <= 0)
@@ -607,7 +564,7 @@ void HandleStoreMoneyIn(const GameContext& ctx, const StoreMoneyIn& request)
         return;
     }
 
-    if (session->player.money < request.amount)
+    if (session->character.money < request.amount)
     {
         sendFail();
         return;
@@ -619,8 +576,8 @@ void HandleStoreMoneyIn(const GameContext& ctx, const StoreMoneyIn& request)
     // authoritative-check-against-current-DB-state reasoning.
     DatabaseTransaction txn(ctx.db);
 
-    auto newPlayerMoney = CharacterRepository::TrySpendMoney(ctx.db, session->characterId, request.amount);
-    if (!newPlayerMoney)
+    auto newCharacterMoney = CharacterRepository::TrySpendMoney(ctx.db, session->characterId, request.amount);
+    if (!newCharacterMoney)
     {
         sendFail();
         return;
@@ -630,15 +587,12 @@ void HandleStoreMoneyIn(const GameContext& ctx, const StoreMoneyIn& request)
 
     txn.Commit();
 
-    session->player.money = *newPlayerMoney;
+    session->character.money = *newCharacterMoney;
     session->bankMoney = newBankMoney;
     ctx.sessions.Set(ctx.clientSocket, *session);
 
-    PayloadWriter writer;
-    StoreMoneySucc response = BuildStoreMoneySucc(*newPlayerMoney, newBankMoney);
-    response.Serialize(writer);
-
-    GamePacket packet(GameOpcode::GC_STORE_MONEY_IN_SUCC, writer.Data());
-    ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+    const auto response =
+        BuildStoreMoneySucc<StoreMoneyInSucc>(*newCharacterMoney, newBankMoney);
+    ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
     });
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <cstdint>
 
@@ -8,8 +8,9 @@ class PayloadWriter;
 
 // Shared payload shape for GC_STORE_MONEY_IN_SUCC (521122) and
 // GC_STORE_MONEY_OUT_SUCC (521123) -- same fields on the wire for both,
-// only the opcode differs (see handlers/Store.cpp).
-struct StoreMoneySucc : ServerProtocol
+// only the opcode differs (see handlers/Store.cpp). Use the
+// StoreMoneyInSucc / StoreMoneyOutSucc names below.
+template <GameOpcode::Code OpcodeValue> struct StoreMoneySucc : ServerMessage<OpcodeValue>
 {
     // Character's wallet money after the transfer.
     std::int64_t player_money = 0;
@@ -22,3 +23,10 @@ struct StoreMoneySucc : ServerProtocol
 
     void Serialize(PayloadWriter& writer) const override;
 };
+
+// Defined (and instantiated) in StoreMoneySucc.cpp.
+extern template struct StoreMoneySucc<GameOpcode::GC_STORE_MONEY_IN_SUCC>;
+extern template struct StoreMoneySucc<GameOpcode::GC_STORE_MONEY_OUT_SUCC>;
+
+using StoreMoneyInSucc = StoreMoneySucc<GameOpcode::GC_STORE_MONEY_IN_SUCC>;
+using StoreMoneyOutSucc = StoreMoneySucc<GameOpcode::GC_STORE_MONEY_OUT_SUCC>;

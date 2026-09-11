@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <cstdint>
 
@@ -8,7 +8,7 @@ class PayloadWriter;
 
 // GC_LEVEL_UP_FAIL (wire code 531066, s2c) -- rejects CG_LEVEL_UP_CHECK,
 // echoing back the character's unchanged level/exp.
-struct LevelUpFail : ServerProtocol
+struct LevelUpFail : ServerMessage<GameOpcode::GC_LEVEL_UP_FAIL>
 {
     std::int32_t level = 0;
     std::int32_t exp = 0;

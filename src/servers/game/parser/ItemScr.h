@@ -27,8 +27,8 @@
 // "damage" in the name, they modify opposite directions of combat: dealt
 // is a bonus to damage *this character* deals to a target, taken is a
 // reduction to damage *this character* receives from an attacker (see
-// PlayerDerivedStats::damage_dealt_increase_percent/
-// damage_taken_decrease_percent in world/Player.h).
+// CharacterDerivedStats::damage_dealt_increase_percent/
+// damage_taken_decrease_percent in world/Character.h).
 //
 // `set_id` groups items into an equipped-set bonus (0 = not part of a
 // set) -- world/data/set_opt.scr has one row per (set_id, piece_count)

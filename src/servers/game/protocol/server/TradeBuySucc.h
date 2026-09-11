@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <cstdint>
 
@@ -8,7 +8,7 @@ class PayloadWriter;
 
 // GC_TRADE_BUY_SUCC (wire code 521052, s2c) -- acknowledges a successful
 // CG_ITEM_TRADE_BUY.
-struct TradeBuySucc : ServerProtocol
+struct TradeBuySucc : ServerMessage<GameOpcode::GC_TRADE_BUY_SUCC>
 {
     std::uint32_t slot_id = 0;
     std::uint32_t item_id = 0;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "world/Player.h" // PlayerRawStats
+#include "world/Character.h" // CharacterRawStats
 
 #include <cstdint>
 #include <optional>
@@ -25,7 +25,7 @@ namespace CharacterRepository
         std::uint32_t hairstyle_id = 0;
         std::uint32_t face_id = 0;
 
-        PlayerRawStats raw_stats;
+        CharacterRawStats raw_stats;
 
         std::int64_t money = 0;
 
@@ -46,7 +46,7 @@ namespace CharacterRepository
     };
 
     // Single joined SELECT across `character` and `character_position`, for
-    // Player::LoadFromDB. std::nullopt if no such character exists.
+    // Character::LoadFromDB. std::nullopt if no such character exists.
     std::optional<CoreData> Load(IDatabase& db, std::int64_t characterId);
 
     // Every Save*/Add*/TrySpend* below is a narrow, single-concern update
@@ -75,6 +75,6 @@ namespace CharacterRepository
     std::int64_t AddExp(IDatabase& db, std::int64_t characterId, std::int64_t amount);
 
     void SaveVitals(IDatabase& db, std::int64_t characterId, std::uint32_t hp, std::uint32_t ap);
-    void SaveRawStats(IDatabase& db, std::int64_t characterId, const PlayerRawStats& raw);
+    void SaveRawStats(IDatabase& db, std::int64_t characterId, const CharacterRawStats& raw);
     void SaveLevel(IDatabase& db, std::int64_t characterId, std::int32_t level, std::int64_t exp);
 } // namespace CharacterRepository

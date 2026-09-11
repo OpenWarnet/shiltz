@@ -275,6 +275,12 @@ bool Server::SendTo(SOCKET clientId, std::span<const uint8_t> frame)
     return true;
 }
 
+bool Server::IsConnected(SOCKET clientId) const
+{
+    std::lock_guard lock(m_connectionsMutex);
+    return m_connections.contains(clientId);
+}
+
 void Server::Broadcast(std::span<const uint8_t> frame)
 {
     // Snapshot shared_ptrs under lock, then send outside it -- a slow

@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-// Real Seal Online job ids -- the same space Player::job_id and
+// Real Seal Online job ids -- the same space Character::job_id and
 // status.scr's class_id column use. 2nd/3rd-tier promotions of a base
 // job collapse to that base job for growth-stat purposes (see
 // ResolveStatusClassIndex in stats/RawStatCalculator.cpp); the *Tier2/*Tier3 values

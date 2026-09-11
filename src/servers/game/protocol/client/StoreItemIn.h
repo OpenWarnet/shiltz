@@ -8,7 +8,7 @@ class PayloadReader;
 
 // CG_STORE_ITEM_IN (wire code 411057, c2s) -- deposit an item from the
 // inventory into the bank.
-struct StoreItemIn : ClientProtocol
+struct StoreItemIn : PlayerMessage
 {
     // Wire-relative, same convention as ItemPickup::slot_id.
     std::uint32_t inventory_slot_id = 0;
@@ -20,5 +20,5 @@ struct StoreItemIn : ClientProtocol
     std::uint32_t amount = 0;
 
     bool Deserialize(PayloadReader& reader) override;
-    void Handle(const GameContext& ctx) const override;
+    void Handle(const GameContext& ctx, Player& player) const override;
 };

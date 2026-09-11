@@ -1,210 +1,147 @@
 #include "Session.h"
 
-#include "GameOpcodes.h"
 #include "GamePacket.h"
 #include "GameSessionStore.h"
-#include "common/PayloadWriter.h"
+#include "Outbox.h"
+#include "Persistence.h"
 #include "common/Server.h"
 #include "protocol/client/GameEnter.h"
+#include "protocol/client/GameExit.h"
 #include "protocol/server/CharExitSucc.h"
-#include "protocol/server/CharacterDataLoad.h"
-#include "protocol/server/CrtLoad.h"
 #include "protocol/server/EnterFail.h"
-#include "protocol/server/InventoryItemList.h"
 #include "storage/IDatabase.h"
 #include "tables/GameData.h"
-#include "tables/MonsterTable.h"
 #include "stats/Stats.h"
+#include "world/MapEvents.h"
+#include "world/Player.h"
 #include "world/World.h"
+#include "world/common/EntityIdGenerator.h"
 
-#include <ctime>
+#include <optional>
+#include <string>
 
-void HandleEnter(const GameContext& ctx, const GameEnter& request)
+namespace
 {
-    auto sendFail = [ctx]
-    {
-        PayloadWriter failWriter;
-        EnterFail{}.Serialize(failWriter);
-        auto failData = failWriter.Data();
+// Everything CG_ENTER needs from the DB; nullopt means reject.
+struct LoadedCharacter
+{
+    std::int64_t accountId = 0;
+    std::int64_t characterId = 0;
+    Character character;
+};
 
-        GamePacket failPacket(GameOpcode::GC_ENTER_FAIL, failData);
-        auto failPayload = failPacket.Serialize(ctx.key);
-
-        ctx.server.SendTo(ctx.clientSocket, failPayload);
-    };
-
-    // Everything below is blocking SQLite work (three lookups plus
-    // Player::LoadFromDB) -- run it on the DB pool instead of the
-    // connection's reactor thread. request is copied by value so it stays
-    // valid once this handler returns; server.SendTo() is safe to call
-    // from any thread. The World/Map reads further down are safe to run
-    // here too -- Map's state is protected by its own mutexes (or, for the
-    // creature grid, safe because it's read-only after load), not confined
-    // to any particular thread.
-    boost::asio::post(ctx.dbPool, [ctx, request, sendFail]() {
-    auto findSession = ctx.db.Prepare("SELECT account_id FROM session WHERE id = ?");
+std::optional<LoadedCharacter> LoadForEnter(IDatabase& db, const GameEnter& request)
+{
+    auto findSession = db.Prepare("SELECT account_id FROM session WHERE id = ?");
     findSession->Bind(0, static_cast<int64_t>(request.session_id));
-
     if (!findSession->Step())
-    {
-        sendFail();
-        return;
-    }
+        return std::nullopt;
 
     const int64_t accountId = std::get<int64_t>(findSession->Column(0));
 
-    // The session only proves "some account logged in and got handed this
-    // session_id" -- cross-check it actually belongs to the account the
-    // client claims to be, rather than trusting session_id alone.
-    auto findAccount = ctx.db.Prepare("SELECT username FROM accounts WHERE id = ?");
+    // The session only proves some account logged in, so check it's the one the client claims.
+    auto findAccount = db.Prepare("SELECT username FROM accounts WHERE id = ?");
     findAccount->Bind(0, accountId);
-
     if (!findAccount->Step() || std::get<std::string>(findAccount->Column(0)) != request.username)
-    {
-        sendFail();
-        return;
-    }
+        return std::nullopt;
 
-    // GameEnter carries no server_id, so this game server instance's own
-    // characters are found by (account_id, name) alone.
-    auto findCharacterId =
-        ctx.db.Prepare("SELECT id FROM character WHERE account_id = ? AND name = ?");
+    // GameEnter carries no server_id, so characters are found by (account_id, name) alone.
+    auto findCharacterId = db.Prepare("SELECT id FROM character WHERE account_id = ? AND name = ?");
     findCharacterId->Bind(0, accountId);
     findCharacterId->Bind(1, request.char_name);
-
     if (!findCharacterId->Step())
-    {
-        sendFail();
-        return;
-    }
+        return std::nullopt;
 
-    const auto characterId = std::get<int64_t>(findCharacterId->Column(0));
-
-    // Must happen before LoadFromDB, so a rejected duplicate login never
-    // gets a chance to read/write anything -- see GameSessionStore.h.
-    if (!ctx.sessions.TryClaimCharacter(characterId, ctx.clientSocket))
-    {
-        sendFail();
-        return;
-    }
-
-    Player player;
-    if (!player.LoadFromDB(ctx.db, characterId))
-    {
-        ctx.sessions.ReleaseCharacterClaim(characterId);
-        sendFail();
-        return;
-    }
-    // Null if player.map_id isn't a map.scr id this World loaded -- the
-    // zone/creature lookups below stay empty in that case (known_zones is
-    // default-empty, so the CreaturesInZone loop below never runs).
-    Map* map = ctx.world.GetMap(player.map_id);
-    if (map)
-        player.known_zones = map->ZonesAround(player.x, player.y);
-    RecalculateDerivedStats(player, ctx.data.items, ctx.data.setOptions, ctx.data.statusRates);
-
-    GameSession session{
-        .sessionId = static_cast<int64_t>(request.session_id),
+    LoadedCharacter loaded{
         .accountId = accountId,
-        .characterId = characterId,
-        .player = player,
+        .characterId = std::get<int64_t>(findCharacterId->Column(0)),
     };
-    ctx.sessions.Set(ctx.clientSocket, session);
-    if (map)
-        map->SetPlayer(ctx.clientSocket, player.x, player.y);
+    if (!loaded.character.LoadFromDB(db, loaded.characterId))
+        return std::nullopt;
 
-    PayloadWriter writer;
-    CharacterDataLoad response = session.player.ToCharacterDataLoad(
-        /*epsUserFlag=*/1, // TODO: no DB column -- kept as the prior hardcoded placeholder
-        static_cast<std::uint32_t>(std::time(nullptr)));
-    response.Serialize(writer);
-    auto data = writer.Data();
+    return loaded;
+}
+} // namespace
 
-    GamePacket responsePacket(GameOpcode::GC_CHAR_DATA_LOAD, data);
-    auto responsePayload = responsePacket.Serialize(ctx.key);
+void HandleEnter(const GameContext& ctx, const GameEnter& request)
+{
+    auto sendFail = [ctx] { ctx.outbox.Send(ctx.clientSocket, EnterFail{}); };
 
-    ctx.server.SendTo(ctx.clientSocket, responsePayload);
+    ctx.persistence.Run(
+        [request](IDatabase& db) { return LoadForEnter(db, request); },
+        [ctx, request, sendFail](std::optional<LoadedCharacter> loaded) {
+            if (!loaded)
+                return sendFail();
 
-    PayloadWriter inventoryWriter;
-    InventoryItemList inventoryResponse = session.player.ToInventoryItemList();
-    inventoryResponse.Serialize(inventoryWriter);
-    auto inventoryData = inventoryWriter.Data();
+            // The client may have disconnected while the character was loading.
+            if (!ctx.server.IsConnected(ctx.clientSocket))
+                return;
 
-    GamePacket inventoryPacket(GameOpcode::GC_INVENTORY_ITEM_LIST, inventoryData);
-    auto inventoryPayload = inventoryPacket.Serialize(ctx.key);
+            // Checked before an instance id is handed out, so a rejected duplicate doesn't use one up.
+            if (ctx.world.IsOnline(loaded->characterId))
+                return sendFail();
 
-    ctx.server.SendTo(ctx.clientSocket, inventoryPayload);
+            Character& character = loaded->character;
+            character.instance_id = EntityIdGenerator::Next();
+            RecalculateDerivedStats(character, ctx.data.items, ctx.data.setOptions, ctx.data.statusRates);
 
-    PayloadWriter crtLoadWriter;
-    CrtLoad crtLoadResponse;
+            // Joined with empty known_zones, so MovementSystem's first CrtLoad covers the whole view.
+            if (!ctx.world.Join(Player{
+                    .socket = ctx.clientSocket,
+                    .session_id = request.session_id,
+                    .character = character,
+                }))
+                return sendFail();
 
-    for (const auto& [zoneX, zoneY] : session.player.known_zones)
-    {
-        for (const auto& creature : map->CreaturesInZone(zoneX, zoneY))
-        {
-            const MonsterRecord* monsterRecord = ctx.data.monsters.Find(creature.monster_id);
+            Map* map = ctx.world.GetMap(character.map_id);
 
-            crtLoadResponse.records.push_back(CrtLoadRecord{
-                .id = creature.instance_id,
-                .x = static_cast<std::uint32_t>(creature.x),
-                .y = static_cast<std::uint32_t>(creature.y),
-                .monster_id = static_cast<std::uint32_t>(creature.monster_id),
-                .direction = static_cast<std::uint32_t>(creature.direction),
-                .hp = monsterRecord ? static_cast<std::uint64_t>(monsterRecord->hp) : 0,
+            // Legacy copy for handlers not yet on the map's Player.
+            ctx.sessions.Set(ctx.clientSocket, GameSession{
+                                                   .sessionId = static_cast<int64_t>(request.session_id),
+                                                   .accountId = loaded->accountId,
+                                                   .characterId = loaded->characterId,
+                                                   .character = character,
+                                               });
+            map->SetPlayer(ctx.clientSocket, character.x, character.y);
+
+            // Arriving is a placement onto the DB position; MovementSystem sends the creatures in view.
+            map->Events().Publish(CharacterMoveEvent{
+                .instance_id = character.instance_id,
+                .from_x = character.x,
+                .from_y = character.y,
+                .to_x = character.x,
+                .to_y = character.y,
             });
-        }
-    }
-
-    crtLoadResponse.Serialize(crtLoadWriter);
-    auto crtLoadData = crtLoadWriter.Data();
-
-    GamePacket crtLoadPacket(GameOpcode::GC_CRT_LOAD, crtLoadData);
-    auto crtLoadPayload = crtLoadPacket.Serialize(ctx.key);
-
-    ctx.server.SendTo(ctx.clientSocket, crtLoadPayload);
-    });
+        },
+        [sendFail](const std::string&) { sendFail(); });
 }
 
 void HandleCgPlayStart(const GameContext&)
 {
 }
 
-void HandleCgExit(const GameContext& ctx)
+void HandleCgExit(const GameContext& ctx, const GameExit& request)
 {
-    // Player::x/y is kept live by HandleMovement on every CG_MOVE, but
-    // character_position is only ever written at character creation (see
-    // Player::LoadFromDB) -- persist the session's current position now,
-    // before the session (and with it the only in-memory copy of where the
-    // character actually is) goes away.
-    auto session = ctx.sessions.Get(ctx.clientSocket);
-
-    // SavePosition is a blocking SQLite call -- run it, and the claim release
-    // that must only happen once it's durable (see GameSessionStore.h on
-    // why the claim guards against two connections racing on the same DB
-    // rows), on the DB pool instead of the connection's reactor thread.
-    // server.SendTo() is safe to call from any thread.
-    boost::asio::post(ctx.dbPool, [ctx, session]() {
-        if (session)
-        {
-            session->player.SavePosition(ctx.db);
-
-            if (Map* map = ctx.world.GetMap(session->player.map_id))
-                map->RemovePlayer(ctx.clientSocket);
-        }
-
-        // Release the session/character claim immediately on exit-to-character-
-        // select, rather than waiting for the socket to fully disconnect.
+    // Runs after the save attempt; a quick re-login's load is queued behind this save anyway.
+    auto finish = [ctx, reply = !request.disconnected]
+    {
         ctx.sessions.Remove(ctx.clientSocket);
+        if (reply)
+            ctx.outbox.Send(ctx.clientSocket, CharExitSucc{});
+    };
 
-        PayloadWriter exitWriter;
-        CharExitSucc exitResponse;
-        exitResponse.unused = 0;
-        exitResponse.Serialize(exitWriter);
-        auto exitData = exitWriter.Data();
+    auto session = ctx.sessions.Get(ctx.clientSocket);
+    if (!session)
+        return finish();
 
-        GamePacket exitPacket(GameOpcode::GC_CHAR_EXIT_SUCC, exitData);
-        auto exitPayload = exitPacket.Serialize(ctx.key);
+    const std::optional<Player> player = ctx.world.Leave(ctx.clientSocket);
+    if (Map* map = ctx.world.GetMap(session->character.map_id))
+        map->RemovePlayer(ctx.clientSocket);
 
-        ctx.server.SendTo(ctx.clientSocket, exitPayload);
-    });
+    // The map's Player holds the live position; the session copy only if it never spawned.
+    const Character character = player ? player->character : session->character;
+
+    // A failed save just leaves the character at its last saved position.
+    ctx.persistence.Run([character](IDatabase& db) { character.SavePosition(db); }, finish,
+                        [finish](const std::string&) { finish(); });
 }

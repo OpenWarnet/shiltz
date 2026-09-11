@@ -30,8 +30,7 @@ void Atlas::Add(MapRecord record)
 
     try
     {
-        slot = std::make_unique<Map>(
-            std::move(record), [this] { return AllocateCreatureInstanceId(); });
+        slot = std::make_unique<Map>(std::move(record));
         ++m_mapCount;
     }
     catch (const std::exception& e)
@@ -67,9 +66,6 @@ void Atlas::Tick(std::chrono::milliseconds delta)
         if (map == nullptr)
             continue;
 
-        if (!map->HasPlayers())
-            continue;
-
         try
         {
             map->Tick(delta);
@@ -90,9 +86,4 @@ std::size_t Atlas::Size() const noexcept
 bool Atlas::Empty() const noexcept
 {
     return m_mapCount == 0;
-}
-
-std::uint32_t Atlas::AllocateCreatureInstanceId()
-{
-    return m_nextCreatureInstanceId++;
 }

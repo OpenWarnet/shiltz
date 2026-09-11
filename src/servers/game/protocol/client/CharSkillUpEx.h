@@ -22,10 +22,10 @@ struct SkillLevelUpEntry
 // num_level_up levels each, spending unallocated sp. Wire layout: int32
 // count, then `count` SkillLevelUpEntry pairs, then a trailing int32
 // that's always 0 (unused terminator/padding).
-struct CharSkillUpEx : ClientProtocol
+struct CharSkillUpEx : PlayerMessage
 {
     std::vector<SkillLevelUpEntry> skills;
 
     bool Deserialize(PayloadReader& reader) override;
-    void Handle(const GameContext& ctx) const override;
+    void Handle(const GameContext& ctx, Player& player) const override;
 };

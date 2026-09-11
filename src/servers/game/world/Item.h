@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-struct PlayerDerivedStats;
+struct CharacterDerivedStats;
 struct ItemRecord;
 
 // The canonical "an item, in some quantity, possibly refined, possibly
@@ -48,7 +48,7 @@ struct Item
     // ("+N") growth against `record` (see the private helpers below).
     // Pure function of this item's own state plus `record` -- computed
     // fresh on every call, not cached (see Item.cpp).
-    PlayerDerivedStats CalculateDerivedStats(const ItemRecord& record) const;
+    CharacterDerivedStats CalculateDerivedStats(const ItemRecord& record) const;
 
 private:
     // This item's magic-option roll contribution against `record`'s
@@ -58,11 +58,11 @@ private:
     // the same damage/magic/defense/attack_speed/accuracy/critical_rate/
     // evasion_rate/movement_speed/hp_percent/ap_percent order RollOptionBits
     // packs option_bits in.
-    PlayerDerivedStats CalculateOptionContribution(const ItemRecord& record) const;
+    CharacterDerivedStats CalculateOptionContribution(const ItemRecord& record) const;
 
     // This item's refine ("+N") growth at its current refine_level, against
     // `record`'s refine_group/refine_*_scale columns -- see Item.cpp for the
     // per-(refine_group, level) curve. refine_level == 0 contributes
     // nothing.
-    PlayerDerivedStats CalculateRefineContribution(const ItemRecord& record) const;
+    CharacterDerivedStats CalculateRefineContribution(const ItemRecord& record) const;
 };

@@ -8,7 +8,7 @@ bool StoreMoneyIn::Deserialize(PayloadReader& reader)
     return reader.Read(amount);
 }
 
-void StoreMoneyIn::Handle(const GameContext& ctx) const
+void StoreMoneyIn::Handle(const GameContext& ctx, Player&) const
 {
     HandleStoreMoneyIn(ctx, *this);
 }

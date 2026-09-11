@@ -1,9 +1,7 @@
 #include "CharSkillUp.h"
 
-#include "GameOpcodes.h"
 #include "GamePacket.h"
 #include "GameSessionStore.h"
-#include "common/PayloadWriter.h"
 #include "common/Server.h"
 #include "enums/SkillUpFailReason.h"
 #include "parser/SkillScr.h"
@@ -11,12 +9,12 @@
 #include "protocol/server/CharSkillUpExFail.h"
 #include "protocol/server/CharSkillUpExSucc.h"
 #include "tables/GameData.h"
-#include "world/Player.h"
+#include "world/Character.h"
 #include "tables/SkillTable.h"
 
 namespace
 {
-    std::uint32_t CurrentSkillLevel(const PlayerSkills& skills, std::int64_t skillId)
+    std::uint32_t CurrentSkillLevel(const CharacterSkills& skills, std::int64_t skillId)
     {
         for (const auto& skill : skills.skills)
         {
@@ -27,7 +25,7 @@ namespace
         return 0;
     }
 
-    void ApplySkillLevelUp(PlayerSkills& skills, const SkillLevelUpEntry& entry)
+    void ApplySkillLevelUp(CharacterSkills& skills, const SkillLevelUpEntry& entry)
     {
         for (auto& skill : skills.skills)
         {
@@ -38,7 +36,7 @@ namespace
             }
         }
 
-        skills.skills.push_back(PlayerSkill{
+        skills.skills.push_back(CharacterSkill{
             .id = static_cast<std::uint32_t>(entry.skill_id),
             .level = static_cast<std::uint32_t>(entry.num_level_up),
         });
@@ -63,7 +61,7 @@ namespace
     // given skill_id, so level 1's row is enough to check those and to
     // confirm the skill_id exists at all; min_level/skill_points are
     // checked per target level, since those genuinely vary level to level.
-    Validation ValidateSkillUpRequest(const SkillTable& skills, const Player& player,
+    Validation ValidateSkillUpRequest(const SkillTable& skills, const Character& character,
                                        const std::vector<SkillLevelUpEntry>& entries)
     {
         if (entries.empty())
@@ -81,15 +79,15 @@ namespace
                 return Fail(SkillUpFailReason::SkillIdNotFound);
 
             if (baseRecord->job_type != 0 &&
-                baseRecord->job_type != static_cast<std::int64_t>(player.job_id))
+                baseRecord->job_type != static_cast<std::int64_t>(character.job_id))
                 return Fail(SkillUpFailReason::JobMismatch);
 
             if (baseRecord->prereq_skill_id != 0 &&
-                CurrentSkillLevel(player.skills, baseRecord->prereq_skill_id) <
+                CurrentSkillLevel(character.skills, baseRecord->prereq_skill_id) <
                     static_cast<std::uint32_t>(baseRecord->prereq_skill_level))
                 return Fail(SkillUpFailReason::PrereqNotLearned);
 
-            const std::int64_t currentLevel = CurrentSkillLevel(player.skills, entry.skill_id);
+            const std::int64_t currentLevel = CurrentSkillLevel(character.skills, entry.skill_id);
             if (currentLevel + entry.num_level_up > baseRecord->max_skill_level)
                 return Fail(SkillUpFailReason::AlreadyMaxLevel);
 
@@ -100,14 +98,14 @@ namespace
                 if (!record)
                     return Fail(SkillUpFailReason::SkillIdNotFound);
 
-                if (static_cast<std::int64_t>(player.level) < record->min_level)
+                if (static_cast<std::int64_t>(character.level) < record->min_level)
                     return Fail(SkillUpFailReason::LevelTooLow);
 
                 totalCost += record->skill_points;
             }
         }
 
-        if (static_cast<std::int64_t>(player.skills.unallocated_sp) < totalCost)
+        if (static_cast<std::int64_t>(character.skills.unallocated_sp) < totalCost)
             return Fail(SkillUpFailReason::NotEnoughSp);
 
         return Validation{.ok = true, .totalCost = totalCost};
@@ -121,21 +119,17 @@ void HandleCharSkillUpEx(const GameContext& ctx, const CharSkillUpEx& request)
         return;
 
     const Validation validation =
-        ValidateSkillUpRequest(ctx.data.skills, session->player, request.skills);
+        ValidateSkillUpRequest(ctx.data.skills, session->character, request.skills);
 
     if (!validation.ok)
     {
-        PayloadWriter writer;
         CharSkillUpExFail response;
         response.reason = static_cast<std::int32_t>(validation.failReason);
-        response.Serialize(writer);
-
-        GamePacket packet(GameOpcode::GC_CHAR_SKILL_UP_EX_FAIL, writer.Data());
-        ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+        ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
         return;
     }
 
-    PlayerSkills& skills = session->player.skills;
+    CharacterSkills& skills = session->character.skills;
 
     for (const auto& entry : request.skills)
         ApplySkillLevelUp(skills, entry);
@@ -144,23 +138,19 @@ void HandleCharSkillUpEx(const GameContext& ctx, const CharSkillUpEx& request)
     ctx.sessions.Set(ctx.clientSocket, *session);
 
     // SaveSkillPoints/SaveSkillLevels are blocking SQLite calls -- run them
-    // on the DB pool instead of the connection's reactor thread. player is
+    // on the DB pool instead of the connection's reactor thread. character is
     // copied by value so it stays valid once this handler returns;
     // server.SendTo() is safe to call from any thread.
-    Player player = session->player;
+    Character character = session->character;
     const std::int32_t remainingSp = static_cast<std::int32_t>(skills.unallocated_sp);
     const std::int32_t remainingEp = static_cast<std::int32_t>(skills.unallocated_ep);
-    boost::asio::post(ctx.dbPool, [ctx, player, remainingSp, remainingEp]() {
-        player.SaveSkillPoints(ctx.db);
-        player.SaveSkillLevels(ctx.db);
+    boost::asio::post(ctx.dbPool, [ctx, character, remainingSp, remainingEp]() {
+        character.SaveSkillPoints(ctx.db);
+        character.SaveSkillLevels(ctx.db);
 
-        PayloadWriter writer;
         CharSkillUpExSucc response;
         response.remaining_sp = remainingSp;
         response.remaining_ep = remainingEp;
-        response.Serialize(writer);
-
-        GamePacket packet(GameOpcode::GC_CHAR_SKILL_UP_EX_SUCC, writer.Data());
-        ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+        ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
     });
 }

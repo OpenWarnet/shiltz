@@ -13,7 +13,7 @@ class IDatabase;
 // CharacterDataLoad.h).
 namespace QuestFlagRepository
 {
-    // Full load, for Player::LoadFromDB -- returns every flag this
+    // Full load, for Character::LoadFromDB -- returns every flag this
     // character has ever had set, packed into the same bitset shape the
     // wire and the CONDITIONS/CONSEQUENCES checks both use.
     CharacterQuestFlags LoadAll(IDatabase& db, std::int64_t characterId);

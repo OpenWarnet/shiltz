@@ -16,10 +16,10 @@ class PayloadReader;
 // capture seen (not branched on), then a trailing u32 that's always 0
 // (unused padding, not a field) -- confirmed against 4 real captures
 // decoded via OpenShiltz's tooling.
-struct ItemDelete : ClientProtocol
+struct ItemDelete : PlayerMessage
 {
     std::uint32_t slot_id = 0;
 
     bool Deserialize(PayloadReader& reader) override;
-    void Handle(const GameContext& ctx) const override;
+    void Handle(const GameContext& ctx, Player& player) const override;
 };

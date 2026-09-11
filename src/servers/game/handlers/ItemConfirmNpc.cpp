@@ -1,9 +1,7 @@
 #include "ItemConfirmNpc.h"
 
-#include "GameOpcodes.h"
 #include "GamePacket.h"
 #include "GameSessionStore.h"
-#include "common/PayloadWriter.h"
 #include "common/Server.h"
 #include "enums/ItemConfirmFailReason.h"
 #include "enums/ItemType.h"
@@ -17,7 +15,7 @@
 #include "tables/GameData.h"
 #include "tables/ItemTable.h"
 #include "world/Item.h"
-#include "world/Player.h"
+#include "world/Character.h"
 
 #include <algorithm>
 #include <array>
@@ -210,7 +208,7 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
     // One atomic pass: a per-slot gate failure just skips that slot and
     // the loop continues -- only the very end decides SUCC vs FAIL, based
     // on whether anything actually succeeded. Writes go to the DB inside
-    // txn below; session->player and the session store only see them once
+    // txn below; session->character and the session store only see them once
     // txn.Commit() has actually succeeded (see appraisedItems below), so a
     // write failure partway through can't leave the cache ahead of what's
     // really on disk.
@@ -225,7 +223,7 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
         if (!IsSlotInRange(slotId))
             continue;
 
-        auto content = session->player.GetItemSlot(slotId);
+        auto content = session->character.GetItemSlot(slotId);
         if (!content)
             continue; // empty slot -- nothing to appraise
 
@@ -244,7 +242,7 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
             continue;
 
         const std::int64_t fee = itemRecord->sell_price;
-        if (runningFee + fee > session->player.money)
+        if (runningFee + fee > session->character.money)
             continue;
 
         const Item original = *content;
@@ -267,17 +265,12 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
         });
     }
 
-    PayloadWriter writer;
-
     if (results.empty())
     {
         ItemConfirmNpcFail response;
         response.result_code =
             static_cast<std::int32_t>(ItemConfirmFailReason::NoSlotsAppraised);
-        response.Serialize(writer);
-
-        GamePacket packet(GameOpcode::GC_ITEM_CONFIRM_NPC_FAIL, writer.Data());
-        ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+        ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
         return;
     }
 
@@ -285,7 +278,7 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
     // inside the same transaction as the appraised slots above, so a
     // partway failure rolls back the fee along with them rather than
     // charging for appraisals that never landed. Checked against the DB's
-    // *current* money -- the session->player.money prechecks above could be
+    // *current* money -- the session->character.money prechecks above could be
     // stale under the pipelined-request race (see CharacterRepository.h).
     auto newMoney = CharacterRepository::TrySpendMoney(ctx.db, characterId, runningFee);
     if (!newMoney)
@@ -293,10 +286,7 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
         ItemConfirmNpcFail response;
         response.result_code =
             static_cast<std::int32_t>(ItemConfirmFailReason::NoSlotsAppraised);
-        response.Serialize(writer);
-
-        GamePacket packet(GameOpcode::GC_ITEM_CONFIRM_NPC_FAIL, writer.Data());
-        ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+        ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
         return;
     }
 
@@ -304,17 +294,14 @@ void HandleItemConfirmNpcRequest(const GameContext& ctx, const ItemConfirmNpcReq
 
     // Only mirror into the cache / session store once the transaction is
     // actually durable -- see the comment on appraisedItems above.
-    session->player.money = *newMoney;
+    session->character.money = *newMoney;
     for (const AppraisedSlot& appraised : appraisedItems)
-        session->player.SetItemSlot(appraised.slot_id, appraised.item);
+        session->character.SetItemSlot(appraised.slot_id, appraised.item);
     ctx.sessions.Set(ctx.clientSocket, *session);
 
     ItemConfirmNpcSucc response;
     response.results = results;
     response.total_fee = static_cast<std::uint32_t>(runningFee);
-    response.Serialize(writer);
-
-    GamePacket packet(GameOpcode::GC_ITEM_CONFIRM_NPC_SUCC, writer.Data());
-    ctx.server.SendTo(ctx.clientSocket, packet.Serialize(ctx.key));
+    ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
     });
 }

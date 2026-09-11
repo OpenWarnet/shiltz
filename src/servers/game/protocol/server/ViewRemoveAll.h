@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <cstdint>
 #include <vector>
@@ -13,7 +13,7 @@ class PayloadWriter;
 // player_ids, creature_ids, item_ids. Only creature_ids is populated for
 // now -- player/item view tracking isn't implemented yet, so those two
 // arrays are always sent empty.
-struct ViewRemoveAll : ServerProtocol
+struct ViewRemoveAll : ServerMessage<GameOpcode::GC_VIEW_REMOVE_ALL>
 {
     std::vector<std::uint32_t> player_ids;
     std::vector<std::uint32_t> creature_ids;

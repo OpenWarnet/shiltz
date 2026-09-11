@@ -4,9 +4,9 @@
 
 namespace SkillRepository
 {
-std::vector<PlayerSkill> LoadSkillLevels(IDatabase& db, std::int64_t characterId)
+std::vector<CharacterSkill> LoadSkillLevels(IDatabase& db, std::int64_t characterId)
 {
-    std::vector<PlayerSkill> skills;
+    std::vector<CharacterSkill> skills;
 
     auto findSkills =
         db.Prepare("SELECT skill_id, level FROM character_skill WHERE character_id = ?");
@@ -14,7 +14,7 @@ std::vector<PlayerSkill> LoadSkillLevels(IDatabase& db, std::int64_t characterId
 
     while (findSkills->Step())
     {
-        skills.push_back(PlayerSkill{
+        skills.push_back(CharacterSkill{
             .id = static_cast<std::uint32_t>(std::get<int64_t>(findSkills->Column(0))),
             .level = static_cast<std::uint32_t>(std::get<int64_t>(findSkills->Column(1))),
         });
@@ -23,7 +23,7 @@ std::vector<PlayerSkill> LoadSkillLevels(IDatabase& db, std::int64_t characterId
     return skills;
 }
 
-void SaveSkillLevels(IDatabase& db, std::int64_t characterId, const std::vector<PlayerSkill>& skills)
+void SaveSkillLevels(IDatabase& db, std::int64_t characterId, const std::vector<CharacterSkill>& skills)
 {
     for (const auto& skill : skills)
     {

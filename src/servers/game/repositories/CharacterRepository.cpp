@@ -126,7 +126,7 @@ void SaveVitals(IDatabase& db, std::int64_t characterId, std::uint32_t hp, std::
     updateVitals->Step();
 }
 
-void SaveRawStats(IDatabase& db, std::int64_t characterId, const PlayerRawStats& raw)
+void SaveRawStats(IDatabase& db, std::int64_t characterId, const CharacterRawStats& raw)
 {
     auto updateStats = db.Prepare(
         "UPDATE character SET stats_str = ?, stats_int = ?, stats_dex = ?, stats_con = ?, "

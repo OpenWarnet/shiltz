@@ -1,7 +1,7 @@
 #pragma once
 
 #include "world/Item.h"
-#include "world/Player.h" // PlayerEquipmentItem / PlayerInventoryItem
+#include "world/Character.h" // CharacterEquipmentItem / CharacterInventoryItem
 
 #include <cstdint>
 #include <optional>
@@ -12,11 +12,11 @@ class IDatabase;
 // Owns every write against the equipment_slot and inventory_slot tables --
 // the one place item DB access happens, so a stored item's item_level/
 // option_bits can't drift between callers the way a handler-local raw-SQL
-// path and Player's slot methods used to: dropping and picking an appraised
+// path and Character's slot methods used to: dropping and picking an appraised
 // item back up used to silently erase its rolled option_bits.
 //
-// No per-slot reads here -- session->player's equipment/inventory is kept
-// in step with every write below (see Player::SetItemSlot/ClearItemSlot),
+// No per-slot reads here -- session->character's equipment/inventory is kept
+// in step with every write below (see Character::SetItemSlot/ClearItemSlot),
 // so callers read that cache instead of round-tripping through a SELECT.
 // The one read still owned here is the full-character load that seeds that
 // cache in the first place (LoadAllEquipment/LoadAllInventory).
@@ -53,9 +53,9 @@ namespace ItemRepository
     bool ClearItemSlot(IDatabase& db, std::int64_t characterId, std::uint32_t wireSlotId,
                         const std::optional<Item>& expectedPrevious);
 
-    // Full equipment/inventory load, for Player::LoadFromDB.
-    std::vector<PlayerEquipmentItem> LoadAllEquipment(IDatabase& db, std::int64_t characterId);
-    std::vector<PlayerInventoryItem> LoadAllInventory(IDatabase& db, std::int64_t characterId);
+    // Full equipment/inventory load, for Character::LoadFromDB.
+    std::vector<CharacterEquipmentItem> LoadAllEquipment(IDatabase& db, std::int64_t characterId);
+    std::vector<CharacterInventoryItem> LoadAllInventory(IDatabase& db, std::int64_t characterId);
 
     enum class SlotKind
     {
@@ -69,9 +69,9 @@ namespace ItemRepository
         std::uint32_t index;
     };
 
-    // Wire slot -> (table, table-relative index). Exposed so Player's
+    // Wire slot -> (table, table-relative index). Exposed so Character's
     // in-memory equipment/inventory mirrors can be kept in step with the
     // same DB calls above without re-deriving this split -- see
-    // Player::SetItemSlot/ClearItemSlot.
+    // Character::SetItemSlot/ClearItemSlot.
     SlotRef ResolveSlotRef(std::uint32_t wireSlotId);
 } // namespace ItemRepository

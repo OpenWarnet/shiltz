@@ -32,13 +32,20 @@ public:
 
     void Tick(std::chrono::milliseconds delta);
 
+    // Calls fn(Map&) for every loaded map.
+    template <typename Fn> void ForEach(Fn&& fn)
+    {
+        for (auto& map : m_maps)
+        {
+            if (map)
+                fn(*map);
+        }
+    }
+
     std::size_t Size() const noexcept;
     bool Empty() const noexcept;
 
 private:
-    std::uint32_t AllocateCreatureInstanceId();
-
     std::vector<std::unique_ptr<Map>> m_maps;
     std::size_t m_mapCount = 0;
-    std::uint32_t m_nextCreatureInstanceId = 10000;
 };

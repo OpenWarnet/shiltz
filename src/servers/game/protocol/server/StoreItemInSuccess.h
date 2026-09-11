@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <cstdint>
 
@@ -9,7 +9,7 @@ class PayloadWriter;
 // GC_STORE_ITEM_IN (wire code 521118, s2c) -- acknowledges a successful
 // CG_STORE_ITEM_IN. No money field -- depositing into the bank isn't
 // charged (see handlers/Store.cpp).
-struct StoreItemInSuccess : ServerProtocol
+struct StoreItemInSuccess : ServerMessage<GameOpcode::GC_STORE_ITEM_IN>
 {
     std::uint32_t inventory_slot_id = 0;
     // 0 means "clear this slot" -- the inventory slot was fully deposited.

@@ -1,9 +1,7 @@
 #include "Trade.h"
 
-#include "GameOpcodes.h"
 #include "GamePacket.h"
 #include "GameSessionStore.h"
-#include "common/PayloadWriter.h"
 #include "common/Server.h"
 #include "protocol/client/ItemTradeBuy.h"
 #include "protocol/client/ItemTradeSell.h"
@@ -25,16 +23,7 @@
 void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
 {
     auto sendFail = [ctx, request]
-    {
-        PayloadWriter failWriter;
-        TradeBuyFail{}.Serialize(failWriter);
-        auto failData = failWriter.Data();
-
-        GamePacket failPacket(GameOpcode::GC_TRADE_BUY_FAIL, failData);
-        auto failPayload = failPacket.Serialize(ctx.key);
-
-        ctx.server.SendTo(ctx.clientSocket, failPayload);
-    };
+    { ctx.server.SendTo(ctx.clientSocket, TradeBuyFail{}.Packet().Serialize(ctx.key)); };
 
     if (request.amount == 0)
     {
@@ -77,7 +66,7 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
     }
 
     const std::int64_t totalCost = item->buy_price * static_cast<std::int64_t>(request.amount);
-    if (session->player.money < totalCost)
+    if (session->character.money < totalCost)
     {
         sendFail();
         return;
@@ -98,7 +87,7 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
     // client's view of its own inventory is stale, so reject rather than
     // clobbering whatever's actually there. Checked before any money moves.
     // Read from the cache rather than the DB -- see repositories/ItemRepository.h.
-    auto existing = session->player.GetInventorySlot(slotIndex);
+    auto existing = session->character.GetInventorySlot(slotIndex);
 
     Item updated;
     if (existing)
@@ -120,7 +109,7 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
     }
 
     // Authoritative debit -- checked atomically against the DB's *current*
-    // money rather than the cached session->player.money read above, which
+    // money rather than the cached session->character.money read above, which
     // could be stale under the pipelined-request race (see
     // CharacterRepository.h).
     auto newMoney = CharacterRepository::TrySpendMoney(ctx.db, characterId, totalCost);
@@ -142,8 +131,8 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
 
     // Only mirror into the cache / session store once the transaction is
     // actually durable -- see the equivalent comment in ItemConfirmNpc.cpp.
-    session->player.money = *newMoney;
-    session->player.SetInventorySlot(slotIndex, updated);
+    session->character.money = *newMoney;
+    session->character.SetInventorySlot(slotIndex, updated);
     ctx.sessions.Set(ctx.clientSocket, *session);
 
     // Same dual-purpose wire convention as ItemPickupSuccess::qty_or_refine --
@@ -151,37 +140,21 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request)
     // items, ...). option/option2 are still hardcoded placeholders -- this
     // path doesn't yet distinguish stackable items from equippable ones
     // with a refine_level.
-    PayloadWriter writer;
     TradeBuySucc response;
     response.slot_id = request.slot_id;
     response.item_id = itemId;
     response.new_count = updated.WireQuantityOrRefine();
     response.option = 0;
     response.option2 = 0;
-    response.money = session->player.money;
-    response.Serialize(writer);
-    auto data = writer.Data();
-
-    GamePacket packet(GameOpcode::GC_TRADE_BUY_SUCC, data);
-    auto payload = packet.Serialize(ctx.key);
-
-    ctx.server.SendTo(ctx.clientSocket, payload);
+    response.money = session->character.money;
+    ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
     });
 }
 
 void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
 {
     auto sendFail = [ctx, request]
-    {
-        PayloadWriter failWriter;
-        TradeSellFail{}.Serialize(failWriter);
-        auto failData = failWriter.Data();
-
-        GamePacket failPacket(GameOpcode::GC_TRADE_SELL_FAIL, failData);
-        auto failPayload = failPacket.Serialize(ctx.key);
-
-        ctx.server.SendTo(ctx.clientSocket, failPayload);
-    };
+    { ctx.server.SendTo(ctx.clientSocket, TradeSellFail{}.Packet().Serialize(ctx.key)); };
 
     if (request.count == 0)
     {
@@ -211,7 +184,7 @@ void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
     DatabaseTransaction txn(ctx.db);
 
     // Read from the cache rather than the DB -- see repositories/ItemRepository.h.
-    auto existing = session->player.GetInventorySlot(slotIndex);
+    auto existing = session->character.GetInventorySlot(slotIndex);
     if (!existing)
     {
         sendFail();
@@ -279,30 +252,23 @@ void HandleItemTradeSell(const GameContext& ctx, const ItemTradeSell& request)
     // Only mirror into the cache / session store once the transaction is
     // actually durable -- see the equivalent comment in ItemConfirmNpc.cpp.
     if (slotCleared)
-        session->player.ClearInventorySlot(slotIndex);
+        session->character.ClearInventorySlot(slotIndex);
     else
-        session->player.SetInventorySlot(slotIndex, remainingItem);
-    session->player.money = newMoney;
+        session->character.SetInventorySlot(slotIndex, remainingItem);
+    session->character.money = newMoney;
     ctx.sessions.Set(ctx.clientSocket, *session);
 
     // remainingCount == 0 means the slot was emptied entirely (fully sold,
     // or an equippable item, which always sells whole) -- item_id 0 is how
     // the client is told to clear that slot, rather than sending a
     // qty_or_refine of 0 - 1 for a slot that no longer holds itemId at all.
-    PayloadWriter writer;
     TradeSellSucc response;
     response.slot_id = request.slot_id;
     response.item_id = remainingCount > 0 ? itemId : 0;
     response.new_count = remainingCount > 0 ? remainingCount - 1 : 0;
     response.option = 0;
     response.option2 = 0;
-    response.money_after = session->player.money;
-    response.Serialize(writer);
-    auto data = writer.Data();
-
-    GamePacket packet(GameOpcode::GC_TRADE_SELL_SUCC, data);
-    auto payload = packet.Serialize(ctx.key);
-
-    ctx.server.SendTo(ctx.clientSocket, payload);
+    response.money_after = session->character.money;
+    ctx.server.SendTo(ctx.clientSocket, response.Packet().Serialize(ctx.key));
     });
 }

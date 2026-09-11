@@ -8,7 +8,7 @@ class PayloadReader;
 
 // CG_ITEM_PICKUP (wire code 64583, c2s) -- request to pick up a dropped
 // item instance off the ground, into a specific inventory slot.
-struct ItemPickup : ClientProtocol
+struct ItemPickup : PlayerMessage
 {
     // Ground item instance id (see ItemMapNew.id) -- identifies *which*
     // dropped item this is, not its item type. Resolving the real item_id
@@ -22,5 +22,5 @@ struct ItemPickup : ClientProtocol
     std::uint32_t slot_id = 0;
 
     bool Deserialize(PayloadReader& reader) override;
-    void Handle(const GameContext& ctx) const override;
+    void Handle(const GameContext& ctx, Player& player) const override;
 };

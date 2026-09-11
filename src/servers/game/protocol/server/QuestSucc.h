@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <cstdint>
 #include <vector>
@@ -21,7 +21,7 @@ struct QuestSuccItem
 
 // GC_QUEST_SUCC (wire code 521064, s2c) -- server's fixed reply to
 // CG_QUEST_RESULT, granting quest rewards.
-struct QuestSucc : ServerProtocol
+struct QuestSucc : ServerMessage<GameOpcode::GC_QUEST_SUCC>
 {
     std::vector<QuestSuccItem> items;
     std::uint32_t quest_id = 0;

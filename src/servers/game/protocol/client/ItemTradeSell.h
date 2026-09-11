@@ -8,7 +8,7 @@ class PayloadReader;
 
 // CG_ITEM_TRADE_SELL (wire code 411021, c2s) -- request to sell an
 // inventory item back to an NPC shop.
-struct ItemTradeSell : ClientProtocol
+struct ItemTradeSell : PlayerMessage
 {
     // Source inventory slot, wire-relative -- same convention as
     // ItemPickup::slot_id (bag slots start at InventoryItemList::kBagStartSlot).
@@ -19,5 +19,5 @@ struct ItemTradeSell : ClientProtocol
     std::uint32_t instance_id = 0;
 
     bool Deserialize(PayloadReader& reader) override;
-    void Handle(const GameContext& ctx) const override;
+    void Handle(const GameContext& ctx, Player& player) const override;
 };

@@ -8,7 +8,7 @@ bool StoreItemIn::Deserialize(PayloadReader& reader)
     return reader.Read(inventory_slot_id) && reader.Read(bank_slot_id) && reader.Read(amount);
 }
 
-void StoreItemIn::Handle(const GameContext& ctx) const
+void StoreItemIn::Handle(const GameContext& ctx, Player&) const
 {
     HandleStoreItemIn(ctx, *this);
 }

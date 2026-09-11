@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <cstdint>
 #include <string>
@@ -29,7 +29,7 @@ class PayloadWriter;
 // the reconnect is rejected with GC_ENTER_FAIL. So this field is this
 // connection's own GameSession::sessionId -- sending 0 here (as the earlier
 // version of this struct did) always fails the reconnect.
-struct ServerChange : ServerProtocol
+struct ServerChange : ServerMessage<GameOpcode::GC_SERVER_CHANGE>
 {
     std::string server_ip;
     std::uint32_t session_id = 0;

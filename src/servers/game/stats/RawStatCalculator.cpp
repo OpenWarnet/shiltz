@@ -2,7 +2,7 @@
 
 #include "enums/JobId.h"
 #include "tables/StatusTable.h"
-#include "world/Player.h"
+#include "world/Character.h"
 
 #include <cstdint>
 
@@ -142,9 +142,9 @@ std::int32_t TruncI32(double value)
 }
 } // namespace
 
-std::optional<PlayerDerivedStats> RawStatCalculator::Calculate(const Player& player, const StatusTable& statusRates)
+std::optional<CharacterDerivedStats> RawStatCalculator::Calculate(const Character& character, const StatusTable& statusRates)
 {
-    const std::optional<JobId> jobId = ResolveStatusClassIndex(player.job_id);
+    const std::optional<JobId> jobId = ResolveStatusClassIndex(character.job_id);
     if (!jobId)
         return std::nullopt;
 
@@ -172,15 +172,15 @@ std::optional<PlayerDerivedStats> RawStatCalculator::Calculate(const Player& pla
 
     const ClassConstants& constants = *constantsPtr;
 
-    const double str = player.stats.raw.strength;
-    const double dex = player.stats.raw.dexterity;
-    const double intel = player.stats.raw.intelligence;
-    const double con = player.stats.raw.constitution;
-    const double men = player.stats.raw.mentality;
-    const double sen = player.stats.raw.sense;
-    const double level = player.level;
+    const double str = character.stats.raw.strength;
+    const double dex = character.stats.raw.dexterity;
+    const double intel = character.stats.raw.intelligence;
+    const double con = character.stats.raw.constitution;
+    const double men = character.stats.raw.mentality;
+    const double sen = character.stats.raw.sense;
+    const double level = character.level;
 
-    PlayerDerivedStats derived;
+    CharacterDerivedStats derived;
 
     // SkillBonus/PctBuffA/PctBuffB/FlatBuff come from skill-cast bonuses
     // and active buffs -- none of those systems exist yet, so they're

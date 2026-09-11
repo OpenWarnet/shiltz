@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <cstdint>
 
@@ -12,7 +12,7 @@ class PayloadWriter;
 // slot, and the last updates the money display -- all clamping/quantity
 // math has to be done server-side before this is built (see
 // handlers/Store.cpp).
-struct StoreItemOutSuccess : ServerProtocol
+struct StoreItemOutSuccess : ServerMessage<GameOpcode::GC_STORE_ITEM_OUT>
 {
     std::uint32_t inventory_slot_id = 0;
     // 0 means "clear this slot" -- same convention as TradeSellSucc/

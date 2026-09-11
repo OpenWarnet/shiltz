@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol/Protocol.h"
+#include "protocol/ServerProtocol.h"
 
 #include <array>
 #include <cstddef>
@@ -19,7 +19,7 @@ struct BankItemSlot
 
 // GC_STORE_OPEN_SUCC (wire code 521113, s2c) -- acknowledges a successful
 // CG_STORE_OPEN with the bank's full contents.
-struct StoreOpenSucc : ServerProtocol
+struct StoreOpenSucc : ServerMessage<GameOpcode::GC_STORE_OPEN_SUCC>
 {
     static constexpr std::size_t kSlotCount = 80;
 

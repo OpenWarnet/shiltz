@@ -7,6 +7,8 @@
 #include <winsock2.h>
 
 class Server;
+class Outbox;
+class Persistence;
 class IDatabase;
 class GameSessionStore;
 class World;
@@ -22,9 +24,9 @@ struct GameContext
     World& world;
     const GameData& data;
 
-    // Blocking IDatabase calls (SQLite) don't belong on the reactor pool's
-    // threads -- a handler that needs one should boost::asio::post(dbPool,
-    // ...) the DB work and reply via server.SendTo() (safe from any
-    // thread), rather than calling ctx.db directly inline.
+    // Legacy raw posts to the DB thread; new code uses persistence instead.
     boost::asio::thread_pool& dbPool;
+
+    const Outbox& outbox;
+    Persistence& persistence;
 };
