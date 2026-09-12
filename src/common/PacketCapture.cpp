@@ -12,6 +12,8 @@
 #include <mutex>
 #include <sstream>
 #include <thread>
+#include <utility>
+#include <vector>
 
 namespace
 {
