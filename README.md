@@ -8,7 +8,7 @@ Shiltz is an experimental, from-scratch C++ server emulator for **Seal Online**.
 ## Get the source
 
 ```sh
-git clone https://github.com/feryandi/shiltz.git
+git clone https://github.com/OpenWarnet/shiltz.git
 cd shiltz
 ```
 
