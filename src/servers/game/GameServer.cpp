@@ -10,7 +10,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <format>
 #include <iostream>
 #include <utility>
 
@@ -77,9 +76,8 @@ void GameServer::OnFrame(ConnectionId connection, std::span<const uint8_t> frame
     if (!packet.Deserialize(frame, m_key))
         return;
 
-    std::cout << std::format("-> {} : {} bytes, payload: {} bytes\n",
-                             GameOpcode::Describe(packet.GetCode()), frame.size(),
-                             packet.GetPayload().size());
+    std::cout << "-> " << GameOpcode::Describe(packet.GetCode()) << " : " << frame.size()
+              << " bytes, payload: " << packet.GetPayload().size() << " bytes\n";
 
     auto message = ClientProtocol::Create(packet);
     if (!message)

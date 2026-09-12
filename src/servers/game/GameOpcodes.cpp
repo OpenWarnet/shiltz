@@ -1,6 +1,7 @@
 #include "GameOpcodes.h"
 
-#include <format>
+#include <iomanip>
+#include <sstream>
 
 namespace GameOpcode
 {
@@ -103,6 +104,8 @@ namespace GameOpcode
             return std::string(name);
 
         const auto value = static_cast<uint32_t>(code);
-        return std::format("0x{:x} / {}", value, value);
+        std::ostringstream out;
+        out << "0x" << std::hex << value << " / " << std::dec << value;
+        return out.str();
     }
 }

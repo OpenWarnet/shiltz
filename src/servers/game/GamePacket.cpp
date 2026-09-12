@@ -4,7 +4,6 @@
 #include "common/PacketCapture.h"
 
 #include <cstring>
-#include <format>
 #include <iomanip>
 #include <iostream>
 
@@ -51,8 +50,8 @@ std::vector<uint8_t> GamePacket::Serialize(std::span<const uint8_t> key) const
 
     PacketCapture::LogHandled(PacketCapture::Direction::Outbound, static_cast<uint32_t>(m_code),
                               GameOpcode::ToString(m_code), m_payload);
-    std::cout << std::format("<- {} : {} bytes, payload: {} bytes\n", GameOpcode::Describe(m_code),
-                             totalLength, m_payload.size());
+    std::cout << "<- " << GameOpcode::Describe(m_code) << " : " << totalLength
+              << " bytes, payload: " << m_payload.size() << " bytes\n";
 
     // No Encryption from Server -> Client
 
