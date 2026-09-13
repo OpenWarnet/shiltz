@@ -2,8 +2,6 @@
 
 #include "world/Player.h"
 #include "world/common/Paths.h"
-#include "world/systems/EnterSystem.h"
-#include "world/systems/MovementSystem.h"
 #include "parser/MapScr.h"
 #include "tables/GameData.h"
 
@@ -33,8 +31,8 @@ void World::Start(const Outbox& outbox, const GameData& data)
     m_atlas.ForEach(
         [&](Map& map)
         {
-            m_enterSystems.push_back(std::make_unique<EnterSystem>(map, outbox, data));
-            m_movementSystems.push_back(std::make_unique<MovementSystem>(map, outbox, data));
+            for (System::Factory factory : System::Factories())
+                m_systems.push_back(factory(map, outbox, data));
         });
 }
 

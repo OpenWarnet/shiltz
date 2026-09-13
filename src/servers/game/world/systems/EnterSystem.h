@@ -1,12 +1,14 @@
 #pragma once
 
+#include "world/systems/System.h"
+
 class GameData;
 class Map;
 class Outbox;
 struct CharacterJoinEvent;
 
 // Sends a joining character its own state; creatures in view come from MovementSystem.
-class EnterSystem
+class EnterSystem : public System
 {
 public:
     // Registers on map's events in send order.

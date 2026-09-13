@@ -1,5 +1,7 @@
 #pragma once
 
+#include "world/systems/System.h"
+
 #include <cstdint>
 #include <vector>
 
@@ -13,7 +15,7 @@ struct CharacterZoneChangeEvent;
 struct Player;
 
 // Keeps each client's view of creatures and other characters current, and broadcasts walks to whoever can see them.
-class MovementSystem
+class MovementSystem : public System
 {
 public:
     // Registers on map's events in send order.

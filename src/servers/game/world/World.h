@@ -4,6 +4,7 @@
 #include "common/ConnectionId.h"
 #include "world/common/BatchQueue.h"
 #include "world/common/Request.h"
+#include "world/systems/System.h"
 
 #include <chrono>
 #include <cstdint>
@@ -13,8 +14,6 @@
 #include <unordered_set>
 #include <vector>
 
-class EnterSystem;
-class MovementSystem;
 class GameData;
 class Outbox;
 struct Player;
@@ -69,7 +68,7 @@ private:
     std::vector<Request> m_requests;
     Atlas m_atlas;
 
-    // One of each per map; heap-allocated because each map's event bus points at them.
-    std::vector<std::unique_ptr<EnterSystem>> m_enterSystems;
-    std::vector<std::unique_ptr<MovementSystem>> m_movementSystems;
+    // One instance per (map, system type); heap-allocated because each map's event bus points at
+    // them. See World.cpp's kSystemFactories to add a new system.
+    std::vector<std::unique_ptr<System>> m_systems;
 };

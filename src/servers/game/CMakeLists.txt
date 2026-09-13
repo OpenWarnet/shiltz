@@ -68,6 +68,8 @@ add_executable (
 	"world/Map.h"
 	"world/Map.cpp"
 	"world/MapEvents.h"
+	"world/systems/System.h"
+	"world/systems/System.cpp"
 	"world/systems/EnterSystem.h"
 	"world/systems/EnterSystem.cpp"
 	"world/systems/MovementSystem.h"
