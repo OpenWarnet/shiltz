@@ -15,7 +15,7 @@
 #include "protocol/server/ItemPickupSuccess.h"
 #include "repositories/ItemRepository.h"
 #include "storage/Transaction.h"
-#include "world/GroundItem.h"
+#include "world/Drop.h"
 #include "world/Player.h"
 #include "world/World.h"
 #include "world/common/EntityIdGenerator.h"
@@ -54,13 +54,13 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request, Player&
         return;
 
     // Claimed before the DB write, so two players racing the same item can't both get it.
-    auto groundItem = map->TryTakeItem(request.id);
-    if (!groundItem)
+    auto drop = map->Despawn(Drop{.id = request.id});
+    if (!drop)
         return;
 
     const std::int64_t characterId = player.character.id;
     const std::uint32_t slotIndex = BagIndex(request.slot_id);
-    const std::uint32_t itemId = groundItem->item.item_id;
+    const std::uint32_t itemId = drop->item.item_id;
     const std::optional<Item> existing = player.character.GetInventorySlot(slotIndex);
 
     // A slot holding a different item means the client's view is stale: put the item back.
@@ -68,7 +68,7 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request, Player&
     if (existing)
     {
         if (existing->item_id != itemId)
-            return map->AddItem(*groundItem);
+            return map->Spawn(*drop);
 
         updated = *existing;
         updated.quantity += 1;
@@ -76,11 +76,11 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request, Player&
     else
     {
         // Pickup always claims one unit, keeping the ground item's level/options.
-        updated = groundItem->item;
+        updated = drop->item;
         updated.quantity = 1;
     }
 
-    auto putBack = [map, item = *groundItem] { map->AddItem(item); };
+    auto putBack = [map, drop = *drop] { map->Spawn(drop); };
 
     ctx.persistence.Run(
         Transactionally([=](IDatabase& db)
@@ -245,7 +245,7 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request, Player& pla
 
             // Created only once the slot removal is durable, so a crash can't duplicate the item.
             const std::uint32_t groundId = EntityIdGenerator::Next();
-            map->AddItem(GroundItem{.id = groundId, .x = dropX, .y = dropY, .item = droppedItem});
+            map->Spawn(Drop{.id = groundId, .x = dropX, .y = dropY, .item = droppedItem});
 
             ItemDropSuccess succResponse;
             succResponse.id = groundId;

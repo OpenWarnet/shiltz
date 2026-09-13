@@ -10,10 +10,8 @@
 #include "storage/IDatabase.h"
 #include "tables/GameData.h"
 #include "stats/Stats.h"
-#include "world/MapEvents.h"
 #include "world/Player.h"
 #include "world/World.h"
-#include "world/Zone.h"
 #include "world/common/EntityIdGenerator.h"
 
 #include <optional>
@@ -89,6 +87,7 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
             character.instance_id = EntityIdGenerator::Next();
             RecalculateDerivedStats(character, ctx.data.items, ctx.data.setOptions, ctx.data.statusRates);
 
+            // Join publishes CharacterJoinEvent and (as a placement) CharacterZoneChangeEvent itself.
             if (!ctx.world.Join(Player{
                     .connection = ctx.connection,
                     .session_id = request.session_id,
@@ -96,14 +95,6 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
                     .character = character,
                 }))
                 return sendFail();
-
-            Map* map = ctx.world.GetMap(character.map_id);
-
-            // Arriving is a placement with no previous view, so MovementSystem loads every character and creature in view.
-            map->Events().Publish(CharacterZoneChangeEvent{
-                .instance_id = character.instance_id,
-                .to = Zone::Of(character.x, character.y),
-            });
         },
         [sendFail](const std::string&) { sendFail(); });
 }

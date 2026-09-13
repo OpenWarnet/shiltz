@@ -11,7 +11,10 @@
 // Embeds Item (rather than just item_id/quantity/refine_level) so a
 // dropped item's item_level/option_bits survive the ground stage instead
 // of being lost between drop and pickup.
-struct GroundItem
+//
+// Empty of behavior for now; a per-tick deletion timer (Map ticks every
+// Drop to expire it off the map) lands here next.
+struct Drop
 {
     std::uint32_t id = 0;
     std::uint32_t x = 0;

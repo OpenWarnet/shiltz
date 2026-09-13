@@ -7,7 +7,7 @@ struct ItemRecord;
 
 // The canonical "an item, in some quantity, possibly refined, possibly
 // appraised" payload -- the shape shared by an equipment_slot row, an
-// inventory_slot row, and a ground-dropped item (see world/GroundItem.h).
+// inventory_slot row, and a dropped item (see world/Drop.h).
 // Not the wire format (InventoryItemSlot, protocol/server/
 // InventoryItemList.h), which packs quantity/refine_level into one
 // dual-purpose field; see WireQuantityOrRefine() for that projection.

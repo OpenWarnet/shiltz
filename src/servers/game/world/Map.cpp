@@ -9,7 +9,6 @@
 #include "world/common/EntityIdGenerator.h"
 #include "world/common/Paths.h"
 
-#include <algorithm>
 #include <iostream>
 #include <iterator>
 
@@ -61,43 +60,6 @@ Map::Map(MapRecord record, const MonsterTable& monsters)
     }
 }
 
-void Map::AddItem(GroundItem item)
-{
-    std::lock_guard lock(m_itemsMutex);
-    m_items.push_back(item);
-}
-
-bool Map::RemoveItem(std::uint32_t id)
-{
-    std::lock_guard lock(m_itemsMutex);
-    auto it = std::find_if(m_items.begin(), m_items.end(),
-                           [id](const GroundItem& item) { return item.id == id; });
-    if (it == m_items.end())
-        return false;
-
-    m_items.erase(it);
-    return true;
-}
-
-std::optional<GroundItem> Map::TryTakeItem(std::uint32_t id)
-{
-    std::lock_guard lock(m_itemsMutex);
-    auto it = std::find_if(m_items.begin(), m_items.end(),
-                           [id](const GroundItem& item) { return item.id == id; });
-    if (it == m_items.end())
-        return std::nullopt;
-
-    GroundItem taken = *it;
-    m_items.erase(it);
-    return taken;
-}
-
-std::vector<GroundItem> Map::Items() const
-{
-    std::lock_guard lock(m_itemsMutex);
-    return m_items;
-}
-
 bool Map::IsInBounds(std::uint32_t x, std::uint32_t y) noexcept
 {
     return x < kGridSize && y < kGridSize;
@@ -126,6 +88,7 @@ std::span<const Creature> Map::CreaturesInZone(Zone::Coordinates zone) const
 bool Map::Spawn(Player player)
 {
     const std::uint32_t instanceId = player.character.instance_id;
+    const Zone::Coordinates zone = Zone::Of(player.character.x, player.character.y);
 
     // Whatever it had loaded belonged to its previous map.
     player.visible_players.clear();
@@ -134,16 +97,75 @@ bool Map::Spawn(Player player)
         return false;
 
     m_events.Publish(CharacterJoinEvent{.instance_id = instanceId});
+
+    // A placement has no previous view, so MovementSystem loads everything around it.
+    m_events.Publish(CharacterZoneChangeEvent{.instance_id = instanceId, .to = zone});
     return true;
 }
 
-std::optional<Player> Map::Despawn(std::uint32_t instanceId)
+void Map::Spawn(Drop drop)
 {
-    std::optional<Player> player = m_players.Remove(instanceId);
-    if (player)
-        m_events.Publish(CharacterLeaveEvent{.instance_id = instanceId});
+    const std::uint32_t id = drop.id, x = drop.x, y = drop.y, itemId = drop.item.item_id;
+    if (!m_drops.Add(id, std::move(drop)))
+        return; // id collision is practically impossible (EntityIdGenerator), guard kept for consistency with Spawn(Player)
 
-    return player;
+    m_events.Publish(DropAddEvent{.id = id, .x = x, .y = y, .item_id = itemId});
+}
+
+std::optional<Player> Map::Despawn(const Player& player)
+{
+    std::optional<Player> removed = m_players.Remove(player.character.instance_id);
+    if (removed)
+        m_events.Publish(CharacterLeaveEvent{.instance_id = player.character.instance_id});
+
+    return removed;
+}
+
+std::optional<Drop> Map::Despawn(const Drop& drop)
+{
+    std::optional<Drop> removed = m_drops.Remove(drop.id);
+    if (removed)
+        m_events.Publish(DropRemoveEvent{.id = removed->id, .x = removed->x, .y = removed->y});
+
+    return removed;
+}
+
+bool Map::Move(Player& player, std::uint32_t x, std::uint32_t y, std::uint32_t direction,
+               std::uint32_t speed, std::uint32_t stopDirection)
+{
+    if (!IsInBounds(x, y))
+        return false;
+
+    const std::uint32_t instanceId = player.character.instance_id;
+    const std::uint32_t fromX = player.character.x;
+    const std::uint32_t fromY = player.character.y;
+
+    player.character.x = x;
+    player.character.y = y;
+    player.character.direction = direction;
+
+    // Published before the move so the view updates go out ahead of GC_CHAR_MOVE.
+    if (Zone::Crossed(fromX, fromY, x, y))
+    {
+        m_events.Publish(CharacterZoneChangeEvent{
+            .instance_id = instanceId,
+            .from = Zone::Of(fromX, fromY),
+            .to = Zone::Of(x, y),
+        });
+    }
+
+    m_events.Publish(CharacterMoveEvent{
+        .instance_id = instanceId,
+        .from_x = fromX,
+        .from_y = fromY,
+        .to_x = x,
+        .to_y = y,
+        .direction = direction,
+        .speed = speed,
+        .stop_direction = stopDirection,
+    });
+
+    return true;
 }
 
 Player* Map::GetPlayer(std::uint32_t instanceId)

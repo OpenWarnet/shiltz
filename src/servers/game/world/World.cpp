@@ -97,7 +97,11 @@ std::optional<Player> World::Leave(ConnectionId connection)
     m_connectionsByCharacter.erase(ref.characterId);
 
     Map* map = m_atlas.Get(ref.mapId);
-    return map ? map->Despawn(ref.instanceId) : std::nullopt;
+    if (!map)
+        return std::nullopt;
+
+    Player* player = map->GetPlayer(ref.instanceId);
+    return player ? map->Despawn(*player) : std::nullopt;
 }
 
 Player* World::FindPlayer(ConnectionId connection)

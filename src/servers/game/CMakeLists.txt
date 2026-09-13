@@ -59,7 +59,7 @@ add_executable (
 	"repositories/SkillRepository.cpp"
 	"world/Item.h"
 	"world/Item.cpp"
-	"world/GroundItem.h"
+	"world/Drop.h"
 	"world/Creature.h"
 	"world/Character.h"
 	"world/Character.cpp"
