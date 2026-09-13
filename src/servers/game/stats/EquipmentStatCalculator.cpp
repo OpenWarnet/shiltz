@@ -1,5 +1,6 @@
 #include "EquipmentStatCalculator.h"
 
+#include "ItemStatCalculator.h"
 #include "tables/ItemTable.h"
 #include "tables/SetOptionTable.h"
 #include "world/Character.h"
@@ -40,7 +41,7 @@ CharacterDerivedStats EquipmentStatCalculator::Calculate(const Character& charac
         if (!itemRecord)
             continue; // unknown item_id -- no bonus data to apply
 
-        total = total + item.CalculateDerivedStats(*itemRecord);
+        total = total + ItemStatCalculator::Calculate(item, *itemRecord);
 
         if (itemRecord->set_id != 0)
             ++setPieceCounts[itemRecord->set_id];

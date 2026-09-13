@@ -6,9 +6,10 @@
 #include "protocol/server/ViewRemoveAll.h"
 #include "world/Drop.h"
 #include "world/Map.h"
-#include "world/MapEvents.h"
 #include "world/Player.h"
 #include "world/Zone.h"
+#include "world/events/CharacterEvents.h"
+#include "world/events/DropEvents.h"
 
 #include <vector>
 

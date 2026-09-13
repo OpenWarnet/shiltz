@@ -20,7 +20,7 @@ void World::Start(const Outbox& outbox, const GameData& data)
     {
         try
         {
-            m_atlas.Add(std::move(record), data.monsters);
+            m_atlas.Add(std::move(record), data);
         }
         catch (const std::exception& e)
         {

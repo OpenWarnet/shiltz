@@ -3,10 +3,11 @@
 #include <cstdint>
 
 // item.scr/item*.scr's refine_group column -- picks which refine ("+N")
-// growth curve an item uses (see world/Item.cpp's kRefineCurveArmor/
-// kRefineCurveWeapon). Only the confirmed values are named here; every
-// other raw value seen in the data (0, 1, 3, 5, 7+) currently falls
-// through to "no refine growth curve" in Item::CalculateRefineContribution.
+// growth curve an item uses (see stats/ItemStatCalculator.cpp's
+// kRefineCurveArmor/kRefineCurveWeapon). Only the confirmed values are
+// named here; every other raw value seen in the data (0, 1, 3, 5, 7+)
+// currently falls through to "no refine growth curve" in
+// ItemStatCalculator::CalculateRefineContribution.
 enum class RefineGroup : std::int64_t
 {
     None = 0, // majority default -- not refinable / no growth curve

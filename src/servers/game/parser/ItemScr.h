@@ -16,7 +16,7 @@
 // appraiser applies to a rolled tier (see handlers/ItemConfirmNpc.h). The
 // ten `*_bonus` fields are a separate, always-on flat stat grant from
 // simply wearing the item, independent of the appraiser system above
-// (world/Item.cpp's CalculateDerivedStats sums both). hp_bonus/ap_bonus in
+// (stats/ItemStatCalculator.cpp's Calculate sums both). hp_bonus/ap_bonus in
 // particular are NOT the same thing as hp_percent_scale/ap_percent_scale:
 // the bonus fields are a flat point grant, the scale fields are a
 // percent-of-roll input to the unrelated appraiser system.
@@ -73,7 +73,7 @@ struct ItemRecord
     // at a given refine level = a per-(refine_group, level) curve shared
     // by every item with that refine_group, multiplied by the item's own
     // refine_damage_scale/refine_magic_scale/refine_defense_scale for that
-    // stat (see world/Item.cpp's kRefineCurve* tables); a scale of 0
+    // stat (see stats/ItemStatCalculator.cpp's kRefineCurve* tables); a scale of 0
     // means that stat doesn't grow on this item at all. refine_group's
     // confirmed values are enums/RefineGroup.h -- kept raw std::int64_t
     // here (not that enum type) to mirror item_type/ItemType, cast at the

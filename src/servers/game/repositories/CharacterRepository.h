@@ -1,6 +1,6 @@
 #pragma once
 
-#include "world/Character.h" // CharacterRawStats
+#include "world/Character.h" // Character, CharacterRawStats
 
 #include <cstdint>
 #include <optional>
@@ -45,9 +45,14 @@ namespace CharacterRepository
         std::uint32_t unallocated_ep = 0;
     };
 
-    // Single joined SELECT across `character` and `character_position`, for
-    // Character::LoadFromDB. std::nullopt if no such character exists.
+    // Single joined SELECT across `character` and `character_position`, for LoadCharacter below.
+    // std::nullopt if no such character exists.
     std::optional<CoreData> Load(IDatabase& db, std::int64_t characterId);
+
+    // Assembles a full Character: CoreData (above) plus ItemRepository::LoadAllEquipment/
+    // LoadAllInventory, SkillRepository::LoadSkillLevels, and QuestFlagRepository::LoadAll.
+    // nullopt if no such character exists. For handlers/Session.cpp's CG_ENTER.
+    std::optional<Character> LoadCharacter(IDatabase& db, std::int64_t characterId);
 
     // Every Save*/Add*/TrySpend* below is a narrow, single-concern update
     // rather than one big rewrite, so a handler that only changed money

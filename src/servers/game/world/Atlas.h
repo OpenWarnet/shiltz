@@ -8,7 +8,7 @@
 #include <memory>
 #include <vector>
 
-class MonsterTable;
+class GameData;
 
 // One Map's contribution to an Atlas::Tick() call -- which map, and every
 // creature that moved on it this tick.
@@ -27,7 +27,7 @@ public:
 
     // Non-positive IDs are unused map.scr slots and are ignored. Throws if
     // the ID is out of range, duplicated, or the Map cannot load its data.
-    void Add(MapRecord record, const MonsterTable& monsters);
+    void Add(MapRecord record, const GameData& data);
 
     Map* Get(std::int64_t mapId);
     const Map* Get(std::int64_t mapId) const;

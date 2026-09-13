@@ -7,15 +7,15 @@
 #include "protocol/client/GameExit.h"
 #include "protocol/server/CharExitSucc.h"
 #include "protocol/server/EnterFail.h"
+#include "repositories/CharacterRepository.h"
 #include "storage/IDatabase.h"
-#include "tables/GameData.h"
-#include "stats/Stats.h"
 #include "world/Player.h"
 #include "world/World.h"
 #include "world/common/EntityIdGenerator.h"
 
 #include <optional>
 #include <string>
+#include <utility>
 
 namespace
 {
@@ -53,9 +53,12 @@ std::optional<LoadedCharacter> LoadForEnter(IDatabase& db, const GameEnter& requ
         .accountId = accountId,
         .characterId = std::get<int64_t>(findCharacterId->Column(0)),
     };
-    if (!loaded.character.LoadFromDB(db, loaded.characterId))
+
+    std::optional<Character> character = CharacterRepository::LoadCharacter(db, loaded.characterId);
+    if (!character)
         return std::nullopt;
 
+    loaded.character = std::move(*character);
     return loaded;
 }
 } // namespace
@@ -85,7 +88,6 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
 
             Character& character = loaded->character;
             character.instance_id = EntityIdGenerator::Next();
-            RecalculateDerivedStats(character, ctx.data.items, ctx.data.setOptions, ctx.data.statusRates);
 
             // Join publishes CharacterJoinEvent and (as a placement) CharacterZoneChangeEvent itself.
             if (!ctx.world.Join(Player{
@@ -121,6 +123,8 @@ void HandleCgExit(const GameContext& ctx, const GameExit& request)
         return finish();
 
     // A failed save just leaves the character at its last saved position.
-    ctx.persistence.Run([character = player->character](IDatabase& db) { character.SavePosition(db); }, finish,
-                        [finish](const std::string&) { finish(); });
+    ctx.persistence.Run(
+        [character = player->character](IDatabase& db)
+        { CharacterRepository::SavePosition(db, character.id, character.map_id, character.x, character.y); },
+        finish, [finish](const std::string&) { finish(); });
 }

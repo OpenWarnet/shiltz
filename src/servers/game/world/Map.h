@@ -14,7 +14,7 @@
 #include <utility>
 #include <vector>
 
-class MonsterTable;
+class GameData;
 
 class Map
 {
@@ -29,8 +29,9 @@ public:
     // True if tile (x, y) is on the map; anything else must be rejected before it reaches the world.
     static bool IsInBounds(std::uint32_t x, std::uint32_t y) noexcept;
 
-    // monsters seeds each spawned creature's instance stats; not retained.
-    Map(MapRecord record, const MonsterTable& monsters);
+    // data.monsters seeds each spawned creature's instance stats; data itself is retained (see
+    // m_data) to recalculate dirty players' derived stats once per Tick.
+    Map(MapRecord record, const GameData& data);
 
     // Everything below (Tick and Events aside) runs only on the world strand -- see
     // GameServer::ScheduleTick -- so none of it locks anything.
@@ -92,6 +93,14 @@ private:
     std::vector<Zone::CreatureMove> TickCreature(std::chrono::milliseconds delta);
     void TickDrops(std::chrono::milliseconds delta);
 
+    // Per-player bookkeeping that isn't triggered by a specific event: today that's just
+    // recalculating any player whose CharacterStats::dirty is set (see Character.h), clearing the
+    // flag as it goes -- more will land here (regen, buff-duration countdown, ...). Runs first in
+    // Tick, before m_events.Dispatch(), so anything that reads stats.derived while reacting to
+    // this tick's events (e.g. EnterSystem on a same-tick join, MovementSystem's view broadcasts)
+    // sees fresh values.
+    void TickCharacter(std::chrono::milliseconds delta);
+
     std::vector<Zone> m_zones;
 
     // Keyed by character.instance_id.
@@ -101,4 +110,6 @@ private:
     Pool<std::uint32_t, Drop> m_drops;
 
     EventBus m_events;
+
+    const GameData& m_data;
 };

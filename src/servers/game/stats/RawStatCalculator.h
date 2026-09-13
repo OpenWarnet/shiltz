@@ -9,7 +9,7 @@ class StatusTable;
 // Computes the job/level/raw-stat baseline of CharacterDerivedStats: no
 // equipment, no buffs. Uses StatusTable's status.scr rate tables plus the
 // per-class constants in RawStatCalculator.cpp. See EquipmentStatCalculator for
-// the other half of the pipeline -- RecalculateDerivedStats (Stats.cpp)
+// the other half of the pipeline -- stats/Stats.h's RecalculateDerivedStats
 // combines both via operator+(CharacterDerivedStats).
 class RawStatCalculator
 {

@@ -15,6 +15,7 @@
 #include "repositories/ItemRepository.h"
 #include "storage/Transaction.h"
 #include "world/Drop.h"
+#include "world/Map.h"
 #include "world/Player.h"
 #include "world/World.h"
 #include "world/common/EntityIdGenerator.h"

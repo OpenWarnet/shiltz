@@ -1,10 +1,13 @@
 #include "Map.h"
 
 #include "Creature.h"
-#include "MapEvents.h"
 #include "Player.h"
+#include "events/CharacterEvents.h"
+#include "events/DropEvents.h"
 #include "parser/MonsterSpawnScr.h"
 #include "parser/NpcScr.h"
+#include "stats/Stats.h"
+#include "tables/GameData.h"
 #include "tables/MonsterTable.h"
 #include "world/common/EntityIdGenerator.h"
 #include "world/common/Paths.h"
@@ -22,10 +25,12 @@ std::int64_t MaxHp(const MonsterTable& monsters, std::int64_t monsterId)
 
 } // namespace
 
-Map::Map(MapRecord record, const MonsterTable& monsters)
+Map::Map(MapRecord record, const GameData& data)
     : id(record.server_map_id), monster_file(std::move(record.monster_file)),
-      npc_file(std::move(record.npc_file)), m_zones(CreateZones())
+      npc_file(std::move(record.npc_file)), m_zones(CreateZones()), m_data(data)
 {
+    const MonsterTable& monsters = data.monsters;
+
     for (const auto& spawn : NpcScr::Load(Paths::Data.npc_spawn / (npc_file + ".scr")))
     {
         for (const auto& instance : spawn.instances)
@@ -190,7 +195,10 @@ EventBus& Map::Events()
 
 void Map::Tick(std::chrono::milliseconds delta)
 {
-    // Events first, so they see the state they were published against; then simulate.
+    // Character bookkeeping before events, so anything reacting to this tick's events (e.g. a
+    // same-tick join, a view change) sees fresh stats.derived; events before simulating, so they
+    // see the state they were published against.
+    TickCharacter(delta);
     m_events.Dispatch();
 
     // Runs regardless of players -- keeping the map clear of stale drops isn't for anyone's benefit.
@@ -199,6 +207,19 @@ void Map::Tick(std::chrono::milliseconds delta)
     // Nobody to see creatures on an empty map, but its events still went out above.
     if (HasPlayers())
         TickCreature(delta);
+}
+
+void Map::TickCharacter(std::chrono::milliseconds delta)
+{
+    ForEachPlayer(
+        [this](Player& player)
+        {
+            if (player.character.stats.dirty)
+            {
+                RecalculateDerivedStats(player.character, m_data);
+                player.character.stats.dirty = false;
+            }
+        });
 }
 
 void Map::TickDrops(std::chrono::milliseconds delta)

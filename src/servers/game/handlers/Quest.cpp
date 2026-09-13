@@ -320,7 +320,7 @@ std::optional<QuestOutcome> ApplyConsequences(IDatabase& db, const ItemTable& it
         character.map_id = static_cast<std::uint32_t>(warp->server_map_id);
         character.x = static_cast<std::uint32_t>(warp->x);
         character.y = static_cast<std::uint32_t>(warp->y);
-        character.SavePosition(db);
+        CharacterRepository::SavePosition(db, characterId, character.map_id, character.x, character.y);
     }
 
     txn.Commit();

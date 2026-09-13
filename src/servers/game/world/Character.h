@@ -9,10 +9,6 @@
 #include <utility>
 #include <vector>
 
-class IDatabase;
-struct CharOtherRecord;
-struct InventoryItemList;
-
 struct CharacterRawStats
 {
     std::uint32_t unallocated_stat_points = 0;
@@ -44,8 +40,7 @@ struct CharacterDerivedStats
     // HP%/AP% contributions (currently equipment-only). Unlike every other
     // field here, these don't add directly onto max_hp/max_ap -- they scale
     // the combined total as one final multiplicative step after every stat
-    // source has been summed via operator+ (see RecalculateDerivedStats in
-    // Stats.cpp).
+    // source has been summed via operator+ (see stats/Stats.h's RecalculateDerivedStats).
     std::int32_t hp_percent_bonus = 0;
     std::int32_t ap_percent_bonus = 0;
 };
@@ -59,6 +54,15 @@ struct CharacterStats
 {
     CharacterRawStats raw;
     CharacterDerivedStats derived;
+
+    // Set at every mutation that affects derived stats, cleared by Map::RecalculateDirtyStats()
+    // once per tick (before event dispatch). Deliberately not the TrinityCore-style "call
+    // UpdateAllStats() inline at every site" pattern -- that project has had unfixed staleness bugs
+    // (TrinityCore#9652, AzerothCore#23179) from exactly the missed-call-site failure mode for
+    // years. Scoped to this Character only: if a future feature derives one character's stats from
+    // another's (party buffs, pet inheritance), that dependency needs its own propagation, not just
+    // this flag.
+    bool dirty = true;
 };
 
 struct CharacterSkill
@@ -88,7 +92,7 @@ struct CharacterInventoryItem
 
 struct Character
 {
-    // `character` table row id -- what every Save* below writes against.
+    // `character` table row id -- what CharacterRepository's load/save functions key on.
     std::int64_t id = 0;
 
     // Runtime world entity id (EntityIdGenerator::Next()), assigned on CG_ENTER.
@@ -124,47 +128,8 @@ struct Character
 
     // Quest dialog flags -- backs quest.scr's has_flag/set_flag columns
     // (see handlers/Quest.cpp) and is sent to the client as-is on CG_ENTER
-    // (see ToCharacterDataLoad below).
+    // (see world/systems/EnterSystem.cpp).
     CharacterQuestFlags quest_flags;
-
-    // Populates this Character from characterId's DB rows. False if no such
-    // character exists.
-    bool LoadFromDB(IDatabase& db, std::int64_t characterId);
-
-    // Persists `map_id`/`x`/`y` alone.
-    void SavePosition(IDatabase& db) const;
-
-    // money/fame have no Character-level Save* wrapper -- every caller now
-    // goes through CharacterRepository::TrySpendMoney/AddMoney/AddFame
-    // directly (relative, guarded writes; see CharacterRepository.h) and
-    // mirrors the DB's confirmed result into `money`/`fame` itself, rather
-    // than flushing a value already mutated in-place here.
-
-    // Persists `hp` and `ap` together -- both are touched together by quest
-    // rewards (see handlers/Quest.cpp), so one narrow update covers both
-    // without also rewriting position/stats.
-    void SaveVitals(IDatabase& db) const;
-
-    // Persists the six named raw stats (stats.raw.strength..sense) plus
-    // stats.raw.unallocated_stat_points.
-    void SaveRawStats(IDatabase& db) const;
-
-    // Persists skills.unallocated_sp/unallocated_ep. Kept separate from
-    // SaveRawStats since they're a different concern (skill points, not
-    // raw stats) and are touched by different handlers.
-    void SaveSkillPoints(IDatabase& db) const;
-
-    // Upserts every entry currently in skills.skills into `character_skill`
-    // (one row per skill_id). Persisting the whole list rather than a
-    // single changed skill mirrors how a CG_CHAR_SKILL_UP_EX request can
-    // raise several skills at once -- re-upserting an unchanged skill is
-    // harmless (see handlers/CharSkillUp.cpp).
-    void SaveSkillLevels(IDatabase& db) const;
-
-    // Persists `level` and `exp` together -- always move in lockstep after
-    // a CG_LEVEL_UP_CHECK (see handlers/LevelUp.cpp), so one narrow update
-    // covers both without also rewriting position/stats.
-    void SaveLevel(IDatabase& db) const;
 
     // Keep equipment/inventory in step with the same wire-slot writes made
     // through ItemRepository -- call alongside every ItemRepository::Save*/
@@ -179,8 +144,18 @@ struct Character
     void SetInventorySlot(std::uint32_t slotIndex, const Item& item);
     void ClearInventorySlot(std::uint32_t slotIndex);
 
-    void SetItemSlot(std::uint32_t wireSlotId, const Item& item);
-    void ClearItemSlot(std::uint32_t wireSlotId);
+    // Returns true if wireSlotId names an equipment slot (as opposed to a bag slot); flags
+    // stats.dirty when it does (via SetEquipmentSlot/ClearEquipmentSlot), since equipping/
+    // unequipping changes derived stats -- the next Map::Tick recalculates it, no caller action
+    // needed.
+    bool SetItemSlot(std::uint32_t wireSlotId, const Item& item);
+    bool ClearItemSlot(std::uint32_t wireSlotId);
+
+    // Adds `amount` (must be positive) to the raw stat named by statId, deducting
+    // unallocated_stat_points by the same amount and flagging stats.dirty. Returns the stat's new
+    // value; nullopt (no-op) if statId is unknown, amount isn't positive, or there aren't enough
+    // unallocated points.
+    std::optional<std::uint32_t> RaiseStat(std::int32_t statId, std::int32_t amount);
 
     // Reads from this cache rather than the DB -- valid as long as every
     // write above is kept paired with its ItemRepository::Save*/Clear*
@@ -188,11 +163,4 @@ struct Character
     std::optional<Item> GetEquipmentSlot(std::uint32_t slot) const;
     std::optional<Item> GetInventorySlot(std::uint32_t slotIndex) const;
     std::optional<Item> GetItemSlot(std::uint32_t wireSlotId) const;
-
-    CharacterDataLoad ToCharacterDataLoad(std::uint32_t epsUserFlag,
-                                           std::uint32_t serverTimestamp) const;
-    InventoryItemList ToInventoryItemList() const;
-
-    // How other clients see this character (GC_CHAR_NEW / GC_CHAR_OTHER_LOAD).
-    CharOtherRecord ToCharOtherRecord() const;
 };

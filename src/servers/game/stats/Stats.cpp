@@ -2,20 +2,20 @@
 
 #include "EquipmentStatCalculator.h"
 #include "RawStatCalculator.h"
+#include "tables/GameData.h"
 #include "world/Character.h"
 
 #include <cstdint>
-#include <iostream>
 #include <optional>
 
-void RecalculateDerivedStats(Character& character, const ItemTable& items, const SetOptionTable& setOptions,
-                              const StatusTable& statusRates)
+void RecalculateDerivedStats(Character& character, const GameData& data)
 {
-    const std::optional<CharacterDerivedStats> raw = RawStatCalculator::Calculate(character, statusRates);
+    const std::optional<CharacterDerivedStats> raw = RawStatCalculator::Calculate(character, data.statusRates);
     if (!raw)
         return;
 
-    const CharacterDerivedStats equipment = EquipmentStatCalculator::Calculate(character, items, setOptions);
+    const CharacterDerivedStats equipment =
+        EquipmentStatCalculator::Calculate(character, data.items, data.setOptions);
 
     CharacterDerivedStats total = *raw + equipment;
 
@@ -28,19 +28,4 @@ void RecalculateDerivedStats(Character& character, const ItemTable& items, const
                                                total.ap_percent_bonus / 100);
 
     character.stats.derived = total;
-
-    const CharacterDerivedStats& derived = character.stats.derived;
-    std::cout << "Recalculated derived stats for " << character.name << ": " << "\n"
-              << "* max_hp=" << derived.max_hp << "\n"
-              << "* max_ap=" << derived.max_ap << "\n"
-              << "* damage=" << derived.damage << "\n"
-              << "* magic=" << derived.magic << "\n"
-              << "* defense=" << derived.defense << "\n"
-              << "* accuracy=" << derived.accuracy << "\n"
-              << "* evasion=" << derived.evasion << "\n"
-              << "* critical=" << derived.critical << "\n"
-              << "* attack_speed=" << derived.attack_speed << "\n"
-              << "* movement_speed=" << derived.movement_speed << "\n"
-              << "* damage_dealt_increase_percent=" << derived.damage_dealt_increase_percent << "\n"
-              << "* damage_taken_decrease_percent=" << derived.damage_taken_decrease_percent << "\n";
 }

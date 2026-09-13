@@ -1,6 +1,11 @@
 #include "CharacterRepository.h"
 
+#include "repositories/ItemRepository.h"
+#include "repositories/QuestFlagRepository.h"
+#include "repositories/SkillRepository.h"
 #include "storage/IDatabase.h"
+
+#include <utility>
 
 namespace CharacterRepository
 {
@@ -58,6 +63,51 @@ std::optional<CoreData> Load(IDatabase& db, std::int64_t characterId)
     data.fame = static_cast<std::uint32_t>(std::get<int64_t>(findCharacter->Column(20)));
 
     return data;
+}
+
+std::optional<Character> LoadCharacter(IDatabase& db, std::int64_t characterId)
+{
+    std::optional<CoreData> core = Load(db, characterId);
+    if (!core)
+        return std::nullopt;
+
+    Character character;
+    character.id = characterId;
+
+    character.name = std::move(core->name);
+    character.level = core->level;
+    character.job_id = core->job_id;
+    character.gender = core->gender;
+    character.hairstyle_id = core->hairstyle_id;
+    character.face_id = core->face_id;
+
+    character.stats.raw = core->raw_stats;
+
+    character.money = core->money; // "cegel" on the wire, see Character::ToCharacterDataLoad
+
+    character.map_id = core->map_id;
+    character.x = core->x;
+    character.y = core->y;
+
+    character.exp = core->exp;
+    character.hp = core->hp;
+    character.ap = core->ap;
+    character.fame = core->fame;
+
+    // TODO: xp has no DB column yet -- placeholder. Note this is distinct
+    // from `exp` (current_exp on the wire, backing the level.scr curve) --
+    // xp isn't read anywhere else in the codebase yet.
+
+    character.equipment = ItemRepository::LoadAllEquipment(db, characterId);
+    character.inventory = ItemRepository::LoadAllInventory(db, characterId);
+
+    character.skills.unallocated_sp = core->unallocated_sp;
+    character.skills.unallocated_ep = core->unallocated_ep;
+    character.skills.skills = SkillRepository::LoadSkillLevels(db, characterId);
+
+    character.quest_flags = QuestFlagRepository::LoadAll(db, characterId);
+
+    return character;
 }
 
 void SavePosition(IDatabase& db, std::int64_t characterId, std::uint32_t mapId, std::uint32_t x,

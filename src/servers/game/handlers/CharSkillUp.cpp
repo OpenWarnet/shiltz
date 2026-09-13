@@ -7,6 +7,7 @@
 #include "protocol/client/CharSkillUpEx.h"
 #include "protocol/server/CharSkillUpExFail.h"
 #include "protocol/server/CharSkillUpExSucc.h"
+#include "repositories/SkillRepository.h"
 #include "tables/GameData.h"
 #include "world/Player.h"
 #include "tables/SkillTable.h"
@@ -142,8 +143,9 @@ void HandleCharSkillUpEx(const GameContext& ctx, const CharSkillUpEx& request, P
     ctx.persistence.Run(
         [saved = character](IDatabase& db)
         {
-            saved.SaveSkillPoints(db);
-            saved.SaveSkillLevels(db);
+            SkillRepository::SaveSkillPoints(db, saved.id, saved.skills.unallocated_sp,
+                                              saved.skills.unallocated_ep);
+            SkillRepository::SaveSkillLevels(db, saved.id, saved.skills.skills);
         },
         reply, [reply](const std::string&) { reply(); });
 }

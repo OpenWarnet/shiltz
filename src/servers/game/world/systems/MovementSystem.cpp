@@ -8,8 +8,8 @@
 #include "protocol/server/CrtLoad.h"
 #include "protocol/server/ViewRemoveAll.h"
 #include "world/Map.h"
-#include "world/MapEvents.h"
 #include "world/Player.h"
+#include "world/events/CharacterEvents.h"
 #include "world/Zone.h"
 
 #include <algorithm>
@@ -45,6 +45,40 @@ bool Erase(std::vector<std::uint32_t>& loaded, std::uint32_t id)
 
     loaded.erase(at);
     return true;
+}
+
+// How another client sees this character (GC_CHAR_NEW / GC_CHAR_OTHER_LOAD). A file-local helper
+// rather than a Character method -- built twice below (a newly-visible other player, and this
+// viewer appearing to others), so worth naming once rather than inlining twice.
+CharOtherRecord BuildCharOtherRecord(const Character& character)
+{
+    CharOtherRecord result;
+    result.id = character.instance_id;
+    result.name = character.name;
+    result.x = character.x;
+    result.y = character.y;
+    result.level = static_cast<std::uint32_t>(character.level);
+    result.job_id = character.job_id;
+    result.gender = character.gender;
+    result.hairstyle_id = character.hairstyle_id;
+    result.face_id = character.face_id;
+    result.max_hp = static_cast<std::uint32_t>(character.stats.derived.max_hp);
+    result.hp = character.hp;
+    result.direction = character.direction;
+
+    for (const auto& equipped : character.equipment)
+    {
+        if (equipped.slot >= CharOtherRecord::kEquipmentSlots)
+            continue;
+
+        result.equipment[equipped.slot] = {
+            .item_id = equipped.item.item_id,
+            .qty_or_refine = equipped.item.WireQuantityOrRefine(),
+            .option_bits = equipped.item.option_bits,
+        };
+    }
+
+    return result;
 }
 } // namespace
 
@@ -195,7 +229,7 @@ void MovementSystem::SyncVisiblePlayers(Player& viewer, std::vector<CharOtherRec
                 return;
 
             Insert(viewer.visible_players, otherId);
-            arrived.push_back(other.character.ToCharOtherRecord());
+            arrived.push_back(BuildCharOtherRecord(other.character));
             if (Insert(other.visible_players, viewerId))
                 gainedSight.push_back(other.connection);
         });
@@ -207,7 +241,7 @@ void MovementSystem::SyncVisiblePlayers(Player& viewer, std::vector<CharOtherRec
     if (!gainedSight.empty())
     {
         CharNew appeared;
-        appeared.record = viewer.character.ToCharOtherRecord();
+        appeared.record = BuildCharOtherRecord(viewer.character);
         m_outbox.Send(gainedSight, appeared);
     }
 }

@@ -11,7 +11,7 @@ Atlas::Atlas(std::size_t maxMapId)
 {
 }
 
-void Atlas::Add(MapRecord record, const MonsterTable& monsters)
+void Atlas::Add(MapRecord record, const GameData& data)
 {
     const auto mapId = record.server_map_id;
     if (mapId <= 0)
@@ -30,7 +30,7 @@ void Atlas::Add(MapRecord record, const MonsterTable& monsters)
 
     try
     {
-        slot = std::make_unique<Map>(std::move(record), monsters);
+        slot = std::make_unique<Map>(std::move(record), data);
         ++m_mapCount;
     }
     catch (const std::exception& e)

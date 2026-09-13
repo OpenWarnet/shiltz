@@ -1,8 +1,9 @@
-#include "Item.h"
+#include "ItemStatCalculator.h"
 
 #include "enums/RefineGroup.h"
 #include "parser/ItemScr.h"
 #include "world/Character.h"
+#include "world/Item.h"
 
 #include <array>
 #include <cstdint>
@@ -82,9 +83,9 @@ std::optional<std::int64_t> FindCurvePoints(const RefineCurvePoint* curve, std::
 }
 } // namespace
 
-CharacterDerivedStats Item::CalculateOptionContribution(const ItemRecord& record) const
+CharacterDerivedStats ItemStatCalculator::CalculateOptionContribution(const Item& item, const ItemRecord& record)
 {
-    const std::array<std::int32_t, kOptionGateCount> deviations = DecodeOptionDeviations(option_bits);
+    const std::array<std::int32_t, kOptionGateCount> deviations = DecodeOptionDeviations(item.option_bits);
 
     CharacterDerivedStats derived;
     derived.damage = static_cast<std::int32_t>(deviations[0] * record.damage_scale);
@@ -101,10 +102,10 @@ CharacterDerivedStats Item::CalculateOptionContribution(const ItemRecord& record
     return derived;
 }
 
-CharacterDerivedStats Item::CalculateRefineContribution(const ItemRecord& record) const
+CharacterDerivedStats ItemStatCalculator::CalculateRefineContribution(const Item& item, const ItemRecord& record)
 {
     CharacterDerivedStats derived;
-    if (refine_level == 0)
+    if (item.refine_level == 0)
         return derived;
 
     const auto refineGroup = static_cast<RefineGroup>(record.refine_group);
@@ -124,7 +125,7 @@ CharacterDerivedStats Item::CalculateRefineContribution(const ItemRecord& record
 
     if (curve)
     {
-        if (const std::optional<std::int64_t> points = FindCurvePoints(curve, curveSize, refine_level))
+        if (const std::optional<std::int64_t> points = FindCurvePoints(curve, curveSize, item.refine_level))
         {
             derived.damage = static_cast<std::int32_t>(*points * record.refine_damage_scale);
             derived.magic = static_cast<std::int32_t>(*points * record.refine_magic_scale);
@@ -135,7 +136,7 @@ CharacterDerivedStats Item::CalculateRefineContribution(const ItemRecord& record
     if (refineGroup == RefineGroup::Weapon && record.damage_dealt_increase_percent_bonus != 0)
     {
         if (const std::optional<std::int64_t> points = FindCurvePoints(
-                kRefineDamagePercentCurveWeapon, std::size(kRefineDamagePercentCurveWeapon), refine_level))
+                kRefineDamagePercentCurveWeapon, std::size(kRefineDamagePercentCurveWeapon), item.refine_level))
         {
             derived.damage_dealt_increase_percent = static_cast<std::int32_t>(*points);
         }
@@ -144,7 +145,7 @@ CharacterDerivedStats Item::CalculateRefineContribution(const ItemRecord& record
     return derived;
 }
 
-CharacterDerivedStats Item::CalculateDerivedStats(const ItemRecord& record) const
+CharacterDerivedStats ItemStatCalculator::Calculate(const Item& item, const ItemRecord& record)
 {
     CharacterDerivedStats flat;
     flat.damage = static_cast<std::int32_t>(record.damage_bonus);
@@ -162,5 +163,5 @@ CharacterDerivedStats Item::CalculateDerivedStats(const ItemRecord& record) cons
     flat.max_hp = static_cast<std::int32_t>(record.hp_bonus);
     flat.max_ap = static_cast<std::int32_t>(record.ap_bonus);
 
-    return flat + CalculateOptionContribution(record) + CalculateRefineContribution(record);
+    return flat + CalculateOptionContribution(item, record) + CalculateRefineContribution(item, record);
 }

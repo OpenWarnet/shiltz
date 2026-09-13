@@ -3,9 +3,6 @@
 #include <cstdint>
 #include <optional>
 
-struct CharacterDerivedStats;
-struct ItemRecord;
-
 // The canonical "an item, in some quantity, possibly refined, possibly
 // appraised" payload -- the shape shared by an equipment_slot row, an
 // inventory_slot row, and a dropped item (see world/Drop.h).
@@ -66,27 +63,4 @@ struct Item
         fresh.quantity = amount;
         return fresh;
     }
-
-    // This item's full derived-stat contribution: `record`'s own flat
-    // `*_bonus` columns, plus this item's magic-option roll and refine
-    // ("+N") growth against `record` (see the private helpers below).
-    // Pure function of this item's own state plus `record` -- computed
-    // fresh on every call, not cached (see Item.cpp).
-    CharacterDerivedStats CalculateDerivedStats(const ItemRecord& record) const;
-
-private:
-    // This item's magic-option roll contribution against `record`'s
-    // matching `*_scale` columns -- decodes option_bits into a per-gate
-    // deviation from baseline tier 2 (the inverse of RollOptionBits,
-    // handlers/ItemConfirmNpc.cpp), each times its gate's scale column, in
-    // the same damage/magic/defense/attack_speed/accuracy/critical_rate/
-    // evasion_rate/movement_speed/hp_percent/ap_percent order RollOptionBits
-    // packs option_bits in.
-    CharacterDerivedStats CalculateOptionContribution(const ItemRecord& record) const;
-
-    // This item's refine ("+N") growth at its current refine_level, against
-    // `record`'s refine_group/refine_*_scale columns -- see Item.cpp for the
-    // per-(refine_group, level) curve. refine_level == 0 contributes
-    // nothing.
-    CharacterDerivedStats CalculateRefineContribution(const ItemRecord& record) const;
 };

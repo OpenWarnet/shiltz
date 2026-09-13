@@ -6,6 +6,8 @@
 #include "protocol/client/LevelUpCheck.h"
 #include "protocol/server/LevelUpFail.h"
 #include "protocol/server/LevelUpSucc.h"
+#include "repositories/CharacterRepository.h"
+#include "repositories/SkillRepository.h"
 #include "tables/GameData.h"
 #include "tables/LevelTable.h"
 #include "world/Player.h"
@@ -53,6 +55,10 @@ void HandleLevelUpCheck(const GameContext& ctx, const LevelUpCheck&, Player& pla
     character.stats.raw.unallocated_stat_points += static_cast<std::uint32_t>(statPointsGained);
     character.skills.unallocated_sp += static_cast<std::uint32_t>(spGained);
 
+    // level feeds RawStatCalculator's formulas directly -- flag it since this writes
+    // character.level outside of a Character method that would do so itself.
+    character.stats.dirty = true;
+
     LevelUpSucc response;
     response.level = level;
     response.unallocated_stat_points = static_cast<std::int32_t>(character.stats.raw.unallocated_stat_points);
@@ -65,9 +71,10 @@ void HandleLevelUpCheck(const GameContext& ctx, const LevelUpCheck&, Player& pla
     ctx.persistence.Run(
         [saved = character](IDatabase& db)
         {
-            saved.SaveLevel(db);
-            saved.SaveRawStats(db);
-            saved.SaveSkillPoints(db);
+            CharacterRepository::SaveLevel(db, saved.id, saved.level, saved.exp);
+            CharacterRepository::SaveRawStats(db, saved.id, saved.stats.raw);
+            SkillRepository::SaveSkillPoints(db, saved.id, saved.skills.unallocated_sp,
+                                              saved.skills.unallocated_ep);
         },
         reply, [reply](const std::string&) { reply(); });
 }
