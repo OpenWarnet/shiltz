@@ -90,6 +90,7 @@ private:
 
     static std::vector<Zone> CreateZones();
     std::vector<Zone::CreatureMove> TickCreature(std::chrono::milliseconds delta);
+    void TickDrops(std::chrono::milliseconds delta);
 
     std::vector<Zone> m_zones;
 

@@ -210,35 +210,23 @@ void HandleStoreItemOut(const GameContext& ctx, const StoreItemOut& request, Pla
     const std::int64_t characterId = player.character.id;
     const std::uint32_t inventorySlotIndex = BagIndex(request.inventory_slot_id);
 
-    // Stacking needs the same stackable item on both sides; anything else means stale client state.
     auto existingInventory = player.character.GetInventorySlot(inventorySlotIndex);
-    if (existingInventory &&
-        (existingInventory->item_id != bankContent->item_id || existingInventory->has_refine_level ||
-         bankContent->has_refine_level))
-        return;
-
-    Item updatedInventory = *bankContent;
-    Item remainingBank = *bankContent;
-    bool bankSlotCleared = true;
 
     // Equippable items always move whole, regardless of the requested amount.
-    if (!bankContent->has_refine_level)
-    {
-        const std::uint32_t movedAmount = std::min<std::uint32_t>(request.amount, bankContent->quantity);
-        if (existingInventory)
-        {
-            updatedInventory = *existingInventory;
-            updatedInventory.quantity += movedAmount;
-        }
-        else
-        {
-            updatedInventory.quantity = movedAmount;
-        }
+    const std::uint32_t movedAmount = bankContent->has_refine_level
+                                           ? bankContent->quantity
+                                           : std::min<std::uint32_t>(request.amount, bankContent->quantity);
 
-        bankSlotCleared = movedAmount >= bankContent->quantity;
-        if (!bankSlotCleared)
-            remainingBank.quantity = bankContent->quantity - movedAmount;
-    }
+    // A slot holding an incompatible item means the client's view is stale.
+    const std::optional<Item> resolvedInventory = bankContent->StackedInto(existingInventory, movedAmount);
+    if (!resolvedInventory)
+        return;
+    const Item updatedInventory = *resolvedInventory;
+
+    Item remainingBank = *bankContent;
+    const bool bankSlotCleared = bankContent->has_refine_level || movedAmount >= bankContent->quantity;
+    if (!bankSlotCleared)
+        remainingBank.quantity = bankContent->quantity - movedAmount;
 
     const std::uint32_t bankSlotId = request.bank_slot_id;
 
@@ -313,33 +301,22 @@ void HandleStoreItemIn(const GameContext& ctx, const StoreItemIn& request, Playe
         return;
 
     auto existingBank = player.bank->GetSlot(request.bank_slot_id);
-    if (existingBank &&
-        (existingBank->item_id != existingInventory->item_id || existingBank->has_refine_level ||
-         existingInventory->has_refine_level))
-        return;
-
-    Item updatedBank = *existingInventory;
-    Item remainingInventory = *existingInventory;
-    bool inventorySlotCleared = true;
 
     // Equippable items always move whole, regardless of the requested amount.
-    if (!existingInventory->has_refine_level)
-    {
-        const std::uint32_t movedAmount = std::min<std::uint32_t>(request.amount, existingInventory->quantity);
-        if (existingBank)
-        {
-            updatedBank = *existingBank;
-            updatedBank.quantity += movedAmount;
-        }
-        else
-        {
-            updatedBank.quantity = movedAmount;
-        }
+    const std::uint32_t movedAmount = existingInventory->has_refine_level
+                                           ? existingInventory->quantity
+                                           : std::min<std::uint32_t>(request.amount, existingInventory->quantity);
 
-        inventorySlotCleared = movedAmount >= existingInventory->quantity;
-        if (!inventorySlotCleared)
-            remainingInventory.quantity = existingInventory->quantity - movedAmount;
-    }
+    // A slot holding an incompatible item means the client's view is stale.
+    const std::optional<Item> resolvedBank = existingInventory->StackedInto(existingBank, movedAmount);
+    if (!resolvedBank)
+        return;
+    const Item updatedBank = *resolvedBank;
+
+    Item remainingInventory = *existingInventory;
+    const bool inventorySlotCleared = existingInventory->has_refine_level || movedAmount >= existingInventory->quantity;
+    if (!inventorySlotCleared)
+        remainingInventory.quantity = existingInventory->quantity - movedAmount;
 
     const std::uint32_t bankSlotId = request.bank_slot_id;
 

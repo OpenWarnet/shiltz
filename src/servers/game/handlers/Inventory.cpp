@@ -9,7 +9,6 @@
 #include "protocol/server/InventoryItemList.h"
 #include "protocol/server/ItemDeleteSuccess.h"
 #include "protocol/server/ItemDropSuccess.h"
-#include "protocol/server/ItemMapRemove.h"
 #include "protocol/server/ItemMoveFail.h"
 #include "protocol/server/ItemMoveSuccess.h"
 #include "protocol/server/ItemPickupSuccess.h"
@@ -63,22 +62,12 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request, Player&
     const std::uint32_t itemId = drop->item.item_id;
     const std::optional<Item> existing = player.character.GetInventorySlot(slotIndex);
 
-    // A slot holding a different item means the client's view is stale: put the item back.
-    Item updated;
-    if (existing)
-    {
-        if (existing->item_id != itemId)
-            return map->Spawn(*drop);
+    // A slot holding an incompatible item means the client's view is stale: put it back.
+    const std::optional<Item> resolved = drop->item.StackedInto(existing, drop->item.quantity);
+    if (!resolved)
+        return map->Spawn(*drop);
 
-        updated = *existing;
-        updated.quantity += 1;
-    }
-    else
-    {
-        // Pickup always claims one unit, keeping the ground item's level/options.
-        updated = drop->item;
-        updated.quantity = 1;
-    }
+    const Item updated = *resolved;
 
     auto putBack = [map, drop = *drop] { map->Spawn(drop); };
 
@@ -101,10 +90,6 @@ void HandleItemPickup(const GameContext& ctx, const ItemPickup& request, Player&
             succResponse.item_id = itemId;
             succResponse.qty_or_refine = updated.WireQuantityOrRefine();
             ctx.outbox.Send(ctx.connection, succResponse);
-
-            ItemMapRemove removeResponse;
-            removeResponse.id = request.id;
-            ctx.outbox.Send(ctx.connection, removeResponse);
         },
         [putBack](const std::string&) { putBack(); });
 }

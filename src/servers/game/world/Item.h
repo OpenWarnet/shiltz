@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 
 struct CharacterDerivedStats;
 struct ItemRecord;
@@ -41,6 +42,29 @@ struct Item
         }
 
         return quantity > 0 ? quantity - 1 : 0;
+    }
+
+    // What `slot` becomes after receiving `amount` units of *this* item (used as the source of
+    // truth for item_level/option_bits when placing fresh) -- nullopt if slot holds a different
+    // item_id or either side is equippable (has_refine_level), which can never stack. Callers
+    // decide what "can't" means for them (put a drop back on the ground, fail the request, drop
+    // it silently) -- shared by every handler where the client names the target slot itself
+    // (CG_ITEM_PICKUP, CG_STORE_ITEM_IN/OUT, CG_ITEM_TRADE_BUY).
+    std::optional<Item> StackedInto(const std::optional<Item>& slot, std::uint32_t amount) const
+    {
+        if (slot)
+        {
+            if (slot->item_id != item_id || slot->has_refine_level || has_refine_level)
+                return std::nullopt;
+
+            Item updated = *slot;
+            updated.quantity += amount;
+            return updated;
+        }
+
+        Item fresh = *this;
+        fresh.quantity = amount;
+        return fresh;
     }
 
     // This item's full derived-stat contribution: `record`'s own flat

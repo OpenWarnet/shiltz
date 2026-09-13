@@ -74,6 +74,8 @@ add_executable (
 	"world/systems/EnterSystem.cpp"
 	"world/systems/MovementSystem.h"
 	"world/systems/MovementSystem.cpp"
+	"world/systems/DropSystem.h"
+	"world/systems/DropSystem.cpp"
 	"world/Zone.h"
 	"world/Zone.cpp"
 	"world/Atlas.h"

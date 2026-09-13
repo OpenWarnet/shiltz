@@ -57,20 +57,12 @@ void HandleItemTradeBuy(const GameContext& ctx, const ItemTradeBuy& request, Pla
     const std::uint32_t slotIndex = BagIndex(request.slot_id);
     const std::optional<Item> existing = player.character.GetInventorySlot(slotIndex);
 
-    // A slot holding a different item means the client's view is stale: reject before any money moves.
-    Item updated;
-    if (existing)
-    {
-        if (existing->item_id != itemId)
-            return sendFail();
+    // A slot holding an incompatible item means the client's view is stale: reject before any money moves.
+    const std::optional<Item> resolved = Item{.item_id = itemId}.StackedInto(existing, request.amount);
+    if (!resolved)
+        return sendFail();
 
-        updated = *existing;
-        updated.quantity += request.amount;
-    }
-    else
-    {
-        updated = Item{.item_id = itemId, .quantity = request.amount};
-    }
+    const Item updated = *resolved;
 
     // The debit and the item land together; nullopt if money or the slot changed underneath.
     auto writes = [=](IDatabase& db) -> std::optional<std::int64_t>

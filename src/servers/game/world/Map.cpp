@@ -193,9 +193,27 @@ void Map::Tick(std::chrono::milliseconds delta)
     // Events first, so they see the state they were published against; then simulate.
     m_events.Dispatch();
 
+    // Runs regardless of players -- keeping the map clear of stale drops isn't for anyone's benefit.
+    TickDrops(delta);
+
     // Nobody to see creatures on an empty map, but its events still went out above.
     if (HasPlayers())
         TickCreature(delta);
+}
+
+void Map::TickDrops(std::chrono::milliseconds delta)
+{
+    std::vector<Drop> expired;
+    ForEachDrop(
+        [&](Drop& drop)
+        {
+            drop.time_to_live -= delta;
+            if (drop.time_to_live <= std::chrono::milliseconds::zero())
+                expired.push_back(drop);
+        });
+
+    for (const Drop& drop : expired)
+        Despawn(drop);
 }
 
 std::vector<Zone::CreatureMove> Map::TickCreature(std::chrono::milliseconds delta)
