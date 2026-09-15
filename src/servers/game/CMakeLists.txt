@@ -60,6 +60,7 @@ add_executable (
 	"world/Item.h"
 	"world/Drop.h"
 	"world/Creature.h"
+	"world/Creature.cpp"
 	"world/Character.h"
 	"world/Character.cpp"
 	"world/Bank.h"

@@ -1,7 +1,34 @@
 #pragma once
 
+#include "parser/MonsterScr.h"
+
 #include <chrono>
 #include <cstdint>
+#include <functional>
+#include <optional>
+#include <utility>
+
+class MonsterTable;
+
+// Per-instance origin and respawn state for a monster loaded from
+// MonsterSpawnScr. NPCs have no CreatureSpawn because NpcScr places them directly.
+struct CreatureSpawn
+{
+    std::uint32_t x = 0;
+    std::uint32_t y = 0;
+    std::uint32_t direction = 0;
+    std::optional<std::chrono::milliseconds> time_until_respawn;
+    std::uint32_t sequence = 0;
+
+    std::pair<std::uint32_t, std::uint32_t> RollPosition(std::int64_t monsterId,
+                                                        std::uint32_t radius,
+                                                        std::uint32_t maxCoordinate);
+
+private:
+    std::uint64_t MixSpawnSeed(std::int64_t monsterId);
+    static std::uint32_t RollCoordinate(std::uint32_t anchor, std::uint32_t radius,
+                                        std::uint32_t maxCoordinate, std::uint64_t roll);
+};
 
 // Where a Creature came from -- an npcNN.scr static entity (dialogue/shop/
 // warp/gacha, "category == 3" in monster.scr terms) or an mNN.scr monster
@@ -15,7 +42,7 @@ enum class CreatureKind : std::uint8_t
     Monster,
 };
 
-// A monster's current AI behavior -- see Zone::Tick. NPCs (kind ==
+// A monster's current AI behavior. NPCs (kind ==
 // CreatureKind::Npc) never leave CreatureAiState::Idle; they're static
 // dialogue/shop/warp entities, not mobs.
 enum class CreatureAiState : std::uint8_t
@@ -24,20 +51,37 @@ enum class CreatureAiState : std::uint8_t
     Wander,
 };
 
+enum class CreatureLifecycle : std::uint8_t
+{
+    Alive,
+    Dead,
+    WaitingForRespawn,
+    RespawnPending,
+};
+
+struct CreatureMove
+{
+    std::uint32_t creature_id = 0;
+    std::uint32_t from_x = 0;
+    std::uint32_t from_y = 0;
+    std::uint32_t to_x = 0;
+    std::uint32_t to_y = 0;
+};
+
 // A single spawned creature on a Map -- one instance from either an
 // npcNN.scr NpcInstance (kind == Npc) or an mNN.scr MonsterSpawnInstance
-// (kind == Monster). `monster_id` joins NpcSpawn::id or MonsterRecord::id
-// depending on `kind` -- this struct only carries per-instance state
-// (placement, current HP), not the template's own stats/behavior data. `instance_id` has nothing to do with
-// the .scr data itself -- it's assigned at spawn from EntityIdGenerator::Next()
+// (kind == Monster). `monster_template` refers to the immutable monster.scr
+// row owned by GameData; Creature only owns per-instance state such as
+// placement and current HP. `instance_id` has nothing to do with the .scr
+// data itself -- it's assigned at spawn from EntityIdGenerator::Next()
 // (world/common/EntityIdGenerator.h) to identify this one spawned instance
-// uniquely across the whole World, the way GC_CRT_LOAD's own entity id
-// does on the wire.
+// uniquely across the whole World, the way GC_CRT_LOAD's own entity id does
+// on the wire.
 struct Creature
 {
     std::uint32_t instance_id = 0;
     CreatureKind kind = CreatureKind::Monster;
-    std::uint64_t monster_id = 0;
+    std::reference_wrapper<const MonsterRecord> monster_template;
     std::uint32_t x = 0;
     std::uint32_t y = 0;
     std::uint32_t direction = 0;
@@ -45,7 +89,14 @@ struct Creature
     // Current HP; starts at the monster.scr template's max at spawn.
     std::int64_t hp = 0;
 
-    // AI state (Monster kind only -- see Zone::Tick). ai_timer
+    // Present only for monsters originating from MonsterSpawnScr. The
+    // Creature stays in Map's pool with hp <= 0 while this state counts
+    // down to a new spawned instance.
+    std::optional<CreatureSpawn> spawn;
+
+    CreatureLifecycle lifecycle = CreatureLifecycle::Alive;
+
+    // AI state (Monster kind only). ai_timer
     // counts down by each World tick's delta; when it reaches zero the
     // creature re-rolls its next state. ai_decision_seq bumps once per
     // roll and feeds the decision's pseudo-random seed alongside
@@ -53,4 +104,27 @@ struct Creature
     CreatureAiState ai_state = CreatureAiState::Idle;
     std::chrono::milliseconds ai_timer{0};
     std::uint32_t ai_decision_seq = 0;
+
+    void Tick(std::chrono::milliseconds delta, std::uint32_t maxCoordinate);
+    void Respawn(std::uint32_t maxCoordinate);
+    [[nodiscard]] bool NeedsRespawn() const noexcept;
+    std::optional<CreatureMove> TakePendingMove();
+
+private:
+    friend class Map;
+
+    Creature(CreatureKind creatureKind, std::int64_t monsterId, const MonsterTable& monsters,
+             std::optional<CreatureSpawn> creatureSpawn = std::nullopt);
+
+    void TickAi(std::chrono::milliseconds delta, std::uint32_t maxCoordinate);
+    void TickRespawn(std::chrono::milliseconds delta);
+    void RollNextAiState(std::uint32_t maxCoordinate);
+    std::uint64_t MixDecisionSeed();
+    static std::uint32_t StepCoordinate(std::uint32_t coordinate, std::int32_t delta,
+                                        std::uint32_t maxCoordinate);
+
+    static const MonsterRecord& RequireMonsterTemplate(const MonsterTable& monsters,
+                                                       std::int64_t monsterId);
+
+    std::optional<CreatureMove> m_pendingMove;
 };

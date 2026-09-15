@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../parser/MapScr.h"
+#include "Creature.h"
 #include "Drop.h"
 #include "Player.h"
 #include "Zone.h"
@@ -8,9 +9,9 @@
 #include "world/common/Pool.h"
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <span>
 #include <utility>
 #include <vector>
 
@@ -36,10 +37,7 @@ public:
     // Everything below (Tick and Events aside) runs only on the world strand -- see
     // GameServer::ScheduleTick -- so none of it locks anything.
 
-    void AddCreature(Creature creature);
-
-    // Invalidated by AddCreature and the next Tick.
-    std::span<const Creature> CreaturesInZone(Zone::Coordinates zone) const;
+    void Spawn(Creature creature);
 
     // Adds player to the pool and publishes CharacterJoinEvent; false if already here.
     [[nodiscard]] bool Spawn(Player player);
@@ -64,6 +62,11 @@ public:
     Player* GetPlayer(std::uint32_t instanceId);
     const Player* GetPlayer(std::uint32_t instanceId) const;
 
+    // nullptr if that creature isn't on this map. Pointers are invalidated by
+    // the next creature Spawn or respawn; hold instance ids across mutations.
+    Creature* GetCreature(std::uint32_t instanceId);
+    const Creature* GetCreature(std::uint32_t instanceId) const;
+
     bool HasPlayers() const;
 
     // Calls fn(Player&) for every player on this map; don't Spawn or Despawn from fn.
@@ -80,6 +83,14 @@ public:
             fn(drop);
     }
 
+    // Calls fn(const Creature&) for every creature on this map, including
+    // dead monsters waiting to respawn. Don't Spawn creatures from fn.
+    template <typename Fn> void ForEachCreature(Fn&& fn) const
+    {
+        for (const Creature& creature : m_creatures)
+            fn(creature);
+    }
+
     // Register listeners and publish this map's events; dispatched in Tick.
     EventBus& Events();
 
@@ -89,8 +100,7 @@ private:
     std::string monster_file;
     std::string npc_file;
 
-    static std::vector<Zone> CreateZones();
-    std::vector<Zone::CreatureMove> TickCreature(std::chrono::milliseconds delta);
+    std::vector<CreatureMove> TickMonster(std::chrono::milliseconds delta);
     void TickDrops(std::chrono::milliseconds delta);
 
     // Per-player bookkeeping that isn't triggered by a specific event: today that's just
@@ -101,7 +111,9 @@ private:
     // sees fresh values.
     void TickCharacter(std::chrono::milliseconds delta);
 
-    std::vector<Zone> m_zones;
+    // Keyed by Creature::instance_id. Dead monsters remain here while their
+    // embedded CreatureSpawn counts down; ready entries are re-keyed on respawn.
+    Pool<std::uint32_t, Creature> m_creatures;
 
     // Keyed by character.instance_id.
     Pool<std::uint32_t, Player> m_players;

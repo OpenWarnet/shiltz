@@ -115,24 +115,26 @@ void MovementSystem::SendViewChange(const CharacterZoneChangeEvent& event) const
         m_outbox.Send(player->connection, otherLoad);
 
     CrtLoad load;
-    for (const auto& zone : Zone::Around(event.to))
-    {
-        // Already in view before the change.
-        if (event.from && Zone::IsNeighboring(*event.from, zone))
-            continue;
-
-        for (const auto& creature : m_map.CreaturesInZone(zone))
+    m_map.ForEachCreature(
+        [&](const Creature& creature)
         {
+            if (creature.hp <= 0)
+                return;
+
+            const Zone::Coordinates creatureZone = Zone::Of(creature.x, creature.y);
+            if (!Zone::IsNeighboring(event.to, creatureZone) ||
+                (event.from && Zone::IsNeighboring(*event.from, creatureZone)))
+                return;
+
             load.records.push_back(CrtLoadRecord{
                 .id = creature.instance_id,
                 .x = creature.x,
                 .y = creature.y,
-                .monster_id = static_cast<std::uint32_t>(creature.monster_id),
+                .monster_id = static_cast<std::uint32_t>(creature.monster_template.get().id),
                 .direction = creature.direction,
                 .hp = static_cast<std::uint64_t>(creature.hp),
             });
-        }
-    }
+        });
 
     // Always answer a placement (as the old enter flow did); zone changes only when something appeared.
     if (!event.from || !load.records.empty())
@@ -141,15 +143,16 @@ void MovementSystem::SendViewChange(const CharacterZoneChangeEvent& event) const
     // A placement has no previous view to clear creatures from.
     if (event.from)
     {
-        for (const auto& zone : Zone::Around(*event.from))
-        {
-            // Still in view after the change.
-            if (Zone::IsNeighboring(event.to, zone))
-                continue;
-
-            for (const auto& creature : m_map.CreaturesInZone(zone))
-                remove.creature_ids.push_back(creature.instance_id);
-        }
+        m_map.ForEachCreature(
+            [&](const Creature& creature)
+            {
+                const Zone::Coordinates creatureZone = Zone::Of(creature.x, creature.y);
+                if (Zone::IsNeighboring(*event.from, creatureZone) &&
+                    !Zone::IsNeighboring(event.to, creatureZone))
+                {
+                    remove.creature_ids.push_back(creature.instance_id);
+                }
+            });
     }
 
     if (!remove.player_ids.empty() || !remove.creature_ids.empty())

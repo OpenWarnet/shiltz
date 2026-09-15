@@ -9,25 +9,13 @@
 #include "stats/Stats.h"
 #include "tables/GameData.h"
 #include "tables/MonsterTable.h"
-#include "world/common/EntityIdGenerator.h"
 #include "world/common/Paths.h"
 
 #include <iostream>
-#include <iterator>
-
-namespace
-{
-std::int64_t MaxHp(const MonsterTable& monsters, std::int64_t monsterId)
-{
-    const MonsterRecord* record = monsters.Find(monsterId);
-    return record ? record->hp : 0;
-}
-
-} // namespace
 
 Map::Map(MapRecord record, const GameData& data)
     : id(record.server_map_id), monster_file(std::move(record.monster_file)),
-      npc_file(std::move(record.npc_file)), m_zones(CreateZones()), m_data(data)
+      npc_file(std::move(record.npc_file)), m_data(data)
 {
     const MonsterTable& monsters = data.monsters;
 
@@ -35,15 +23,11 @@ Map::Map(MapRecord record, const GameData& data)
     {
         for (const auto& instance : spawn.instances)
         {
-            AddCreature(Creature{
-                .instance_id = EntityIdGenerator::Next(),
-                .kind = CreatureKind::Npc,
-                .monster_id = static_cast<std::uint64_t>(spawn.id),
-                .x = static_cast<std::uint32_t>(instance.x),
-                .y = static_cast<std::uint32_t>(instance.y),
-                .direction = static_cast<std::uint32_t>(instance.direction),
-                .hp = MaxHp(monsters, spawn.id),
-            });
+            Creature creature(CreatureKind::Npc, spawn.id, monsters);
+            creature.x = static_cast<std::uint32_t>(instance.x);
+            creature.y = static_cast<std::uint32_t>(instance.y);
+            creature.direction = static_cast<std::uint32_t>(instance.direction);
+            Spawn(std::move(creature));
         }
     }
 
@@ -52,15 +36,23 @@ Map::Map(MapRecord record, const GameData& data)
     {
         for (const auto& instance : group.instances)
         {
-            AddCreature(Creature{
-                .instance_id = EntityIdGenerator::Next(),
-                .kind = CreatureKind::Monster,
-                .monster_id = static_cast<std::uint64_t>(group.monster_id),
-                .x = static_cast<std::uint32_t>(instance.x),
-                .y = static_cast<std::uint32_t>(instance.y),
-                .direction = static_cast<std::uint32_t>(instance.direction),
-                .hp = MaxHp(monsters, group.monster_id),
-            });
+            const std::uint32_t x = static_cast<std::uint32_t>(instance.x);
+            const std::uint32_t y = static_cast<std::uint32_t>(instance.y);
+            if (!IsInBounds(x, y))
+            {
+                std::cout << "Ignoring monster spawn " << group.monster_id
+                          << " with out-of-range position (" << x << ", " << y << ")\n";
+                continue;
+            }
+
+            Creature creature(CreatureKind::Monster, group.monster_id, monsters,
+                              CreatureSpawn{
+                                  .x = x,
+                                  .y = y,
+                                  .direction = static_cast<std::uint32_t>(instance.direction),
+                              });
+            creature.Respawn(kGridSize - 1);
+            Spawn(std::move(creature));
         }
     }
 }
@@ -70,24 +62,19 @@ bool Map::IsInBounds(std::uint32_t x, std::uint32_t y) noexcept
     return x < kGridSize && y < kGridSize;
 }
 
-void Map::AddCreature(Creature creature)
+void Map::Spawn(Creature creature)
 {
     if (!IsInBounds(creature.x, creature.y))
     {
-        std::cout << "Ignoring creature " << creature.monster_id << " with out-of-range position ("
-                  << creature.x << ", " << creature.y << ")\n";
+        std::cout << "Ignoring creature " << creature.monster_template.get().id
+                  << " with out-of-range position (" << creature.x << ", " << creature.y
+                  << ")\n";
         return;
     }
 
-    m_zones[Zone::Of(creature.x, creature.y).Index()].AddCreature(std::move(creature));
-}
-
-std::span<const Creature> Map::CreaturesInZone(Zone::Coordinates zone) const
-{
-    if (!Zone::IsInGrid(zone))
-        return {};
-
-    return m_zones[zone.Index()].Creatures();
+    const std::uint32_t instanceId = creature.instance_id;
+    if (!m_creatures.Add(instanceId, std::move(creature)))
+        std::cout << "Ignoring duplicate creature instance " << instanceId << "\n";
 }
 
 bool Map::Spawn(Player player)
@@ -183,6 +170,16 @@ const Player* Map::GetPlayer(std::uint32_t instanceId) const
     return m_players.Get(instanceId);
 }
 
+Creature* Map::GetCreature(std::uint32_t instanceId)
+{
+    return m_creatures.Get(instanceId);
+}
+
+const Creature* Map::GetCreature(std::uint32_t instanceId) const
+{
+    return m_creatures.Get(instanceId);
+}
+
 bool Map::HasPlayers() const
 {
     return !m_players.Empty();
@@ -206,7 +203,7 @@ void Map::Tick(std::chrono::milliseconds delta)
 
     // Nobody to see creatures on an empty map, but its events still went out above.
     if (HasPlayers())
-        TickCreature(delta);
+        TickMonster(delta);
 }
 
 void Map::TickCharacter(std::chrono::milliseconds delta)
@@ -237,37 +234,36 @@ void Map::TickDrops(std::chrono::milliseconds delta)
         Despawn(drop);
 }
 
-std::vector<Zone::CreatureMove> Map::TickCreature(std::chrono::milliseconds delta)
+std::vector<CreatureMove> Map::TickMonster(std::chrono::milliseconds delta)
 {
-    std::vector<Creature> relocated;
-    std::vector<Zone::CreatureMove> moves;
+    std::vector<CreatureMove> moves;
+    std::vector<std::uint32_t> readyToRespawn;
 
-    for (Zone& zone : m_zones)
+    for (Creature& creature : m_creatures)
     {
-        auto result = zone.Tick(delta, kGridSize - 1);
-        moves.insert(moves.end(), std::make_move_iterator(result.moves.begin()),
-                     std::make_move_iterator(result.moves.end()));
-        relocated.insert(relocated.end(), std::make_move_iterator(result.relocated.begin()),
-                         std::make_move_iterator(result.relocated.end()));
+        creature.Tick(delta, kGridSize - 1);
+
+        if (std::optional<CreatureMove> move = creature.TakePendingMove())
+            moves.push_back(std::move(*move));
+
+        if (creature.NeedsRespawn())
+            readyToRespawn.push_back(creature.instance_id);
     }
 
-    for (Creature& creature : relocated)
-        m_zones[Zone::Of(creature.x, creature.y).Index()].AddCreature(std::move(creature));
+    for (const std::uint32_t instanceId : readyToRespawn)
+    {
+        std::optional<Creature> dead = m_creatures.Remove(instanceId);
+        if (!dead || !dead->spawn)
+            continue;
+
+        const std::int64_t monsterId = dead->monster_template.get().id;
+        CreatureSpawn spawn = std::move(*dead->spawn);
+
+        Creature creature(CreatureKind::Monster, monsterId, m_data.monsters,
+                          std::move(spawn));
+        creature.Respawn(kGridSize - 1);
+        Spawn(std::move(creature));
+    }
 
     return moves;
-}
-
-std::vector<Zone> Map::CreateZones()
-{
-    std::vector<Zone> zones;
-    zones.reserve(kZoneCount);
-
-    constexpr auto kLimit = static_cast<std::int32_t>(kZoneGridSize);
-    for (std::int32_t zoneY = 0; zoneY < kLimit; ++zoneY)
-    {
-        for (std::int32_t zoneX = 0; zoneX < kLimit; ++zoneX)
-            zones.emplace_back(zoneX, zoneY);
-    }
-
-    return zones;
 }

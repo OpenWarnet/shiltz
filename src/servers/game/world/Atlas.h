@@ -15,7 +15,7 @@ class GameData;
 struct MapTickResult
 {
     std::int64_t server_map_id = 0;
-    std::vector<Zone::CreatureMove> creature_moves;
+    std::vector<CreatureMove> creature_moves;
 };
 
 // Fixed-capacity collection of every live Map in one World. server_map_id
