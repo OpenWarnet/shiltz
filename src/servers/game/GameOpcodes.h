@@ -11,6 +11,7 @@ namespace GameOpcode
         // Client -> Server
         CG_MOVE = 411000,
         CG_ENTER = 411005,
+        CG_ATTACK_TO_CRT = 411014, // 0x064586
         CG_PLAY_START = 412039,
         CG_EXIT = 411007,
         CG_ITEM_PICKUP = 411011,
@@ -44,7 +45,13 @@ namespace GameOpcode
         GC_CHAR_REMOVE = 511009,     // 0x7CC21
         GC_ENTER_FAIL = 532050,
         GC_CRT_LOAD = 511029,
+        GC_CRT_NEW = 511030,
+        GC_CRT_REMOVE = 511031,
         GC_CRT_MOVE = 511032,
+        GC_CRT_KILL_INFO = 511540,       // 0x07CE34
+        GC_ATTACK_TO_CRT_SUCC = 521017, // 0x07F339
+        GC_ATTACK_TO_CRT_KILL = 521019, // 0x07F33B
+        GC_ATTACK_PC2CRT_SUCC = 521020, // 0x07F33C
         GC_ITEM_MAP_NEW = 511035,
         GC_ITEM_MAP_REMOVE = 511036,
         GC_ITEM_PICKUP_SUCC = 521033,

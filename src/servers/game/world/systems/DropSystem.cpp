@@ -11,24 +11,6 @@
 #include "world/events/CharacterEvents.h"
 #include "world/events/DropEvents.h"
 
-#include <vector>
-
-namespace
-{
-// Every player on the map whose 3x3 view currently covers `zone`.
-std::vector<ConnectionId> ViewersOf(Map& map, Zone::Coordinates zone)
-{
-    std::vector<ConnectionId> viewers;
-    map.ForEachPlayer(
-        [&](Player& player)
-        {
-            if (Zone::IsNeighboring(Zone::Of(player.character.x, player.character.y), zone))
-                viewers.push_back(player.connection);
-        });
-    return viewers;
-}
-} // namespace
-
 DropSystem::DropSystem(Map& map, const Outbox& outbox, const GameData& data)
     : m_map(map), m_outbox(outbox), m_data(data)
 {
@@ -45,14 +27,14 @@ void DropSystem::SendItemMapNew(const DropAddEvent& event) const
     message.y = event.y;
     message.item_id = event.item_id;
     message.owner_id = 0; // no ownership/loot-protection concept yet
-    m_outbox.Send(ViewersOf(m_map, Zone::Of(event.x, event.y)), message);
+    m_outbox.Send(m_map.ViewersOf(Zone::Of(event.x, event.y)), message);
 }
 
 void DropSystem::SendItemMapRemove(const DropRemoveEvent& event) const
 {
     ItemMapRemove message;
     message.id = event.id;
-    m_outbox.Send(ViewersOf(m_map, Zone::Of(event.x, event.y)), message);
+    m_outbox.Send(m_map.ViewersOf(Zone::Of(event.x, event.y)), message);
 }
 
 void DropSystem::SendViewChange(const CharacterZoneChangeEvent& event) const

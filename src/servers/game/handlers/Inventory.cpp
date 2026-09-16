@@ -204,8 +204,8 @@ void HandleItemDrop(const GameContext& ctx, const ItemDrop& request, Player& pla
     }
 
     // Dropped at the character's live position, not the stale DB row.
-    const std::uint32_t dropX = player.character.x;
-    const std::uint32_t dropY = player.character.y;
+    const std::uint32_t dropX = player.character.placement.x;
+    const std::uint32_t dropY = player.character.placement.y;
 
     auto writes = [=](IDatabase& db)
     {

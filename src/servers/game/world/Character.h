@@ -2,7 +2,7 @@
 
 #include "Item.h"
 #include "protocol/server/CharacterDataLoad.h" // CharacterQuestFlags
-
+#include "world/Placement.h"
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -106,9 +106,7 @@ struct Character
     std::uint32_t face_id = 0;
 
     std::uint32_t map_id = 0;
-    std::uint32_t x = 0;
-    std::uint32_t y = 0;
-    std::uint32_t direction = 0;
+    Placement placement;
 
     std::int64_t money = 0;
 

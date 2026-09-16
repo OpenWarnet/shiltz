@@ -63,9 +63,12 @@ public:
     const Player* GetPlayer(std::uint32_t instanceId) const;
 
     // nullptr if that creature isn't on this map. Pointers are invalidated by
-    // the next creature Spawn or respawn; hold instance ids across mutations.
+    // the next creature Spawn; hold instance ids across pool mutations.
     Creature* GetCreature(std::uint32_t instanceId);
     const Creature* GetCreature(std::uint32_t instanceId) const;
+
+    // Connections whose current 3x3 view includes zone.
+    [[nodiscard]] std::vector<ConnectionId> ViewersOf(Zone::Coordinates zone) const;
 
     bool HasPlayers() const;
 
@@ -100,7 +103,7 @@ private:
     std::string monster_file;
     std::string npc_file;
 
-    std::vector<CreatureMove> TickMonster(std::chrono::milliseconds delta);
+    void TickMonster(std::chrono::milliseconds delta);
     void TickDrops(std::chrono::milliseconds delta);
 
     // Per-player bookkeeping that isn't triggered by a specific event: today that's just
@@ -112,7 +115,7 @@ private:
     void TickCharacter(std::chrono::milliseconds delta);
 
     // Keyed by Creature::instance_id. Dead monsters remain here while their
-    // embedded CreatureSpawn counts down; ready entries are re-keyed on respawn.
+    // embedded CreatureSpawn counts down, then respawn under the same key.
     Pool<std::uint32_t, Creature> m_creatures;
 
     // Keyed by character.instance_id.

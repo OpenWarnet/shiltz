@@ -10,14 +10,6 @@
 
 class GameData;
 
-// One Map's contribution to an Atlas::Tick() call -- which map, and every
-// creature that moved on it this tick.
-struct MapTickResult
-{
-    std::int64_t server_map_id = 0;
-    std::vector<CreatureMove> creature_moves;
-};
-
 // Fixed-capacity collection of every live Map in one World. server_map_id
 // is used as a direct index, while empty IDs occupy only a null pointer.
 class Atlas

@@ -86,8 +86,8 @@ std::optional<Character> LoadCharacter(IDatabase& db, std::int64_t characterId)
     character.money = core->money; // "cegel" on the wire, see Character::ToCharacterDataLoad
 
     character.map_id = core->map_id;
-    character.x = core->x;
-    character.y = core->y;
+    character.placement.x = core->x;
+    character.placement.y = core->y;
 
     character.exp = core->exp;
     character.hp = core->hp;

@@ -5,10 +5,8 @@
 #include "protocol/ClientProtocol.h"
 #include "protocol/client/GameConnect.h"
 #include "protocol/client/GameExit.h"
-#include "protocol/server/CrtMove.h"
 #include "world/common/Request.h"
 
-#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <utility>
@@ -18,12 +16,6 @@ using namespace std::chrono_literals;
 namespace
 {
     constexpr auto kTickInterval = 100ms;
-
-    bool Contains(const std::vector<std::pair<std::int32_t, std::int32_t>>& zones,
-                  const std::pair<std::int32_t, std::int32_t>& zone)
-    {
-        return std::find(zones.begin(), zones.end(), zone) != zones.end();
-    }
 } // namespace
 
 GameServer::GameServer(uint16_t port, std::span<const uint8_t> key, IDatabase& db)
@@ -98,4 +90,3 @@ GameContext GameServer::MakeContext(ConnectionId connection)
 {
     return GameContext{connection, m_world, m_data, m_outbox, m_persistence};
 }
-

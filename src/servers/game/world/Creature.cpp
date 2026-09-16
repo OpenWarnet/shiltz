@@ -2,6 +2,8 @@
 
 #include "tables/MonsterTable.h"
 #include "world/common/EntityIdGenerator.h"
+#include "world/common/EventBus.h"
+#include "world/events/CombatEvents.h"
 
 #include <algorithm>
 #include <array>
@@ -76,20 +78,89 @@ void Creature::Tick(std::chrono::milliseconds delta, std::uint32_t maxCoordinate
     if (kind != CreatureKind::Monster)
         return;
 
-    if (hp <= 0)
+    if (lifecycle != CreatureLifecycle::Alive)
     {
         TickRespawn(delta);
         return;
     }
 
-    if (lifecycle != CreatureLifecycle::Alive)
+    TickAi(delta, maxCoordinate);
+}
+
+void Creature::Bind(EventBus& events) noexcept
+{
+    m_events = &events;
+}
+
+std::optional<DamageResult> Creature::TakeDamage(std::uint32_t requestedDamage,
+                                                 std::uint32_t killerId)
+{
+    if (!m_events || kind != CreatureKind::Monster ||
+        lifecycle != CreatureLifecycle::Alive || hp <= 0)
     {
-        lifecycle = CreatureLifecycle::Alive;
-        if (spawn)
-            spawn->time_until_respawn.reset();
+        return std::nullopt;
     }
 
-    TickAi(delta, maxCoordinate);
+    const std::int64_t appliedDamage =
+        std::min<std::int64_t>(static_cast<std::int64_t>(requestedDamage), hp);
+    hp -= appliedDamage;
+
+    if (hp == 0)
+        return Kill(killerId, static_cast<std::uint32_t>(appliedDamage));
+
+    return DamageResult{
+        .damage = static_cast<std::uint32_t>(appliedDamage),
+        .target_hp = static_cast<std::uint64_t>(hp),
+    };
+}
+
+DamageResult Creature::Kill(std::uint32_t killerId, std::uint32_t damage)
+{
+    // The transition is deliberately idempotent: even an accidental second
+    // call cannot publish another kill, expose the reward twice, or restart
+    // an already-running respawn.
+    if (lifecycle != CreatureLifecycle::Alive)
+        return {};
+
+    hp = 0;
+    ai_state = CreatureAiState::Idle;
+    ai_timer = std::chrono::milliseconds::zero();
+    m_pendingMove.reset();
+    ArmRespawn();
+
+    const std::int64_t expReward = std::max<std::int64_t>(0, monster_template.get().exp_reward);
+    m_events->Publish(MonsterKilledEvent{
+        .monster_id = instance_id,
+        .killer_id = killerId,
+        .x = placement.x,
+        .y = placement.y,
+        .exp_reward = expReward,
+    });
+
+    return DamageResult{
+        .damage = damage,
+        .target_hp = 0,
+        .exp_reward = expReward,
+        .killed = true,
+    };
+}
+
+void Creature::ArmRespawn()
+{
+    // A monster placed by NpcScr has no anchor to return to, and respawn_time 0 means gone for good.
+    const std::int64_t respawnSeconds = monster_template.get().respawn_time;
+    if (!spawn || respawnSeconds <= 0)
+    {
+        if (spawn)
+            spawn->time_until_respawn.reset();
+
+        lifecycle = CreatureLifecycle::Dead;
+        return;
+    }
+
+    spawn->time_until_respawn = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::seconds(respawnSeconds));
+    lifecycle = CreatureLifecycle::WaitingForRespawn;
 }
 
 void Creature::Respawn(std::uint32_t maxCoordinate)
@@ -111,9 +182,14 @@ void Creature::Respawn(std::uint32_t maxCoordinate)
     const auto [spawnX, spawnY] =
         spawn->RollPosition(monster_template.get().id, radius, maxCoordinate);
 
-    x = spawnX;
-    y = spawnY;
-    direction = spawn->direction;
+    placement.x = spawnX;
+    placement.y = spawnY;
+    placement.direction = static_cast<Direction>(spawn->direction);
+}
+
+bool Creature::IsAlive() const noexcept
+{
+    return lifecycle == CreatureLifecycle::Alive;
 }
 
 bool Creature::NeedsRespawn() const noexcept
@@ -141,23 +217,11 @@ void Creature::TickAi(std::chrono::milliseconds delta, std::uint32_t maxCoordina
 
 void Creature::TickRespawn(std::chrono::milliseconds delta)
 {
-    if (lifecycle == CreatureLifecycle::RespawnPending)
-        return;
-
-    if (!spawn || monster_template.get().respawn_time <= 0)
-    {
-        lifecycle = CreatureLifecycle::Dead;
-        if (spawn)
-            spawn->time_until_respawn.reset();
-        return;
-    }
-
-    if (lifecycle != CreatureLifecycle::WaitingForRespawn ||
+    // Only a timer Kill armed can move -- Dead is terminal and RespawnPending already waits on Map.
+    if (lifecycle != CreatureLifecycle::WaitingForRespawn || !spawn ||
         !spawn->time_until_respawn)
     {
-        lifecycle = CreatureLifecycle::WaitingForRespawn;
-        spawn->time_until_respawn = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::seconds(monster_template.get().respawn_time));
+        return;
     }
 
     if (*spawn->time_until_respawn > delta)
@@ -172,15 +236,15 @@ void Creature::TickRespawn(std::chrono::milliseconds delta)
 
 void Creature::RollNextAiState(std::uint32_t maxCoordinate)
 {
-    const std::uint32_t fromX = x;
-    const std::uint32_t fromY = y;
+    const std::uint32_t fromX = placement.x;
+    const std::uint32_t fromY = placement.y;
     const std::uint64_t roll = MixDecisionSeed();
 
     if (roll & 1)
     {
         const auto [dx, dy] = kWanderOffsets[(roll >> 1) % kWanderOffsets.size()];
-        x = StepCoordinate(x, dx, maxCoordinate);
-        y = StepCoordinate(y, dy, maxCoordinate);
+        placement.x = StepCoordinate(placement.x, dx, maxCoordinate);
+        placement.y = StepCoordinate(placement.y, dy, maxCoordinate);
 
         ai_state = CreatureAiState::Wander;
         ai_timer =
@@ -193,14 +257,14 @@ void Creature::RollNextAiState(std::uint32_t maxCoordinate)
             kIdleBaseDelay + std::chrono::milliseconds((roll >> 4) % kIdleMaxJitter.count());
     }
 
-    if (x != fromX || y != fromY)
+    if (placement.x != fromX || placement.y != fromY)
     {
         m_pendingMove = CreatureMove{
             .creature_id = instance_id,
             .from_x = fromX,
             .from_y = fromY,
-            .to_x = x,
-            .to_y = y,
+            .to_x = placement.x,
+            .to_y = placement.y,
         };
     }
 }

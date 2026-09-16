@@ -1,6 +1,8 @@
 #pragma once
 
 #include "parser/MonsterScr.h"
+#include "world/Combat.h"
+#include "world/Placement.h"
 
 #include <chrono>
 #include <cstdint>
@@ -9,6 +11,9 @@
 #include <utility>
 
 class MonsterTable;
+class EventBus;
+class Map;
+struct Player;
 
 // Per-instance origin and respawn state for a monster loaded from
 // MonsterSpawnScr. NPCs have no CreatureSpawn because NpcScr places them directly.
@@ -51,6 +56,11 @@ enum class CreatureAiState : std::uint8_t
     Wander,
 };
 
+// Kill performs the whole Alive -> dead transition in one step: Dead is
+// terminal (no CreatureSpawn, or a respawn_time of 0), WaitingForRespawn
+// carries the CreatureSpawn::time_until_respawn that Tick counts down, and
+// RespawnPending means that countdown finished and Map owes this creature a
+// Respawn.
 enum class CreatureLifecycle : std::uint8_t
 {
     Alive,
@@ -66,6 +76,7 @@ struct CreatureMove
     std::uint32_t from_y = 0;
     std::uint32_t to_x = 0;
     std::uint32_t to_y = 0;
+    std::uint32_t movement_mode = 1;
 };
 
 // A single spawned creature on a Map -- one instance from either an
@@ -82,16 +93,14 @@ struct Creature
     std::uint32_t instance_id = 0;
     CreatureKind kind = CreatureKind::Monster;
     std::reference_wrapper<const MonsterRecord> monster_template;
-    std::uint32_t x = 0;
-    std::uint32_t y = 0;
-    std::uint32_t direction = 0;
+    Placement placement;
 
     // Current HP; starts at the monster.scr template's max at spawn.
     std::int64_t hp = 0;
 
     // Present only for monsters originating from MonsterSpawnScr. The
     // Creature stays in Map's pool with hp <= 0 while this state counts
-    // down to a new spawned instance.
+    // down, then respawns in place with the same instance_id.
     std::optional<CreatureSpawn> spawn;
 
     CreatureLifecycle lifecycle = CreatureLifecycle::Alive;
@@ -107,14 +116,29 @@ struct Creature
 
     void Tick(std::chrono::milliseconds delta, std::uint32_t maxCoordinate);
     void Respawn(std::uint32_t maxCoordinate);
+    [[nodiscard]] bool IsAlive() const noexcept;
     [[nodiscard]] bool NeedsRespawn() const noexcept;
     std::optional<CreatureMove> TakePendingMove();
 
 private:
     friend class Map;
+    friend struct Player;
 
     Creature(CreatureKind creatureKind, std::int64_t monsterId, const MonsterTable& monsters,
              std::optional<CreatureSpawn> creatureSpawn = std::nullopt);
+
+    void Bind(EventBus& events) noexcept;
+
+    // Applies damage and performs the death transition immediately. Only
+    // Player can initiate this first combat slice; Tick handles the later
+    // respawn timer and never discovers death from hp after the fact.
+    std::optional<DamageResult> TakeDamage(std::uint32_t damage, std::uint32_t killerId);
+
+    // Owns the entire death transition, respawn state included.
+    DamageResult Kill(std::uint32_t killerId, std::uint32_t damage);
+
+    // Decides at the moment of death whether it is terminal, and starts the clock if it isn't.
+    void ArmRespawn();
 
     void TickAi(std::chrono::milliseconds delta, std::uint32_t maxCoordinate);
     void TickRespawn(std::chrono::milliseconds delta);
@@ -127,4 +151,8 @@ private:
                                                        std::int64_t monsterId);
 
     std::optional<CreatureMove> m_pendingMove;
+
+    // Non-owning: every Creature lives in the Map that owns this bus. A raw
+    // pointer preserves move assignment required by Pool's dense swap-pop.
+    EventBus* m_events = nullptr;
 };

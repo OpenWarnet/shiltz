@@ -6,6 +6,7 @@
 #include "world/World.h"
 #include "common/PacketCapture.h"
 #include "common/PayloadReader.h"
+#include "protocol/client/AttackToCreature.h"
 #include "protocol/client/CharMove.h"
 #include "protocol/client/CharSkillUpEx.h"
 #include "protocol/client/CharStatusUp.h"
@@ -79,6 +80,8 @@ std::unique_ptr<ClientProtocol> ClientProtocol::Create(const GamePacket& packet)
         return DecodeAs<GameExit>(packet);
     case GameOpcode::CG_MOVE:
         return DecodeAs<CharMove>(packet);
+    case GameOpcode::CG_ATTACK_TO_CRT:
+        return DecodeAs<AttackToCreature>(packet);
     case GameOpcode::CG_ITEM_PICKUP:
         return DecodeAs<ItemPickup>(packet);
     case GameOpcode::CG_ITEM_MOVE:

@@ -10,6 +10,7 @@
 #include "tables/GameData.h"
 #include "tables/MonsterTable.h"
 #include "world/common/Paths.h"
+#include "world/events/CreatureEvents.h"
 
 #include <iostream>
 
@@ -24,9 +25,9 @@ Map::Map(MapRecord record, const GameData& data)
         for (const auto& instance : spawn.instances)
         {
             Creature creature(CreatureKind::Npc, spawn.id, monsters);
-            creature.x = static_cast<std::uint32_t>(instance.x);
-            creature.y = static_cast<std::uint32_t>(instance.y);
-            creature.direction = static_cast<std::uint32_t>(instance.direction);
+            creature.placement.x = static_cast<std::uint32_t>(instance.x);
+            creature.placement.y = static_cast<std::uint32_t>(instance.y);
+            creature.placement.direction = static_cast<Direction>(instance.direction);
             Spawn(std::move(creature));
         }
     }
@@ -64,13 +65,15 @@ bool Map::IsInBounds(std::uint32_t x, std::uint32_t y) noexcept
 
 void Map::Spawn(Creature creature)
 {
-    if (!IsInBounds(creature.x, creature.y))
+    if (!IsInBounds(creature.placement.x, creature.placement.y))
     {
         std::cout << "Ignoring creature " << creature.monster_template.get().id
-                  << " with out-of-range position (" << creature.x << ", " << creature.y
-                  << ")\n";
+                  << " with out-of-range position (" << creature.placement.x << ", "
+                  << creature.placement.y << ")\n";
         return;
     }
+
+    creature.Bind(m_events);
 
     const std::uint32_t instanceId = creature.instance_id;
     if (!m_creatures.Add(instanceId, std::move(creature)))
@@ -80,10 +83,12 @@ void Map::Spawn(Creature creature)
 bool Map::Spawn(Player player)
 {
     const std::uint32_t instanceId = player.character.instance_id;
-    const Zone::Coordinates zone = Zone::Of(player.character.x, player.character.y);
+    const Zone::Coordinates zone =
+        Zone::Of(player.character.placement.x, player.character.placement.y);
 
     // Whatever it had loaded belonged to its previous map.
     player.visible_players.clear();
+    player.Bind(m_events);
 
     if (!m_players.Add(instanceId, std::move(player)))
         return false;
@@ -106,9 +111,14 @@ void Map::Spawn(Drop drop)
 
 std::optional<Player> Map::Despawn(const Player& player)
 {
-    std::optional<Player> removed = m_players.Remove(player.character.instance_id);
+    // Remove may swap another Player into this slot, invalidating `player`.
+    const std::uint32_t instanceId = player.character.instance_id;
+    std::optional<Player> removed = m_players.Remove(instanceId);
     if (removed)
-        m_events.Publish(CharacterLeaveEvent{.instance_id = player.character.instance_id});
+    {
+        removed->Unbind();
+        m_events.Publish(CharacterLeaveEvent{.instance_id = instanceId});
+    }
 
     return removed;
 }
@@ -129,12 +139,12 @@ bool Map::Move(Player& player, std::uint32_t x, std::uint32_t y, std::uint32_t d
         return false;
 
     const std::uint32_t instanceId = player.character.instance_id;
-    const std::uint32_t fromX = player.character.x;
-    const std::uint32_t fromY = player.character.y;
+    const std::uint32_t fromX = player.character.placement.x;
+    const std::uint32_t fromY = player.character.placement.y;
 
-    player.character.x = x;
-    player.character.y = y;
-    player.character.direction = direction;
+    player.character.placement.x = x;
+    player.character.placement.y = y;
+    player.character.placement.direction = static_cast<Direction>(direction);
 
     // Published before the move so the view updates go out ahead of GC_CHAR_MOVE.
     if (Zone::Crossed(fromX, fromY, x, y))
@@ -180,6 +190,21 @@ const Creature* Map::GetCreature(std::uint32_t instanceId) const
     return m_creatures.Get(instanceId);
 }
 
+std::vector<ConnectionId> Map::ViewersOf(Zone::Coordinates zone) const
+{
+    std::vector<ConnectionId> viewers;
+    viewers.reserve(m_players.Size());
+
+    for (const Player& player : m_players)
+    {
+        const Placement& placement = player.character.placement;
+        if (Zone::IsNeighboring(Zone::Of(placement.x, placement.y), zone))
+            viewers.push_back(player.connection);
+    }
+
+    return viewers;
+}
+
 bool Map::HasPlayers() const
 {
     return !m_players.Empty();
@@ -200,10 +225,7 @@ void Map::Tick(std::chrono::milliseconds delta)
 
     // Runs regardless of players -- keeping the map clear of stale drops isn't for anyone's benefit.
     TickDrops(delta);
-
-    // Nobody to see creatures on an empty map, but its events still went out above.
-    if (HasPlayers())
-        TickMonster(delta);
+    TickMonster(delta);
 }
 
 void Map::TickCharacter(std::chrono::milliseconds delta)
@@ -234,17 +256,32 @@ void Map::TickDrops(std::chrono::milliseconds delta)
         Despawn(drop);
 }
 
-std::vector<CreatureMove> Map::TickMonster(std::chrono::milliseconds delta)
+void Map::TickMonster(std::chrono::milliseconds delta)
 {
-    std::vector<CreatureMove> moves;
+    // Respawn is world state and keeps counting down on an empty map; wandering is only
+    // simulated while somebody is there to see it.
+    const bool simulateAi = HasPlayers();
+
     std::vector<std::uint32_t> readyToRespawn;
 
     for (Creature& creature : m_creatures)
     {
+        if (creature.IsAlive() && !simulateAi)
+            continue;
+
         creature.Tick(delta, kGridSize - 1);
 
         if (std::optional<CreatureMove> move = creature.TakePendingMove())
-            moves.push_back(std::move(*move));
+        {
+            m_events.Publish(CreatureMoveEvent{
+                .creature_id = move->creature_id,
+                .from_x = move->from_x,
+                .from_y = move->from_y,
+                .to_x = move->to_x,
+                .to_y = move->to_y,
+                .movement_mode = move->movement_mode,
+            });
+        }
 
         if (creature.NeedsRespawn())
             readyToRespawn.push_back(creature.instance_id);
@@ -252,18 +289,11 @@ std::vector<CreatureMove> Map::TickMonster(std::chrono::milliseconds delta)
 
     for (const std::uint32_t instanceId : readyToRespawn)
     {
-        std::optional<Creature> dead = m_creatures.Remove(instanceId);
-        if (!dead || !dead->spawn)
+        Creature* creature = m_creatures.Get(instanceId);
+        if (!creature || !creature->spawn)
             continue;
 
-        const std::int64_t monsterId = dead->monster_template.get().id;
-        CreatureSpawn spawn = std::move(*dead->spawn);
-
-        Creature creature(CreatureKind::Monster, monsterId, m_data.monsters,
-                          std::move(spawn));
-        creature.Respawn(kGridSize - 1);
-        Spawn(std::move(creature));
+        creature->Respawn(kGridSize - 1);
+        m_events.Publish(CreatureRespawnEvent{.creature_id = instanceId});
     }
-
-    return moves;
 }

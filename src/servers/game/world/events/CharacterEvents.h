@@ -17,7 +17,8 @@ struct CharacterLeaveEvent
     std::uint32_t instance_id = 0;
 };
 
-// A character walked on its map, as sent in CG_MOVE; `from` is kept because character.x/y already holds `to` at dispatch.
+// A character walked on its map, as sent in CG_MOVE; `from` is kept because
+// character.placement already holds `to` at dispatch.
 struct CharacterMoveEvent
 {
     std::uint32_t instance_id = 0;

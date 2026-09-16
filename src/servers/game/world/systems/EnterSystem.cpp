@@ -29,8 +29,8 @@ void EnterSystem::SendCharacterDataLoad(const CharacterJoinEvent& event) const
     result.self_entity_id = character.instance_id;
     result.eps_user_flag = 1; // TODO: no DB column -- kept as the prior hardcoded placeholder
     result.map_id = character.map_id;
-    result.loc_x = character.x;
-    result.loc_y = character.y;
+    result.loc_x = character.placement.x;
+    result.loc_y = character.placement.y;
     result.level = static_cast<std::uint32_t>(character.level);
     result.job_id = character.job_id;
     result.gender = character.gender;

@@ -10,4 +10,5 @@ void CrtMove::Serialize(PayloadWriter& writer) const
     writer.Write(target_x);
     writer.Write(target_y);
     writer.Write(speed_raw);
+    writer.Write(movement_mode);
 }

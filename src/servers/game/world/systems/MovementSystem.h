@@ -12,6 +12,8 @@ struct CharOtherRecord;
 struct CharacterLeaveEvent;
 struct CharacterMoveEvent;
 struct CharacterZoneChangeEvent;
+struct CreatureMoveEvent;
+struct CreatureRespawnEvent;
 struct Player;
 
 // Keeps each client's view of creatures and other characters current, and broadcasts walks to whoever can see them.
@@ -32,6 +34,13 @@ public:
 
     // GC_CHAR_REMOVE to every client that had the departed character loaded.
     void SendCharRemove(const CharacterLeaveEvent& event) const;
+
+    // GC_CRT_MOVE to existing viewers, with GC_CRT_NEW/REMOVE at a creature
+    // zone-boundary crossing.
+    void SendCreatureMove(const CreatureMoveEvent& event) const;
+
+    // GC_CRT_NEW to every player whose view covers the respawn point.
+    void SendCreatureRespawn(const CreatureRespawnEvent& event) const;
 
 private:
     // Matches viewer.visible_players to who is in view now, sending the other side of each change directly.

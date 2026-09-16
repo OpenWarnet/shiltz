@@ -89,13 +89,15 @@ void HandleEnter(const GameContext& ctx, const GameEnter& request)
             Character& character = loaded->character;
             character.instance_id = EntityIdGenerator::Next();
 
-            // Join publishes CharacterJoinEvent and (as a placement) CharacterZoneChangeEvent itself.
-            if (!ctx.world.Join(Player{
-                    .connection = ctx.connection,
-                    .session_id = request.session_id,
-                    .account_id = loaded->accountId,
-                    .character = character,
-                }))
+            Player player;
+            player.connection = ctx.connection;
+            player.session_id = request.session_id;
+            player.account_id = loaded->accountId;
+            player.character = character;
+
+            // Join binds the map event stream, then publishes CharacterJoinEvent and (as a
+            // placement) CharacterZoneChangeEvent itself.
+            if (!ctx.world.Join(std::move(player)))
                 return sendFail();
         },
         [sendFail](const std::string&) { sendFail(); });
@@ -125,6 +127,7 @@ void HandleCgExit(const GameContext& ctx, const GameExit& request)
     // A failed save just leaves the character at its last saved position.
     ctx.persistence.Run(
         [character = player->character](IDatabase& db)
-        { CharacterRepository::SavePosition(db, character.id, character.map_id, character.x, character.y); },
+        { CharacterRepository::SavePosition(db, character.id, character.map_id,
+                                            character.placement.x, character.placement.y); },
         finish, [finish](const std::string&) { finish(); });
 }
