@@ -228,7 +228,7 @@ void MovementSystem::SendCreatureMove(const CreatureMoveEvent& event) const
 
     if (fromZone == toZone)
     {
-        m_outbox.Send(m_map.ViewersOf(toZone), move);
+        m_outbox.Send(m_map.ViewersOf(toZone), move, &Player::connection);
         return;
     }
 
@@ -275,7 +275,7 @@ void MovementSystem::SendCreatureRespawn(const CreatureRespawnEvent& event) cons
     CrtNew appeared;
     appeared.record = BuildCrtRecord(*creature);
     m_outbox.Send(m_map.ViewersOf(Zone::Of(creature->placement.x, creature->placement.y)),
-                  appeared);
+                  appeared, &Player::connection);
 }
 
 void MovementSystem::SyncVisiblePlayers(Player& viewer, std::vector<CharOtherRecord>& arrived,

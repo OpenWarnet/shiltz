@@ -53,6 +53,7 @@ add_executable (
 	"${CMAKE_SOURCE_DIR}/src/common/ConnectionId.h"
 	"${CMAKE_SOURCE_DIR}/src/common/Server.h"
 	"${CMAKE_SOURCE_DIR}/src/common/Server.cpp"
+	"${CMAKE_SOURCE_DIR}/src/common/Random.h"
 	"${CMAKE_SOURCE_DIR}/src/common/HexDump.h"
 	"${CMAKE_SOURCE_DIR}/src/common/PacketCapture.h"
 	"${CMAKE_SOURCE_DIR}/src/common/PacketCapture.cpp"

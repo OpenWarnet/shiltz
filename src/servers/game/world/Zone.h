@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Grid.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -21,6 +23,9 @@ public:
     };
 
     static constexpr std::uint32_t kSize = 16;
+    static constexpr std::uint32_t kGridSize = Grid::kSize / kSize;
+    static constexpr std::size_t kCount =
+        static_cast<std::size_t>(kGridSize) * kGridSize;
 
     static Coordinates Of(std::uint32_t x, std::uint32_t y) noexcept;
 

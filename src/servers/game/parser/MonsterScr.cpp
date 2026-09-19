@@ -43,7 +43,7 @@ namespace
         record.buff_gold_reward = At(record.fields, 26);
         record.respawn_time = At(record.fields, 27);
         record.spawn_scatter_range = At(record.fields, 28);
-        record.call_for_help_range = At(record.fields, 29);
+        record.aggro_range = At(record.fields, 29);
         record.link_flag = At(record.fields, 30);
 
         return record;

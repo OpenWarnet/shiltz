@@ -4,31 +4,24 @@
 #include "Creature.h"
 #include "Drop.h"
 #include "Player.h"
+#include "VisibilityIndex.h"
 #include "Zone.h"
 #include "world/common/EventBus.h"
 #include "world/common/Pool.h"
 
 #include <chrono>
-#include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <ranges>
+#include <span>
 #include <utility>
-#include <vector>
 
 class GameData;
 
 class Map
 {
 public:
-    static constexpr std::uint32_t kGridSize = 512;
-    static constexpr std::uint32_t kZoneGridSize = kGridSize / Zone::kSize;
-    static constexpr std::size_t kZoneCount =
-        static_cast<std::size_t>(kZoneGridSize) * kZoneGridSize;
-
     std::int64_t id = 0;
-
-    // True if tile (x, y) is on the map; anything else must be rejected before it reaches the world.
-    static bool IsInBounds(std::uint32_t x, std::uint32_t y) noexcept;
 
     // data.monsters seeds each spawned creature's instance stats; data itself is retained (see
     // m_data) to recalculate dirty players' derived stats once per Tick.
@@ -67,8 +60,14 @@ public:
     Creature* GetCreature(std::uint32_t instanceId);
     const Creature* GetCreature(std::uint32_t instanceId) const;
 
-    // Connections whose current 3x3 view includes zone.
-    [[nodiscard]] std::vector<ConnectionId> ViewersOf(Zone::Coordinates zone) const;
+    // Lazy view of the players whose current 3x3 view includes zone; don't Spawn or Despawn
+    // players while iterating it.
+    [[nodiscard]] auto ViewersOf(Zone::Coordinates zone) const
+    {
+        return m_visibility.ViewersOf(zone) |
+               std::views::transform([this](std::uint32_t instanceId) -> const Player&
+                                     { return *m_players.Get(instanceId); });
+    }
 
     bool HasPlayers() const;
 
@@ -104,7 +103,15 @@ private:
     std::string npc_file;
 
     void TickMonster(std::chrono::milliseconds delta);
+    void TickCreatureAi(Creature& creature, std::chrono::milliseconds delta);
     void TickDrops(std::chrono::milliseconds delta);
+
+    [[nodiscard]] CreatureAiPerception
+    BuildCreaturePerception(const Creature& creature, const CreatureAiSenseRequest& request) const;
+
+    void CommitCreatureAiIntent(Creature& creature, const CreatureAiIntent& intent);
+    bool MoveCreature(Creature& creature, std::uint32_t x, std::uint32_t y,
+                      std::uint32_t movementMode = 1);
 
     // Per-player bookkeeping that isn't triggered by a specific event: today that's just
     // recalculating any player whose CharacterStats::dirty is set (see Character.h), clearing the
@@ -123,6 +130,8 @@ private:
 
     // Keyed by Drop::id.
     Pool<std::uint32_t, Drop> m_drops;
+
+    VisibilityIndex m_visibility;
 
     EventBus m_events;
 

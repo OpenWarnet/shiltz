@@ -25,7 +25,7 @@ void CombatSystem::SendMonsterKilled(const MonsterKilledEvent& event) const
 {
     CrtKillInfo info;
     info.exp_gain = event.exp_reward;
-    m_outbox.Send(m_map.ViewersOf(Zone::Of(event.x, event.y)), info);
+    m_outbox.Send(m_map.ViewersOf(Zone::Of(event.x, event.y)), info, &Player::connection);
 }
 
 void CombatSystem::SendPlayerAttackResult(const PlayerAttackResolvedEvent& event) const
@@ -61,5 +61,6 @@ void CombatSystem::SendPlayerAttackResult(const PlayerAttackResolvedEvent& event
     presented.damage = event.damage;
     presented.target_hp = static_cast<std::uint32_t>(event.target_hp);
 
-    m_outbox.Send(m_map.ViewersOf(Zone::Of(event.target_x, event.target_y)), presented);
+    m_outbox.Send(m_map.ViewersOf(Zone::Of(event.target_x, event.target_y)), presented,
+                  &Player::connection);
 }

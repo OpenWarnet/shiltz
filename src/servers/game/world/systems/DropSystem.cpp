@@ -27,14 +27,14 @@ void DropSystem::SendItemMapNew(const DropAddEvent& event) const
     message.y = event.y;
     message.item_id = event.item_id;
     message.owner_id = 0; // no ownership/loot-protection concept yet
-    m_outbox.Send(m_map.ViewersOf(Zone::Of(event.x, event.y)), message);
+    m_outbox.Send(m_map.ViewersOf(Zone::Of(event.x, event.y)), message, &Player::connection);
 }
 
 void DropSystem::SendItemMapRemove(const DropRemoveEvent& event) const
 {
     ItemMapRemove message;
     message.id = event.id;
-    m_outbox.Send(m_map.ViewersOf(Zone::Of(event.x, event.y)), message);
+    m_outbox.Send(m_map.ViewersOf(Zone::Of(event.x, event.y)), message, &Player::connection);
 }
 
 void DropSystem::SendViewChange(const CharacterZoneChangeEvent& event) const

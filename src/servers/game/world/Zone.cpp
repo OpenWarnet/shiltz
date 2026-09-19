@@ -1,12 +1,10 @@
 #include "Zone.h"
 
-#include "Map.h"
-
 #include <cstdlib>
 
 std::size_t Zone::Coordinates::Index() const noexcept
 {
-    return static_cast<std::size_t>(y) * Map::kZoneGridSize + static_cast<std::size_t>(x);
+    return static_cast<std::size_t>(y) * Zone::kGridSize + static_cast<std::size_t>(x);
 }
 
 Zone::Coordinates Zone::Of(std::uint32_t x, std::uint32_t y) noexcept
@@ -16,7 +14,7 @@ Zone::Coordinates Zone::Of(std::uint32_t x, std::uint32_t y) noexcept
 
 bool Zone::IsInGrid(Coordinates zone) noexcept
 {
-    constexpr auto kLimit = static_cast<std::int32_t>(Map::kZoneGridSize);
+    constexpr auto kLimit = static_cast<std::int32_t>(kGridSize);
     return zone.x >= 0 && zone.x < kLimit && zone.y >= 0 && zone.y < kLimit;
 }
 
@@ -29,6 +27,7 @@ bool Zone::Crossed(std::uint32_t fromX, std::uint32_t fromY, std::uint32_t toX,
 std::vector<Zone::Coordinates> Zone::Around(Coordinates zone)
 {
     std::vector<Coordinates> zones;
+    zones.reserve(9);
 
     for (std::int32_t dy = -1; dy <= 1; ++dy)
     {

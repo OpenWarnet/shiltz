@@ -47,7 +47,7 @@ struct MonsterRecord
     std::int64_t buff_gold_reward = 0;
     std::int64_t respawn_time = 0;
     std::int64_t spawn_scatter_range = 0;
-    std::int64_t call_for_help_range = 0;
+    std::int64_t aggro_range = 0;
     std::int64_t link_flag = 0;
 
     std::vector<std::int64_t> fields;
